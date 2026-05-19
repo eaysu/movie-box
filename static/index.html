@@ -363,6 +363,12 @@ tailwind.config = {
 </footer>
 
 <script>
+// ── Config ─────────────────────────────────────────────────────────────────
+// Netlify'da backend Railway/Render'da ise bu değişkeni doldur:
+// const API_BASE = 'https://movie-box-api.railway.app';
+// Aynı origin'de çalışıyorsa boş bırak (lokalde ve tam Netlify deploy'da çalışır).
+const API_BASE = window.__API_BASE__ || '';
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
@@ -393,7 +399,7 @@ function setIdleError(msg) {
 // ── Health check ───────────────────────────────────────────────────────────
 async function loadHealth() {
   try {
-    const r = await fetch('/api/health');
+    const r = await fetch(`${API_BASE}/api/health`);
     if (!r.ok) return;
     const h = await r.json();
 
@@ -608,7 +614,7 @@ async function recommend() {
   startLoading();
 
   try {
-    const r = await fetch('/api/recommend', {
+    const r = await fetch(`${API_BASE}/api/recommend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username }),

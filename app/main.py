@@ -3,9 +3,11 @@
 Run with:  uvicorn app.main:app --reload
 """
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -18,6 +20,15 @@ from .recommender import CatalogNotBuilt, Recommender
 from .scraper import ScrapeError, scrape_watchlist
 
 app = FastAPI(title="Letterboxd AI Recommender", version="0.1.0")
+
+# CORS: Netlify frontend'i Railway backend'ine istek atabilsin.
+_allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
