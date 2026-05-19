@@ -1,0 +1,91 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow-center" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#00e054" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#00e054" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-right" cx="90%" cy="80%" r="40%">
+      <stop offset="0%" stop-color="#6ccdff" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#6ccdff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-left" cx="10%" cy="20%" r="35%">
+      <stop offset="0%" stop-color="#ff8000" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ff8000" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0b0f11"/>
+  <rect width="1200" height="630" fill="url(#glow-center)"/>
+  <rect width="1200" height="630" fill="url(#glow-right)"/>
+  <rect width="1200" height="630" fill="url(#glow-left)"/>
+
+  <!-- Subtle grid lines -->
+  <line x1="0" y1="1" x2="1200" y2="1" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+  <line x1="0" y1="629" x2="1200" y2="629" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
+
+  <!-- Film strip decoration left -->
+  <rect x="48" y="0" width="6" height="630" fill="#1d2023"/>
+  <rect x="54" y="0" width="1" height="630" fill="#3c4b3a" fill-opacity="0.4"/>
+  <rect x="42" y="0" width="1" height="630" fill="#3c4b3a" fill-opacity="0.4"/>
+  <!-- film holes left -->
+  <rect x="44" y="40"  width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="80"  width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="120" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="160" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="200" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="240" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="280" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="320" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="360" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="400" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="440" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="480" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="520" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="560" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="44" y="600" width="10" height="18" rx="2" fill="#0b0f11"/>
+
+  <!-- Film strip decoration right -->
+  <rect x="1146" y="0" width="6" height="630" fill="#1d2023"/>
+  <rect x="1152" y="0" width="1" height="630" fill="#3c4b3a" fill-opacity="0.4"/>
+  <rect x="1146" y="0" width="1" height="630" fill="#3c4b3a" fill-opacity="0.4"/>
+  <rect x="1146" y="40"  width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="80"  width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="120" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="160" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="200" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="240" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="280" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="320" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="360" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="400" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="440" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="480" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="520" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="560" width="10" height="18" rx="2" fill="#0b0f11"/>
+  <rect x="1146" y="600" width="10" height="18" rx="2" fill="#0b0f11"/>
+
+  <!-- Badge -->
+  <rect x="464" y="168" width="272" height="32" rx="16" fill="#1d2023" stroke="#3c4b3a" stroke-width="1"/>
+  <text x="600" y="189" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="500" fill="#bacbb6" text-anchor="middle" letter-spacing="3">YAPAY ZEKA DESTEKLİ</text>
+
+  <!-- Main title -->
+  <text x="600" y="292" font-family="system-ui,-apple-system,sans-serif" font-size="86" font-weight="700" fill="#e0e2e6" text-anchor="middle" letter-spacing="-3">LETTERBOXD</text>
+
+  <!-- Accent dot and AI -->
+  <text x="600" y="360" font-family="system-ui,-apple-system,sans-serif" font-size="52" font-weight="600" fill="#00e054" text-anchor="middle" letter-spacing="6">· AI ·</text>
+
+  <!-- Divider -->
+  <line x1="300" y1="400" x2="900" y2="400" stroke="#3c4b3a" stroke-width="1"/>
+
+  <!-- Tagline -->
+  <text x="600" y="448" font-family="system-ui,-apple-system,sans-serif" font-size="26" font-weight="400" fill="#bacbb6" text-anchor="middle">Watchlist'inden bu akşam ne izlemelisin?</text>
+
+  <!-- Three status dots -->
+  <circle cx="556" cy="510" r="6" fill="#00e054" filter="url(#dot-glow)"/>
+  <circle cx="600" cy="510" r="6" fill="#ff8000"/>
+  <circle cx="644" cy="510" r="6" fill="#6ccdff"/>
+
+  <!-- URL hint -->
+  <text x="600" y="572" font-family="system-ui,-apple-system,sans-serif" font-size="15" font-weight="400" fill="#3c4b3a" text-anchor="middle" letter-spacing="1">movie-box-jo3x.onrender.com</text>
+</svg>
