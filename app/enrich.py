@@ -95,6 +95,9 @@ class Enricher:
         cache_key = slug or f"{title}:{year}"
         cached = self.cache.get("tmdb", cache_key, ttl=SEARCH_TTL)
         if cached:
+            cached.pop("text_blob", None)  # property, not a field
+            cached.pop("similarity", None)  # set at ranking time
+            cached.pop("reason", None)
             return EnrichedFilm(**cached)
 
         film = EnrichedFilm(title=title, year=year, slug=slug)

@@ -12,6 +12,15 @@ import json
 from .config import Settings
 from .enrich import EnrichedFilm
 
+# Kısa alias → tam model ID eşlemesi
+_MODEL_ALIASES: dict[str, str] = {
+    "gpt-5-mini": "gpt-5-mini-2025-08-07",
+}
+
+
+def _resolve_model(name: str) -> str:
+    return _MODEL_ALIASES.get(name, name)
+
 
 def _film_label(f: EnrichedFilm) -> str:
     label = f.title
@@ -93,9 +102,21 @@ async def rank_candidates(
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=settings.openai_api_key)
+        model_id = _resolve_model(settings.openai_model)
+        # Reasoning modelleri (gpt-5-mini, o-serisi):
+        #   max_completion_tokens = reasoning_tokens + output_tokens
+        #   Karmaşık prompt için reasoning ~4000+ token tüketebilir;
+        #   output JSON ~1500 token → toplam 8000 yeterince güvenli.
+        # Eski modeller (gpt-4o-mini vb.) max_tokens kullanır.
+        _REASONING_MODELS = {"gpt-5-mini-2025-08-07", "o3-mini", "o4-mini", "o1-mini", "o1", "o3"}
+        if model_id in _REASONING_MODELS:
+            token_kwargs = {"max_completion_tokens": 8000}
+        else:
+            token_kwargs = {"max_tokens": 1500}
+
         response = await client.chat.completions.create(
-            model=settings.openai_model,
-            max_tokens=1500,
+            model=model_id,
+            **token_kwargs,
             messages=[{"role": "user", "content": _build_prompt(watched, candidates, n)}],
         )
         raw = response.choices[0].message.content or ""

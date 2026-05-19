@@ -81,6 +81,7 @@ async def recommend(req: RecommendRequest) -> dict:
             req.username,
             delay=settings.scrape_delay,
             max_pages=settings.watched_max_pages,
+            film_limit=settings.watched_film_limit,
         )
         scraped_watchlist = await scrape_watchlist(
             req.username,
