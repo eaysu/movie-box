@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LETTERBOXD · AI</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "outline": "#859582",
+        "inverse-surface": "#e0e2e6",
+        "primary": "#43fe6d",
+        "on-secondary-fixed-variant": "#723600",
+        "secondary-fixed": "#ffdcc7",
+        "on-secondary-container": "#5e2b00",
+        "secondary-container": "#ff8000",
+        "surface-container-high": "#272a2d",
+        "surface-tint": "#15e558",
+        "inverse-primary": "#006e25",
+        "on-primary-container": "#005d1e",
+        "tertiary-container": "#6ccdff",
+        "on-surface-variant": "#bacbb6",
+        "primary-fixed-dim": "#15e558",
+        "on-tertiary-container": "#005675",
+        "on-primary": "#00390f",
+        "tertiary-fixed": "#c3e8ff",
+        "surface": "#101417",
+        "surface-dim": "#101417",
+        "on-surface": "#e0e2e6",
+        "error-container": "#93000a",
+        "secondary-fixed-dim": "#ffb787",
+        "surface-container": "#1d2023",
+        "secondary": "#ffb787",
+        "primary-container": "#00e054",
+        "on-primary-fixed-variant": "#00531a",
+        "inverse-on-surface": "#2d3134",
+        "tertiary-fixed-dim": "#7ad0ff",
+        "on-tertiary-fixed-variant": "#004c69",
+        "outline-variant": "#3c4b3a",
+        "surface-bright": "#363a3d",
+        "surface-container-low": "#191c1f",
+        "on-secondary-fixed": "#311300",
+        "on-primary-fixed": "#002106",
+        "on-secondary": "#502400",
+        "on-error": "#690005",
+        "on-tertiary-fixed": "#001e2c",
+        "error": "#ffb4ab",
+        "on-error-container": "#ffdad6",
+        "surface-container-lowest": "#0b0f11",
+        "on-tertiary": "#003549",
+        "surface-variant": "#323538",
+        "tertiary": "#b9e4ff",
+        "background": "#101417",
+        "on-background": "#e0e2e6",
+        "primary-fixed": "#6cff80",
+        "surface-container-highest": "#323538"
+      },
+      borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+      spacing: {
+        "stack-sm": "8px", "stack-lg": "32px", "gutter": "24px",
+        "margin-desktop": "48px", "margin-mobile": "16px", "unit": "4px", "stack-md": "16px"
+      },
+      fontFamily: {
+        "headline-lg": ["Geist"], "headline-lg-mobile": ["Geist"], "label-md": ["Geist"],
+        "headline-md": ["Geist"], "body-md": ["Geist"], "label-sm": ["Geist"],
+        "display-lg": ["Geist"], "body-lg": ["Geist"]
+      },
+      fontSize: {
+        "headline-lg": ["32px", { lineHeight: "1.2", letterSpacing: "-0.03em", fontWeight: "600" }],
+        "headline-lg-mobile": ["24px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "600" }],
+        "label-md": ["12px", { lineHeight: "1", letterSpacing: "0.02em", fontWeight: "500" }],
+        "headline-md": ["20px", { lineHeight: "1.4", letterSpacing: "-0.02em", fontWeight: "600" }],
+        "body-md": ["14px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
+        "label-sm": ["10px", { lineHeight: "1", letterSpacing: "0.05em", fontWeight: "600" }],
+        "display-lg": ["48px", { lineHeight: "1.1", letterSpacing: "-0.04em", fontWeight: "700" }],
+        "body-lg": ["16px", { lineHeight: "1.6", letterSpacing: "-0.01em", fontWeight: "400" }]
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { font-family: 'Geist', sans-serif; min-height: max(884px, 100dvh); }
+
+  .glass-panel {
+    background-color: rgba(19, 23, 42, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(242, 244, 248, 0.1);
+  }
+  .glass-panel:hover { border-color: rgba(242, 244, 248, 0.2); }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Loading */
+  .glow-pulse {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 150vw; height: 150vw;
+    background: radial-gradient(circle, rgba(0,224,84,0.05) 0%, rgba(16,20,23,0) 50%);
+    pointer-events: none; z-index: 0;
+    animation: pulseGlow 4s infinite alternate ease-in-out;
+  }
+  @keyframes pulseGlow {
+    0%   { opacity: 0.5; transform: translate(-50%, -50%) scale(0.9); }
+    100% { opacity: 1;   transform: translate(-50%, -50%) scale(1.1); }
+  }
+  .spinner {
+    width: 64px; height: 64px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: #00E054; border-right-color: #40BCF4;
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .step-item { opacity: 0.3; transform: translateY(10px); transition: all 0.5s ease; }
+  .step-item.active { opacity: 1; transform: translateY(0); color: #e0e2e6; }
+  .step-item.done { opacity: 0.7; transform: translateY(0); }
+
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background-size: 200% 100%;
+    animation: shimmerAnim 2s infinite linear;
+  }
+  @keyframes shimmerAnim {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+  }
+
+  /* Results cards */
+  @keyframes reco-in {
+    from { opacity: 0; transform: translateY(28px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);    }
+  }
+  .reco-card {
+    opacity: 0;
+    animation: reco-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  .reco-carousel { scroll-behavior: smooth; }
+  .reco-carousel.grabbing { cursor: grabbing; }
+  .reco-carousel.grabbing img { pointer-events: none; }
+
+  /* Status dot glow */
+  .dot-green { background: #00e054; box-shadow: 0 0 8px rgba(0,224,84,0.6); }
+  .dot-orange { background: #ff8000; box-shadow: 0 0 8px rgba(255,128,0,0.6); }
+  .dot-blue   { background: #6ccdff; box-shadow: 0 0 8px rgba(108,205,255,0.6); }
+  .dot-off    { background: #3c4b3a; }
+</style>
+</head>
+<body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
+
+<!-- ═══════════════════════════  HEADER  ═══════════════════════════ -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
+  <div class="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto">
+    <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
+      <span class="material-symbols-outlined">movie_filter</span>
+    </button>
+    <div class="font-headline-md text-headline-md tracking-tighter text-primary">LETTERBOXD · AI</div>
+    <button class="text-on-surface-variant hover:opacity-80 transition-opacity active:scale-95" aria-label="Ayarlar">
+      <span class="material-symbols-outlined">settings</span>
+    </button>
+  </div>
+</header>
+
+<!-- ═══════════════════════════  VIEW: IDLE  ═══════════════════════════ -->
+<div id="view-idle" class="flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
+  <!-- Ambient glows -->
+  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] bg-primary-container/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
+  <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-tertiary-container/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
+
+  <div class="relative z-10 w-full max-w-[800px] flex flex-col items-center text-center">
+    <!-- Kicker badge -->
+    <span class="font-label-md text-label-md text-on-surface-variant tracking-[0.1em] uppercase mb-stack-md bg-surface border border-outline-variant/30 px-3 py-1 rounded-full backdrop-blur-md">
+      LETTERBOXD · AI
+    </span>
+
+    <!-- Headline -->
+    <h1 class="font-display-lg text-display-lg text-on-surface mb-stack-md leading-tight">
+      İzleme listende<br/>
+      <span class="text-primary-container drop-shadow-[0_0_12px_rgba(0,224,84,0.3)]">ne izlemelisin?</span>
+    </h1>
+
+    <!-- Description -->
+    <p class="font-body-lg text-body-lg text-on-surface-variant max-w-[500px] mb-stack-lg" style="color:#94a3b8">
+      Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.
+    </p>
+
+    <!-- Search input -->
+    <div class="w-full max-w-[540px] flex flex-col gap-stack-md mb-stack-lg">
+      <div class="relative group w-full flex shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-lg overflow-hidden border border-outline-variant/30 bg-surface focus-within:border-tertiary-container/50 transition-colors duration-300">
+        <span class="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/50 pointer-events-none">
+          <span class="material-symbols-outlined" style="font-size:20px">search</span>
+        </span>
+        <input id="username-input"
+          class="w-full bg-transparent border-none py-4 pl-12 pr-4 text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant/40 focus:ring-0 outline-none"
+          placeholder="letterboxd kullanıcı adı" type="text" autocomplete="off" spellcheck="false"/>
+        <button id="btn-recommend"
+          class="bg-primary-container text-black px-8 font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed">
+          Öner
+          <span class="material-symbols-outlined" style="font-size:18px;font-variation-settings:'FILL' 1">arrow_forward</span>
+        </button>
+      </div>
+
+      <!-- Error message -->
+      <div id="idle-error" class="hidden glass-panel rounded-lg px-4 py-3 flex items-center gap-2 text-error font-body-md text-body-md">
+        <span class="material-symbols-outlined text-[16px]">error</span>
+        <span id="idle-error-text"></span>
+      </div>
+    </div>
+
+    <!-- Status dots -->
+    <div class="flex items-center justify-center gap-gutter font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
+      <div class="flex items-center gap-2">
+        <div id="dot-catalog" class="w-2 h-2 rounded-full dot-off transition-all duration-500"></div>
+        Katalog
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="dot-tmdb" class="w-2 h-2 rounded-full dot-off transition-all duration-500"></div>
+        TMDb
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="dot-llm" class="w-2 h-2 rounded-full dot-off transition-all duration-500"></div>
+        LLM
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════  VIEW: LOADING  ═══════════════════════════ -->
+<div id="view-loading" class="hidden flex-grow flex flex-col items-center justify-center relative overflow-hidden pt-16">
+  <div class="glow-pulse"></div>
+  <main class="relative z-10 flex flex-col items-center max-w-md w-full px-margin-mobile">
+    <!-- Brand -->
+    <div class="mb-stack-lg flex flex-col items-center">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary text-[32px]" style="font-variation-settings:'FILL' 1">movie_filter</span>
+        <h1 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface tracking-tighter">
+          LETTERBOXD <span class="text-primary-container">· AI</span>
+        </h1>
+      </div>
+    </div>
+
+    <!-- Spinner -->
+    <div class="mb-stack-lg relative">
+      <div class="spinner"></div>
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-primary rounded-full shadow-[0_0_12px_#00E054] animate-pulse"></div>
+    </div>
+
+    <!-- Steps -->
+    <div class="w-full bg-surface-container/50 border border-outline-variant/30 rounded-xl p-stack-md backdrop-blur-md">
+      <ul id="loading-steps" class="flex flex-col gap-stack-sm font-body-md text-body-md text-on-surface-variant">
+        <li class="step-item flex items-center gap-3" data-icon="search">
+          <span class="material-symbols-outlined text-[16px]">search</span>
+          <span>Watchlist taranıyor...</span>
+        </li>
+        <li class="step-item flex items-center gap-3" data-icon="database">
+          <span class="material-symbols-outlined text-[16px]">database</span>
+          <span>Filmler zenginleştiriliyor...</span>
+        </li>
+        <li class="step-item flex items-center gap-3" data-icon="psychology">
+          <span class="material-symbols-outlined text-[16px]">psychology</span>
+          <span>Zevk analiz ediliyor...</span>
+        </li>
+        <li class="step-item flex items-center gap-3" data-icon="auto_awesome">
+          <span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+          <span>Öneriler hazırlanıyor...</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="mt-stack-lg text-center font-label-md text-label-md text-on-surface-variant/50 shimmer p-2 rounded">
+      Sinema motoru çalışıyor
+    </div>
+  </main>
+</div>
+
+<!-- ═══════════════════════════  VIEW: RESULTS  ═══════════════════════════ -->
+<div id="view-results" class="hidden flex-grow pt-20">
+  <!-- Results ambient glow -->
+  <div class="fixed inset-0 pointer-events-none z-0" style="background:radial-gradient(circle at 10% 20%,rgba(255,128,0,0.04) 0%,transparent 40%),radial-gradient(circle at 90% 80%,rgba(0,224,84,0.03) 0%,transparent 40%)"></div>
+
+  <div class="relative z-10 max-w-[1200px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
+
+    <!-- Back button -->
+    <div class="flex items-center justify-between mt-stack-md">
+      <button id="btn-new-search" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
+        <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+        Yeni Arama
+      </button>
+      <div id="result-username" class="font-label-md text-label-md text-on-surface-variant/50 uppercase tracking-wider"></div>
+    </div>
+
+    <!-- Taste analysis card -->
+    <section id="taste-card" class="glass-panel rounded-xl p-stack-lg shadow-[0px_8px_32px_rgba(0,0,0,0.4)] relative overflow-hidden">
+      <div class="absolute top-0 right-0 p-stack-md flex gap-stack-sm">
+        <span class="w-2 h-2 rounded-full bg-primary-container"></span>
+        <span class="w-2 h-2 rounded-full bg-secondary-container"></span>
+        <span class="w-2 h-2 rounded-full bg-tertiary-container"></span>
+      </div>
+      <div class="flex flex-col gap-stack-md">
+        <div class="flex items-center gap-stack-sm">
+          <span class="material-symbols-outlined text-primary-container" style="font-variation-settings:'FILL' 1">psychology</span>
+          <h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Zevk Analizi</h2>
+        </div>
+        <p id="taste-summary" class="font-body-lg text-body-lg text-on-surface-variant max-w-3xl leading-relaxed"></p>
+        <div id="taste-meta" class="font-label-md text-label-md text-tertiary-container/70 flex items-center gap-stack-sm mt-stack-sm">
+          <span class="material-symbols-outlined text-[14px]">analytics</span>
+          <span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Recommendations carousel -->
+    <section class="flex flex-col gap-stack-md">
+      <div class="flex items-center justify-between">
+        <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
+          <span class="material-symbols-outlined">auto_awesome</span>
+          Seçilmiş Öneriler
+        </h2>
+        <div class="flex gap-stack-sm">
+          <button id="btn-prev" aria-label="Önceki" class="w-9 h-9 rounded-full glass-panel flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95">
+            <span class="material-symbols-outlined text-[20px]">chevron_left</span>
+          </button>
+          <button id="btn-next" aria-label="Sonraki" class="w-9 h-9 rounded-full glass-panel flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95">
+            <span class="material-symbols-outlined text-[20px]">chevron_right</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="reco-carousel" class="reco-carousel flex gap-gutter overflow-x-auto no-scrollbar pb-stack-sm snap-x snap-mandatory cursor-grab"></div>
+
+      <p class="font-label-sm text-label-sm text-on-surface-variant/50 flex items-center gap-1 md:hidden">
+        <span class="material-symbols-outlined text-[14px]">swipe</span> Kaydırarak keşfet
+      </p>
+    </section>
+
+    <!-- Alternatif Kesişimler -->
+    <section id="alt-section" class="hidden mt-stack-lg flex flex-col gap-stack-md">
+      <h2 class="font-headline-md text-headline-md text-on-surface">Alternatif Kesişimler</h2>
+      <div id="alt-carousel" class="flex gap-gutter overflow-x-auto no-scrollbar pb-stack-sm snap-x snap-mandatory cursor-grab"></div>
+    </section>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════  FOOTER  ═══════════════════════════ -->
+<footer id="main-footer" class="w-full py-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
+  <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto">
+    <div class="font-label-md text-label-md text-on-surface">© 2025 Digital Craftsmanship. Cinema AI Engine.</div>
+    <div class="flex items-center gap-gutter font-label-md text-label-md">
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Privacy</a>
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Terms</a>
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">API Status</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── Helpers ────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+const RANK_COLORS = [
+  'text-primary-container',
+  'text-secondary-container',
+  'text-tertiary-container',
+];
+
+function showView(name) {
+  ['idle', 'loading', 'results'].forEach(v => {
+    $(`view-${v}`).classList.toggle('hidden', v !== name);
+  });
+  $('main-footer').classList.toggle('hidden', name === 'loading');
+}
+
+function setIdleError(msg) {
+  if (msg) {
+    $('idle-error-text').textContent = msg;
+    $('idle-error').classList.remove('hidden');
+    $('idle-error').classList.add('flex');
+  } else {
+    $('idle-error').classList.add('hidden');
+    $('idle-error').classList.remove('flex');
+  }
+}
+
+// ── Health check ───────────────────────────────────────────────────────────
+async function loadHealth() {
+  try {
+    const r = await fetch('/api/health');
+    if (!r.ok) return;
+    const h = await r.json();
+
+    $('dot-catalog').className = `w-2 h-2 rounded-full transition-all duration-500 ${h.catalog_ready ? 'dot-orange' : 'dot-off'}`;
+    $('dot-tmdb').className    = `w-2 h-2 rounded-full transition-all duration-500 ${h.tmdb_enabled  ? 'dot-green'  : 'dot-off'}`;
+    $('dot-llm').className     = `w-2 h-2 rounded-full transition-all duration-500 ${h.llm_enabled   ? 'dot-blue'   : 'dot-off'}`;
+
+    if (!h.catalog_ready) {
+      setIdleError('Katalog henüz kurulmadı. python -m scripts.build_catalog --source sample çalıştırın.');
+    }
+  } catch (_) {}
+}
+
+// ── Loading animation ──────────────────────────────────────────────────────
+let _loadTimer = null;
+let _stepIdx = 0;
+
+function resetSteps() {
+  _stepIdx = 0;
+  document.querySelectorAll('#loading-steps .step-item').forEach(li => {
+    li.className = 'step-item flex items-center gap-3';
+    const icon = li.querySelector('.material-symbols-outlined');
+    icon.textContent = li.dataset.icon;
+    icon.style.color = '';
+  });
+}
+
+function completeStep(idx) {
+  const steps = document.querySelectorAll('#loading-steps .step-item');
+  const li = steps[idx];
+  if (!li) return;
+  li.classList.remove('active');
+  li.classList.add('done');
+  const icon = li.querySelector('.material-symbols-outlined');
+  icon.textContent = 'check_circle';
+  icon.style.color = '#43fe6d';
+}
+
+function activateStep(idx) {
+  const steps = document.querySelectorAll('#loading-steps .step-item');
+  if (steps[idx]) steps[idx].classList.add('active');
+}
+
+function startLoading() {
+  resetSteps();
+  activateStep(0);
+  _stepIdx = 1;
+  _loadTimer = setInterval(() => {
+    completeStep(_stepIdx - 1);
+    if (_stepIdx < 4) {
+      activateStep(_stepIdx);
+      _stepIdx++;
+    } else {
+      clearInterval(_loadTimer);
+    }
+  }, 3000);
+}
+
+function finishLoading(then) {
+  clearInterval(_loadTimer);
+  const steps = document.querySelectorAll('#loading-steps .step-item');
+  let i = _stepIdx - 1;
+  const tick = setInterval(() => {
+    completeStep(i);
+    i++;
+    if (i < steps.length) activateStep(i);
+    else { clearInterval(tick); setTimeout(then, 400); }
+  }, 250);
+}
+
+// ── Card builder ───────────────────────────────────────────────────────────
+function buildCard(film, idx) {
+  const delay = idx * 90;
+  const rc = RANK_COLORS[idx % RANK_COLORS.length];
+
+  const genres = (film.genres || []).map(g =>
+    `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${g}</span>`
+  ).join('');
+
+  const poster = film.poster_url
+    ? `<img alt="${film.title}" draggable="false"
+          class="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.04]"
+          src="${film.poster_url}" loading="lazy"/>`
+    : `<div class="w-full h-full flex items-center justify-center">
+          <span class="material-symbols-outlined text-[48px] text-on-surface-variant/20">movie</span>
+       </div>`;
+
+  const reason = film.reason
+    ? `<div class="border-l-2 border-primary-container pl-stack-md py-unit bg-surface-variant/20 rounded-r-md mt-auto">
+          <p class="font-body-md text-body-md text-on-surface-variant italic">"${film.reason}"</p>
+       </div>`
+    : '';
+
+  return `
+    <article class="reco-card snap-start shrink-0 w-[300px] md:w-[340px] glass-panel rounded-xl overflow-hidden group flex flex-col" style="animation-delay:${delay}ms">
+      <div class="aspect-[16/10] overflow-hidden relative shrink-0 bg-surface-container">
+        ${poster}
+        <div class="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-surface-container-lowest/90 to-transparent pointer-events-none"></div>
+        <div class="absolute top-3 left-3 w-9 h-9 rounded-full bg-surface-container/80 backdrop-blur-sm flex items-center justify-center font-headline-md text-headline-md ${rc} border border-outline-variant/30 text-sm font-bold">${idx + 1}</div>
+      </div>
+      <div class="p-stack-md flex flex-col gap-stack-md flex-grow">
+        <div>
+          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface flex items-baseline gap-2 flex-wrap">
+            ${film.title}
+            <span class="font-body-md text-body-md text-on-surface-variant/60">${film.year || ''}</span>
+          </h3>
+          ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${film.director}</div>` : ''}
+        </div>
+        ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
+        ${reason}
+      </div>
+    </article>`;
+}
+
+// ── Alt card builder (portrait, 2/3 aspect) ────────────────────────────────
+function buildAltCard(film, idx) {
+  const dotColors = ['bg-secondary-container', 'bg-primary-container', 'bg-tertiary-container'];
+  const dot = dotColors[idx % dotColors.length];
+  const poster = film.poster_url
+    ? `<img alt="${film.title}" draggable="false"
+          class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+          src="${film.poster_url}" loading="lazy"/>`
+    : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
+          <span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span>
+       </div>`;
+  return `
+    <div class="w-64 shrink-0 snap-start glass-panel rounded-lg overflow-hidden group hover:border-outline-variant/50 transition-colors">
+      <div class="w-full aspect-[2/3] overflow-hidden relative">
+        ${poster}
+        <div class="absolute top-2 right-2 flex gap-1">
+          <span class="w-2 h-2 rounded-full ${dot}"></span>
+        </div>
+      </div>
+      <div class="p-stack-sm flex flex-col gap-unit">
+        <h4 class="font-label-md text-label-md text-on-surface truncate">${film.title}${film.year ? ` (${film.year})` : ''}</h4>
+        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant">${film.director}</span>` : ''}
+      </div>
+    </div>`;
+}
+
+// ── Render results ─────────────────────────────────────────────────────────
+function renderResults(data) {
+  $('result-username').textContent = '@' + data.username;
+
+  const summary = data.taste_summary || 'Film zevkin analiz edildi.';
+  $('taste-summary').textContent = summary;
+  $('taste-meta').querySelector('span').textContent =
+    `${data.watchlist_count} film tarandı · ${data.matched_on_tmdb} TMDb eşleşmesi · ${data.meta?.llm_used ? 'LLM ile sıralandı' : 'benzerlik ile sıralandı'}`;
+
+  const all = data.recommendations;
+  const main = all.slice(0, 5);
+  const alts = all.slice(5);
+
+  const carousel = $('reco-carousel');
+  carousel.innerHTML = main.map(buildCard).join('');
+
+  const altSection = $('alt-section');
+  if (alts.length > 0) {
+    $('alt-carousel').innerHTML = alts.map(buildAltCard).join('');
+    altSection.classList.remove('hidden');
+  } else {
+    altSection.classList.add('hidden');
+  }
+
+  showView('results');
+  setupCarousel();
+  if (alts.length > 0) setupDragScroll($('alt-carousel'));
+}
+
+// ── Drag-to-scroll carousel ────────────────────────────────────────────────
+function setupDragScroll(slider) {
+  let isDown = false, startX = 0, scrollLeft = 0, moved = false;
+  slider.addEventListener('mousedown', e => {
+    isDown = true; moved = false;
+    slider.classList.add('grabbing');
+    startX = e.pageX - slider.offsetLeft;
+    scrollLeft = slider.scrollLeft;
+  });
+  const release = () => { isDown = false; slider.classList.remove('grabbing'); };
+  slider.addEventListener('mouseleave', release);
+  slider.addEventListener('mouseup', release);
+  slider.addEventListener('mousemove', e => {
+    if (!isDown) return;
+    e.preventDefault();
+    moved = true;
+    slider.scrollLeft = scrollLeft - (e.pageX - slider.offsetLeft - startX) * 1.5;
+  });
+  slider.addEventListener('click', e => { if (moved) { e.preventDefault(); e.stopPropagation(); } }, true);
+}
+
+function setupCarousel() {
+  const slider = $('reco-carousel');
+  setupDragScroll(slider);
+  $('btn-prev').onclick = () => {
+    const card = slider.querySelector('.reco-card');
+    slider.scrollBy({ left: -((card?.offsetWidth || 320) + 24), behavior: 'smooth' });
+  };
+  $('btn-next').onclick = () => {
+    const card = slider.querySelector('.reco-card');
+    slider.scrollBy({ left: (card?.offsetWidth || 320) + 24, behavior: 'smooth' });
+  };
+}
+
+// ── Main recommend flow ────────────────────────────────────────────────────
+async function recommend() {
+  const username = $('username-input').value.trim();
+  if (!username) { $('username-input').focus(); return; }
+
+  setIdleError(null);
+  $('btn-recommend').disabled = true;
+  showView('loading');
+  startLoading();
+
+  try {
+    const r = await fetch('/api/recommend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    const data = await r.json();
+
+    finishLoading(() => {
+      if (!r.ok) {
+        showView('idle');
+        setIdleError(data.detail || `Hata ${r.status}`);
+      } else {
+        renderResults(data);
+      }
+      $('btn-recommend').disabled = false;
+    });
+  } catch (e) {
+    finishLoading(() => {
+      showView('idle');
+      setIdleError('Sunucuya ulaşılamadı. uvicorn çalışıyor mu?');
+      $('btn-recommend').disabled = false;
+    });
+  }
+}
+
+// ── Event listeners ────────────────────────────────────────────────────────
+$('btn-recommend').addEventListener('click', recommend);
+$('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
+
+$('btn-home').addEventListener('click', () => {
+  showView('idle');
+  setIdleError(null);
+});
+$('btn-new-search').addEventListener('click', () => {
+  showView('idle');
+  setIdleError(null);
+});
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+showView('idle');
+loadHealth();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+[build]
+  publish = "static"
+  command = ""
+
+[functions]
+  directory = "netlify/functions"
+
+# Tüm /api/* isteklerini Python Lambda fonksiyonuna yönlendir.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api"
+  status = 200
+
+# SPA fallback: bilinmeyen yolları index.html'e ilet.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
