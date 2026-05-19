@@ -30,10 +30,11 @@ class Settings(BaseSettings):
     num_recommendations: int = 8
 
     # --- Scraper ---
-    scrape_delay: float = 1.0
-    scrape_max_pages: int = 40   # watchlist için safety cap (~1100 film)
-    watched_max_pages: int = 10  # güvenlik sınırı (her sayfa ~72 film)
-    watched_film_limit: int = 300  # hard limit — en son 300 izlenen film
+    scrape_delay: float = 0.5
+    scrape_max_pages: int = 40      # watchlist için safety cap (~1100 film)
+    watched_max_pages: int = 10     # güvenlik sınırı (her sayfa ~72 film)
+    watched_film_limit: int = 100   # hard limit — en son 100 izlenen film
+    watchlist_film_limit: int = 200 # watchlist'ten fazlasını çekme
 
     # --- Storage ---
     data_dir: str = "data"

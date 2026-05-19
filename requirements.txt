@@ -22,9 +22,6 @@ openai>=1.35.0
 # Database
 supabase>=2.4.0
 
-# Netlify / AWS Lambda adapter (production only)
-mangum>=0.17.0
-
 # Optional: semantic embeddings (heavy, ~2 GB with torch).
 # Only needed when EMBEDDING_PROVIDER=sentence-transformers.
 # Install separately:  pip install sentence-transformers

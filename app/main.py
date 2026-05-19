@@ -8,11 +8,13 @@ Akış:
   5. LLM en iyi N filmi seçer ve Türkçe gerekçe yazar
 
 Çalıştırmak için:
-  uvicorn app.main:app --reload --port 8001
+  uvicorn app.main:app --reload --port 8001 --log-level warning
 """
 
 import asyncio
+import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -29,6 +31,7 @@ from .recommender import rank_watchlist
 from .scraper import ScrapeError, scrape_watchlist, scrape_watched
 
 app = FastAPI(title="Letterboxd AI Recommender", version="0.2.0")
+log = logging.getLogger("moviebox")
 
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
@@ -42,11 +45,14 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _make_cache(settings):
+    # TMDb cache her zaman SQLite — Supabase senkron HTTP yaptığı için
+    # her film başına ~80ms ekler (300 film = ~24s kayıp).
+    sqlite_cache = Cache(settings.cache_db_path)
     if settings.has_supabase:
         from supabase import create_client
         client = create_client(settings.supabase_url, settings.supabase_key)
-        return client, SupabaseCache(client)
-    return None, Cache(settings.cache_db_path)
+        return client, sqlite_cache
+    return None, sqlite_cache
 
 
 class RecommendRequest(BaseModel):
@@ -72,40 +78,43 @@ def health() -> dict:
 @app.post("/api/recommend")
 async def recommend(req: RecommendRequest) -> dict:
     """Tam pipeline: watched → watchlist → TMDb → benzerlik → LLM."""
+    t0 = time.perf_counter()
     settings = get_settings()
 
-    # 1. İzlenen filmler (zevk profili) ve watchlist'i sırayla çek.
-    #    Aynı anda iki scraper açmak Letterboxd'u rahatsız edebilir.
+    # 1. Scraping (parallel — farklı endpoint'ler, Letterboxd'u rahatsız etmez)
+    t1 = time.perf_counter()
     try:
-        scraped_watched = await scrape_watched(
-            req.username,
-            delay=settings.scrape_delay,
-            max_pages=settings.watched_max_pages,
-            film_limit=settings.watched_film_limit,
-        )
-        scraped_watchlist = await scrape_watchlist(
-            req.username,
-            delay=settings.scrape_delay,
-            max_pages=settings.scrape_max_pages,
+        scraped_watched, scraped_watchlist = await asyncio.gather(
+            scrape_watched(
+                req.username,
+                delay=settings.scrape_delay,
+                max_pages=settings.watched_max_pages,
+                film_limit=settings.watched_film_limit,
+            ),
+            scrape_watchlist(
+                req.username,
+                delay=settings.scrape_delay,
+                max_pages=settings.scrape_max_pages,
+                film_limit=settings.watchlist_film_limit,
+            ),
         )
     except ScrapeError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    log.warning("⏱ scraping       %.2fs  (watched=%d, watchlist=%d)",
+                time.perf_counter() - t1, len(scraped_watched), len(scraped_watchlist))
 
     if not scraped_watchlist:
-        raise HTTPException(
-            status_code=404,
-            detail="Watchlist boş veya gizli.",
-        )
+        raise HTTPException(status_code=404, detail="Watchlist boş veya gizli.")
 
     # Supabase'e kullanıcıyı kaydet (opsiyonel).
     supabase_client, cache = _make_cache(settings)
     if supabase_client is not None:
         upsert_user(supabase_client, req.username)
 
-    # 2. TMDb ile zenginleştir.
+    # 2. TMDb enrichment (parallel)
+    t2 = time.perf_counter()
     if settings.has_tmdb:
         enricher = Enricher(settings.tmdb_api_key, cache)
-        # İki listeyi eş zamanlı zenginleştir (farklı API, Letterboxd değil).
         watched_films, watchlist_films = await asyncio.gather(
             enricher.enrich(scraped_watched),
             enricher.enrich(scraped_watchlist),
@@ -119,14 +128,23 @@ async def recommend(req: RecommendRequest) -> dict:
             EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
             for f in scraped_watchlist
         ]
+    cache_hits = getattr(enricher, "_cache_hits", "?") if settings.has_tmdb else 0
+    log.warning("⏱ tmdb enrich     %.2fs  (watched=%d, watchlist=%d, sqlite_hits=%s)",
+                time.perf_counter() - t2,
+                len(watched_films), len(watchlist_films), cache_hits)
 
-    # 3. Watchlist'i izleme geçmişine benzerliğe göre sırala.
-    #    Aday havuzu boyutu = num_recommendations × 3 (LLM seçim payı için).
-    candidate_count = settings.num_recommendations * 3
+    # 3. TF-IDF ranking
+    t3 = time.perf_counter()
+    candidate_count = settings.num_recommendations * 2
     candidates = rank_watchlist(watched_films, watchlist_films, n=candidate_count)
+    log.warning("⏱ tfidf rank      %.2fs  (candidates=%d)", time.perf_counter() - t3, len(candidates))
 
-    # 4. LLM en iyi N'i seçer ve gerekçelendirir.
+    # 4. LLM reranking
+    t4 = time.perf_counter()
     result = await rank_candidates(settings, watched_films, candidates)
+    log.warning("⏱ llm rerank      %.2fs  (llm_used=%s)", time.perf_counter() - t4, result.get("llm_used"))
+
+    log.warning("⏱ TOTAL           %.2fs", time.perf_counter() - t0)
 
     return {
         "username": req.username,

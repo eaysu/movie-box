@@ -36,7 +36,7 @@ def _build_prompt(
     candidates: list[EnrichedFilm],
     n: int,
 ) -> str:
-    watched_block = "; ".join(_film_label(f) for f in watched[:120])  # prompt limiti
+    watched_block = "; ".join(_film_label(f) for f in watched[:40])  # prompt limiti
 
     lines = []
     for i, c in enumerate(candidates, start=1):
@@ -58,7 +58,8 @@ def _build_prompt(
         f"Bu kullanıcıya en uygun {n} filmi seç ve sırala. "
         "Her film için, izleme geçmişindeki SOMUT filmlere atıfla "
         "1-2 cümle gerekçe yaz (Türkçe). "
-        "Ayrıca 2-3 cümle genel zevk analizi yaz (Türkçe).\n\n"
+        "Ayrıca 2-3 cümle genel zevk analizi yaz (Türkçe). "
+        "Önemli: film isimleri, yönetmen adları ve diğer özel isimler orijinal dilinde kalmalı, çevrilmemeli.\n\n"
         "SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:\n"
         '{"taste_summary": "...", '
         '"picks": [{"index": <yukarıdaki liste numarası>, "reason": "..."}]}'

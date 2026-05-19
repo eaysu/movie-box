@@ -95,9 +95,10 @@ class Enricher:
         cache_key = slug or f"{title}:{year}"
         cached = self.cache.get("tmdb", cache_key, ttl=SEARCH_TTL)
         if cached:
-            cached.pop("text_blob", None)  # property, not a field
-            cached.pop("similarity", None)  # set at ranking time
+            cached.pop("text_blob", None)
+            cached.pop("similarity", None)
             cached.pop("reason", None)
+            self._cache_hits = getattr(self, "_cache_hits", 0) + 1
             return EnrichedFilm(**cached)
 
         film = EnrichedFilm(title=title, year=year, slug=slug)
@@ -152,10 +153,11 @@ class Enricher:
 
     async def enrich(self, films: list) -> list[EnrichedFilm]:
         """Enrich a list of films (dicts or ScrapedFilm objects)."""
+        self._cache_hits = 0
         async with httpx.AsyncClient(timeout=20.0) as client:
             await self._load_genre_map(client)
 
-            sem = asyncio.Semaphore(8)  # be gentle on the API
+            sem = asyncio.Semaphore(20)
 
             async def worker(f) -> EnrichedFilm:
                 title = f["title"] if isinstance(f, dict) else f.title

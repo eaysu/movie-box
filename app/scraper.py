@@ -201,9 +201,10 @@ async def scrape_watchlist(
     *,
     delay: float = 1.0,
     max_pages: int = 40,
+    film_limit: int | None = None,
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlemek istediği film listesini çeker."""
-    return await _scrape_list(username, "watchlist", delay=delay, max_pages=max_pages)
+    return await _scrape_list(username, "watchlist", delay=delay, max_pages=max_pages, film_limit=film_limit)
 
 
 async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:

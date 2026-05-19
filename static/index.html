@@ -143,9 +143,9 @@ tailwind.config = {
     opacity: 0;
     animation: reco-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
-  .reco-carousel { scroll-behavior: smooth; }
-  .reco-carousel.grabbing { cursor: grabbing; }
-  .reco-carousel.grabbing img { pointer-events: none; }
+  /* Cinema fact card */
+  #cinema-fact { transition: opacity 0.5s ease; }
+  #cinema-fact.fading { opacity: 0; }
 
   /* Status dot glow */
   .dot-green { background: #00e054; box-shadow: 0 0 8px rgba(0,224,84,0.6); }
@@ -163,9 +163,7 @@ tailwind.config = {
       <span class="material-symbols-outlined">movie_filter</span>
     </button>
     <div class="font-headline-md text-headline-md tracking-tighter text-primary">LETTERBOXD · AI</div>
-    <button class="text-on-surface-variant hover:opacity-80 transition-opacity active:scale-95" aria-label="Ayarlar">
-      <span class="material-symbols-outlined">settings</span>
-    </button>
+    <div class="w-6"></div>
   </div>
 </header>
 
@@ -275,8 +273,11 @@ tailwind.config = {
       </ul>
     </div>
 
-    <div class="mt-stack-lg text-center font-label-md text-label-md text-on-surface-variant/50 shimmer p-2 rounded">
-      Sinema motoru çalışıyor
+    <!-- Cinema fact / quote card -->
+    <div id="cinema-fact" class="mt-stack-lg w-full glass-panel rounded-xl px-stack-lg py-stack-md flex flex-col items-center text-center gap-stack-sm min-h-[100px] justify-center">
+      <span id="fact-badge" class="font-label-sm text-label-sm uppercase tracking-widest text-tertiary-container/70"></span>
+      <p id="fact-text" class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed max-w-xs"></p>
+      <span id="fact-author" class="font-label-md text-label-md text-on-surface-variant/40"></span>
     </div>
   </main>
 </div>
@@ -310,41 +311,25 @@ tailwind.config = {
           <h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Zevk Analizi</h2>
         </div>
         <p id="taste-summary" class="font-body-lg text-body-lg text-on-surface-variant max-w-3xl leading-relaxed"></p>
-        <div id="taste-meta" class="font-label-md text-label-md text-tertiary-container/70 flex items-center gap-stack-sm mt-stack-sm">
-          <span class="material-symbols-outlined text-[14px]">analytics</span>
-          <span></span>
-        </div>
       </div>
     </section>
 
-    <!-- Recommendations carousel -->
+    <!-- Hero recommendation -->
     <section class="flex flex-col gap-stack-md">
-      <div class="flex items-center justify-between">
-        <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
-          <span class="material-symbols-outlined">auto_awesome</span>
-          Seçilmiş Öneriler
-        </h2>
-        <div class="flex gap-stack-sm">
-          <button id="btn-prev" aria-label="Önceki" class="w-9 h-9 rounded-full glass-panel flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95">
-            <span class="material-symbols-outlined text-[20px]">chevron_left</span>
-          </button>
-          <button id="btn-next" aria-label="Sonraki" class="w-9 h-9 rounded-full glass-panel flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors active:scale-95">
-            <span class="material-symbols-outlined text-[20px]">chevron_right</span>
-          </button>
-        </div>
-      </div>
-
-      <div id="reco-carousel" class="reco-carousel flex gap-gutter overflow-x-auto no-scrollbar pb-stack-sm snap-x snap-mandatory cursor-grab"></div>
-
-      <p class="font-label-sm text-label-sm text-on-surface-variant/50 flex items-center gap-1 md:hidden">
-        <span class="material-symbols-outlined text-[14px]">swipe</span> Kaydırarak keşfet
-      </p>
+      <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
+        <span class="material-symbols-outlined">auto_awesome</span>
+        En İyi Öneri
+      </h2>
+      <div id="hero-card"></div>
     </section>
 
-    <!-- Alternatif Kesişimler -->
-    <section id="alt-section" class="hidden mt-stack-lg flex flex-col gap-stack-md">
-      <h2 class="font-headline-md text-headline-md text-on-surface">Alternatif Kesişimler</h2>
-      <div id="alt-carousel" class="flex gap-gutter overflow-x-auto no-scrollbar pb-stack-sm snap-x snap-mandatory cursor-grab"></div>
+    <!-- Alternative picks -->
+    <section id="alt-section" class="hidden flex flex-col gap-stack-md">
+      <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
+        <span class="material-symbols-outlined">movie_filter</span>
+        Diğer Seçenekler
+      </h2>
+      <div id="alt-grid" class="grid grid-cols-2 md:grid-cols-4 gap-gutter"></div>
     </section>
 
   </div>
@@ -364,10 +349,102 @@ tailwind.config = {
 
 <script>
 // ── Config ─────────────────────────────────────────────────────────────────
-// Netlify'da backend Railway/Render'da ise bu değişkeni doldur:
-// const API_BASE = 'https://movie-box-api.railway.app';
-// Aynı origin'de çalışıyorsa boş bırak (lokalde ve tam Netlify deploy'da çalışır).
 const API_BASE = window.__API_BASE__ || '';
+
+// ── Cinema facts & quotes ──────────────────────────────────────────────────
+const CINEMA_ITEMS = [
+  // Yönetmen sözleri
+  { type: 'quote', text: 'Bir hikayenin başı, ortası ve sonu olmalıdır — ama bu sırayla olmak zorunda değil.', author: 'Jean-Luc Godard' },
+  { type: 'quote', text: 'Şimdiye kadar çekilmiş her filmden çalarım.', author: 'Quentin Tarantino' },
+  { type: 'quote', text: 'Sinema, kadraja neyin girip neyin dışarıda kaldığıdır.', author: 'Martin Scorsese' },
+  { type: 'quote', text: 'Film bir rüya şeridedir.', author: 'Orson Welles' },
+  { type: 'quote', text: 'Her sinemaya gittiğimde sihir yaşanır — film ne hakkında olursa olsun.', author: 'Steven Spielberg' },
+  { type: 'quote', text: 'Yazılabilecek ya da düşünülebilecek her şey filme alınabilir.', author: 'Stanley Kubrick' },
+  { type: 'quote', text: 'Film yapmak madene inmek gibidir. Bir kez girdin mi, çıkamazsın.', author: 'Federico Fellini' },
+  { type: 'quote', text: 'Umudu olmayanlar için güzel filmler yapmak istiyorum.', author: 'Werner Herzog' },
+  { type: 'quote', text: 'Filmcilikte kural yoktur. Yalnızca günahlar vardır.', author: 'Frank Capra' },
+  { type: 'quote', text: 'Film bir yanılsamadır. Şöhret geçicidir. İnanç yok edilemez.', author: 'Ingmar Bergman' },
+  { type: 'quote', text: 'Sinema, dünyanın en güzel sahtekârlığıdır.', author: 'Jean-Luc Godard' },
+  { type: 'quote', text: 'İyi bir film sizi durdurup düşündürür. Harika bir film sizi değiştirir.', author: 'Roger Ebert' },
+  { type: 'quote', text: 'Zaman, sinemanın hammaddesidir.', author: 'Andrei Tarkovsky' },
+  { type: 'quote', text: 'Sessiz filmler hiçbir zaman gerçekten ölmedi — sadece konuşmayı öğrendi.', author: 'Alfred Hitchcock' },
+  { type: 'quote', text: 'Sinema gerçeği saniyede yirmi dört kare hızında yansıtır.', author: 'Jean-Luc Godard' },
+  { type: 'quote', text: 'Hayat bir filmdir; ölüm ise yönetmendir.', author: 'Luis Buñuel' },
+  { type: 'quote', text: 'İzleyici sinema salonuna girdiğinde gerçeklikten kaçmak için gelir. Biz ona başka bir gerçeklik sunarız.', author: 'Pedro Almodóvar' },
+  { type: 'quote', text: 'Benim için sinemada en önemli şey sessizliktir.', author: 'David Lynch' },
+  { type: 'quote', text: 'Bir sahneyi çekebilmek için önce onu hissedebilmem gerekir.', author: 'Wong Kar-wai' },
+  { type: 'quote', text: 'Korku en iyi motivasyondur. Ben sürekli korku içinde çalışırım.', author: 'James Cameron' },
+  { type: 'quote', text: 'Kurgu olmadan sinema sadece fotoğraftır.', author: 'Sergei Eisenstein' },
+  { type: 'quote', text: 'En iyi kamera açısı, izleyicinin fark etmediği açıdır.', author: 'Akira Kurosawa' },
+  { type: 'quote', text: 'Bir film, izledikten sonra sizi değiştirmiyorsa neden var olsun?', author: 'Abbas Kiarostami' },
+  { type: 'quote', text: 'Aktörler karakterleri oynamaz; karakterler aktörlerin içinden konuşur.', author: 'Stanislavski' },
+  { type: 'quote', text: 'Renk, sinemada müzik gibidir — bilinçaltına ulaşır.', author: 'Vittorio Storaro' },
+  // Sinema bilgileri
+  { type: 'fact', text: '1951\'de kaydedilen "Wilhelm Çığlığı" adlı ses efekti, 400\'den fazla film ve dizide kullanıldı.' },
+  { type: 'fact', text: '2001: A Space Odyssey, gerçek Ay yürüyüşünden tam 15 ay önce vizyona girdi.' },
+  { type: 'fact', text: 'Psycho\'nun duş sahnesinde kan olarak çikolatalı şurup kullanıldı — siyah beyaz görüntüde çok daha iyi duruyordu.' },
+  { type: 'fact', text: 'Inception\'ın sonunda topaç hiçbir zaman durmadan önce kesilir. Nolan belirsizliği kasıtlı bıraktı.' },
+  { type: 'fact', text: 'Parasite (2019), Oscar tarihinde En İyi Film ödülünü kazanan ilk İngilizce olmayan film oldu.' },
+  { type: 'fact', text: 'The Lord of the Rings üçlemesi için 48.000\'den fazla parça özel zırh üretildi.' },
+  { type: 'fact', text: 'Jaws (1975) "yaz gişe bombası" kavramını icat etti — stüdyolar daha önce bu şekilde sezon odaklı dağıtım yapmamıştı.' },
+  { type: 'fact', text: '"Jedi" kelimesi, Japonca\'da samuray dönemi dramalarını ifade eden "Jidaigeki"den geliyor.' },
+  { type: 'fact', text: 'Mad Max: Fury Road\'un tüm senaryosu 3,5 sayfaya sığıyor. Filmin yaklaşık %90\'ı aksiyon.' },
+  { type: 'fact', text: 'Akira Kurosawa\'nın renk körü olduğu söylenir — oysa renk filmleri cesur ve titiz paletleriyle övülür.' },
+  { type: 'fact', text: 'Metropolis (1927), döneminin herhangi bir Alman filminden iki kat pahalıya mal oldu ve stüdyoyu neredeyse iflas ettirdi.' },
+  { type: 'fact', text: 'Heath Ledger, The Dark Knight\'taki Joker makyajını kendisi tasarlayıp kendisi uyguladı.' },
+  { type: 'fact', text: 'Stanley Kubrick, Dr. Strangelove\'ın finalinde büyük bir pasta dövüşü sahnesi çekti; ama filmi fazla ciddiye alarak sahneden vazgeçti.' },
+  { type: 'fact', text: 'Schindler\'s List çekimleri sırasında Spielberg\'in moralini tazelemek için arkadaşı Robin Williams her gün arayıp onu güldürürdü.' },
+  { type: 'fact', text: 'Casablanca\'nın sonu çekim sırasında henüz yazılmamıştı — oyuncular hangi karakterin gideceğini bilmiyordu.' },
+  { type: 'fact', text: 'Jurassic Park\'taki dinozor kükremeleri fil, kaplan ve yavaşlatılmış bebek seslerinin karışımından oluşuyor.' },
+  { type: 'fact', text: 'Buster Keaton tüm tehlikeli sahneleri kaskadör kullanmadan kendisi yapardı ve hayatını defalarca riske attı.' },
+  { type: 'fact', text: 'Her yıl dünyada yaklaşık 11.000 uzun metrajlı film üretiliyor; Bollywood tek başına Hollywood\'dan daha fazlasını çekiyor.' },
+  { type: 'fact', text: 'Sinema tarihinin ilk "jump cut"ını Georges Méliès kaza sonucu keşfetti: kamera durdu, hayat devam etti.' },
+  { type: 'fact', text: 'No Country for Old Men\'de arka planda hiç film müziği yok — Coen kardeşler gerilimi yalnızca sessizlik ve ses efektleriyle inşa etti.' },
+  { type: 'fact', text: 'The Shining, Steadicam teknolojisinin sinemadaki ilk büyük kullanımlarından biridir.' },
+  { type: 'fact', text: 'Türk sinemasının ilk filmi, 1914\'te çekilen Ayastefanos\'taki Rus Abidesinin Yıkılışı\'dır.' },
+  { type: 'fact', text: 'Gone with the Wind (1939), enflasyona göre ayarlandığında tüm zamanların en yüksek hasılatlı filmi olmaya devam ediyor.' },
+  { type: 'fact', text: 'The Dark Knight\'taki Joker\'in "kalem numarası" sahnesi senaryoda yoktu — Heath Ledger o an doğaçlama yaptı.' },
+  { type: 'fact', text: 'Pixar\'ın ilk tam uzun metrajlı animasyonu Toy Story (1995), tamamıyla bilgisayarla üretilen ilk feature film olma özelliğini taşıyor.' },
+  { type: 'fact', text: 'Alfred Hitchcock, Psycho\'da kendi filminin fragmanını bizzat anlatarak tanıttı — bu tanıtım biçimi döneminde benzersizdi.' },
+];
+
+let _factTimer = null;
+let _factPool = [];
+
+function _nextFact() {
+  if (!_factPool.length) {
+    _factPool = [...CINEMA_ITEMS].sort(() => Math.random() - 0.5);
+  }
+  return _factPool.pop();
+}
+
+function _showFact(item) {
+  const badge  = $('fact-badge');
+  const text   = $('fact-text');
+  const author = $('fact-author');
+  badge.textContent  = item.type === 'quote' ? '❝ Söz' : '🎬 Bilgi';
+  text.textContent   = item.text;
+  author.textContent = item.author ? `— ${item.author}` : '';
+}
+
+function startFactRotation() {
+  const card = $('cinema-fact');
+  _factPool = [];
+  _showFact(_nextFact());
+  card.classList.remove('fading');
+  _factTimer = setInterval(() => {
+    card.classList.add('fading');
+    setTimeout(() => {
+      _showFact(_nextFact());
+      card.classList.remove('fading');
+    }, 500);
+  }, 5500);
+}
+
+function stopFactRotation() {
+  clearInterval(_factTimer);
+  _factTimer = null;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -441,6 +518,7 @@ function activateStep(idx) {
 
 function startLoading() {
   resetSteps();
+  startFactRotation();
   activateStep(0);
   _stepIdx = 1;
   _loadTimer = setInterval(() => {
@@ -456,6 +534,7 @@ function startLoading() {
 
 function finishLoading(then) {
   clearInterval(_loadTimer);
+  stopFactRotation();
   const steps = document.querySelectorAll('#loading-steps .step-item');
   let i = _stepIdx - 1;
   const tick = setInterval(() => {
@@ -466,41 +545,38 @@ function finishLoading(then) {
   }, 250);
 }
 
-// ── Card builder ───────────────────────────────────────────────────────────
-function buildCard(film, idx) {
-  const delay = idx * 90;
-  const rc = RANK_COLORS[idx % RANK_COLORS.length];
-
-  const genres = (film.genres || []).map(g =>
+// ── Hero card builder ──────────────────────────────────────────────────────
+function buildHeroCard(film) {
+  const genres = (film.genres || []).slice(0, 4).map(g =>
     `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${g}</span>`
   ).join('');
 
   const poster = film.poster_url
     ? `<img alt="${film.title}" draggable="false"
-          class="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.04]"
+          class="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
           src="${film.poster_url}" loading="lazy"/>`
-    : `<div class="w-full h-full flex items-center justify-center">
-          <span class="material-symbols-outlined text-[48px] text-on-surface-variant/20">movie</span>
+    : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
+          <span class="material-symbols-outlined text-[64px] text-on-surface-variant/20">movie</span>
        </div>`;
 
   const reason = film.reason
-    ? `<div class="border-l-2 border-primary-container pl-stack-md py-unit bg-surface-variant/20 rounded-r-md mt-auto">
-          <p class="font-body-md text-body-md text-on-surface-variant italic">"${film.reason}"</p>
+    ? `<div class="border-l-2 border-primary-container pl-stack-md py-unit bg-surface-variant/20 rounded-r-md">
+          <p class="font-body-lg text-body-lg text-on-surface-variant italic">"${film.reason}"</p>
        </div>`
     : '';
 
   return `
-    <article class="reco-card snap-start shrink-0 w-[300px] md:w-[340px] glass-panel rounded-xl overflow-hidden group flex flex-col" style="animation-delay:${delay}ms">
-      <div class="aspect-[16/10] overflow-hidden relative shrink-0 bg-surface-container">
+    <article class="glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
+      <div class="md:w-[260px] shrink-0 aspect-[2/3] md:aspect-auto md:h-auto overflow-hidden relative bg-surface-container">
         ${poster}
-        <div class="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-surface-container-lowest/90 to-transparent pointer-events-none"></div>
-        <div class="absolute top-3 left-3 w-9 h-9 rounded-full bg-surface-container/80 backdrop-blur-sm flex items-center justify-center font-headline-md text-headline-md ${rc} border border-outline-variant/30 text-sm font-bold">${idx + 1}</div>
+        <div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/60 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-surface-container-lowest/30 pointer-events-none"></div>
+        <div class="absolute top-3 left-3 px-3 py-1 rounded-full bg-primary-container/90 backdrop-blur-sm font-label-md text-label-md text-on-primary-container font-bold">#1</div>
       </div>
-      <div class="p-stack-md flex flex-col gap-stack-md flex-grow">
+      <div class="p-stack-lg flex flex-col gap-stack-md flex-grow justify-center">
         <div>
-          <h3 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface flex items-baseline gap-2 flex-wrap">
+          <h3 class="font-headline-lg text-headline-lg text-on-surface leading-tight">
             ${film.title}
-            <span class="font-body-md text-body-md text-on-surface-variant/60">${film.year || ''}</span>
+            ${film.year ? `<span class="font-body-lg text-body-lg text-on-surface-variant/60 ml-2">${film.year}</span>` : ''}
           </h3>
           ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${film.director}</div>` : ''}
         </div>
@@ -510,93 +586,56 @@ function buildCard(film, idx) {
     </article>`;
 }
 
-// ── Alt card builder (portrait, 2/3 aspect) ────────────────────────────────
+// ── Alt card builder (portrait grid) ──────────────────────────────────────
 function buildAltCard(film, idx) {
-  const dotColors = ['bg-secondary-container', 'bg-primary-container', 'bg-tertiary-container'];
-  const dot = dotColors[idx % dotColors.length];
+  const accentColors = ['text-primary-container', 'text-secondary-container', 'text-tertiary-container', 'text-primary-container'];
+  const ac = accentColors[idx % accentColors.length];
   const poster = film.poster_url
     ? `<img alt="${film.title}" draggable="false"
-          class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
+          class="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
           src="${film.poster_url}" loading="lazy"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span>
        </div>`;
+  const shortReason = film.reason
+    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 line-clamp-2 italic">${film.reason}</p>`
+    : '';
   return `
-    <div class="w-64 shrink-0 snap-start glass-panel rounded-lg overflow-hidden group hover:border-outline-variant/50 transition-colors">
-      <div class="w-full aspect-[2/3] overflow-hidden relative">
+    <article class="glass-panel rounded-xl overflow-hidden group flex flex-col">
+      <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${poster}
-        <div class="absolute top-2 right-2 flex gap-1">
-          <span class="w-2 h-2 rounded-full ${dot}"></span>
-        </div>
+        <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-surface-container-lowest/80 to-transparent pointer-events-none"></div>
+        <div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container/80 backdrop-blur-sm flex items-center justify-center font-bold text-xs ${ac}">#${idx + 2}</div>
       </div>
-      <div class="p-stack-sm flex flex-col gap-unit">
-        <h4 class="font-label-md text-label-md text-on-surface truncate">${film.title}${film.year ? ` (${film.year})` : ''}</h4>
-        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant">${film.director}</span>` : ''}
+      <div class="p-stack-sm flex flex-col gap-unit flex-grow">
+        <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${film.title}${film.year ? ` <span class="text-on-surface-variant/60">(${film.year})</span>` : ''}</h4>
+        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${film.director}</span>` : ''}
+        ${shortReason}
       </div>
-    </div>`;
+    </article>`;
 }
 
 // ── Render results ─────────────────────────────────────────────────────────
 function renderResults(data) {
   $('result-username').textContent = '@' + data.username;
 
-  const summary = data.taste_summary || 'Film zevkin analiz edildi.';
-  $('taste-summary').textContent = summary;
-  $('taste-meta').querySelector('span').textContent =
-    `${data.watched_count} film izlendi · ${data.watchlist_count} watchlist filmi · ${data.matched_on_tmdb} TMDb eşleşmesi · ${data.meta?.llm_used ? 'LLM ile sıralandı' : 'benzerlik ile sıralandı'}`;
+  $('taste-summary').textContent = data.taste_summary || 'Film zevkin analiz edildi.';
 
   const all = data.recommendations;
-  const main = all.slice(0, 5);
-  const alts = all.slice(5);
+  const hero = all[0];
+  const alts = all.slice(1, 5);
 
-  const carousel = $('reco-carousel');
-  carousel.innerHTML = main.map(buildCard).join('');
+  $('hero-card').innerHTML = hero ? buildHeroCard(hero) : '';
 
   const altSection = $('alt-section');
   if (alts.length > 0) {
-    $('alt-carousel').innerHTML = alts.map(buildAltCard).join('');
+    $('alt-grid').innerHTML = alts.map(buildAltCard).join('');
     altSection.classList.remove('hidden');
   } else {
     altSection.classList.add('hidden');
   }
 
   showView('results');
-  setupCarousel();
-  if (alts.length > 0) setupDragScroll($('alt-carousel'));
-}
-
-// ── Drag-to-scroll carousel ────────────────────────────────────────────────
-function setupDragScroll(slider) {
-  let isDown = false, startX = 0, scrollLeft = 0, moved = false;
-  slider.addEventListener('mousedown', e => {
-    isDown = true; moved = false;
-    slider.classList.add('grabbing');
-    startX = e.pageX - slider.offsetLeft;
-    scrollLeft = slider.scrollLeft;
-  });
-  const release = () => { isDown = false; slider.classList.remove('grabbing'); };
-  slider.addEventListener('mouseleave', release);
-  slider.addEventListener('mouseup', release);
-  slider.addEventListener('mousemove', e => {
-    if (!isDown) return;
-    e.preventDefault();
-    moved = true;
-    slider.scrollLeft = scrollLeft - (e.pageX - slider.offsetLeft - startX) * 1.5;
-  });
-  slider.addEventListener('click', e => { if (moved) { e.preventDefault(); e.stopPropagation(); } }, true);
-}
-
-function setupCarousel() {
-  const slider = $('reco-carousel');
-  setupDragScroll(slider);
-  $('btn-prev').onclick = () => {
-    const card = slider.querySelector('.reco-card');
-    slider.scrollBy({ left: -((card?.offsetWidth || 320) + 24), behavior: 'smooth' });
-  };
-  $('btn-next').onclick = () => {
-    const card = slider.querySelector('.reco-card');
-    slider.scrollBy({ left: (card?.offsetWidth || 320) + 24, behavior: 'smooth' });
-  };
 }
 
 // ── Main recommend flow ────────────────────────────────────────────────────
