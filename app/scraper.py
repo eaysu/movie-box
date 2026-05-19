@@ -5,12 +5,15 @@ The CSS selectors are best-effort; Letterboxd can change its markup at any time.
 """
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, asdict
 from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
+
+log = logging.getLogger("moviebox")
 
 BASE_URL = "https://letterboxd.com"
 
@@ -178,6 +181,14 @@ async def _scrape_list(
 
             page_films = _parse_page(resp.text)
             if not page_films:
+                if page == 1:
+                    # 200 ama film yok → büyük ihtimalle bot/captcha sayfası
+                    preview = resp.text[:300].replace("\n", " ")
+                    log.warning("scraper: page 1 empty (status=%s). HTML preview: %s", resp.status_code, preview)
+                    raise ScrapeError(
+                        "Letterboxd film listesi okunamadı — sunucu IP'si engellenmiş olabilir. "
+                        "Birkaç dakika sonra tekrar dene."
+                    )
                 break
 
             for film in page_films:
