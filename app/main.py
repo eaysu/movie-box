@@ -73,7 +73,7 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health() -> dict:
     settings = get_settings()
     return {
