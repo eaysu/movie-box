@@ -251,16 +251,24 @@ tailwind.config = {
       <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-primary rounded-full shadow-[0_0_12px_#00E054] animate-pulse"></div>
     </div>
 
+    <!-- Queue info -->
+    <div id="queue-info" class="hidden w-full glass-panel rounded-xl px-stack-lg py-stack-md flex items-center justify-center gap-stack-sm text-center">
+      <span class="material-symbols-outlined text-secondary-container text-[18px]">hourglass_top</span>
+      <p class="font-body-md text-body-md text-on-surface-variant">
+        Sıraya alındınız — önünüzde <span id="queue-ahead" class="text-secondary-container font-bold"></span> kişi var
+      </p>
+    </div>
+
     <!-- Steps -->
     <div class="w-full bg-surface-container/50 border border-outline-variant/30 rounded-xl p-stack-md backdrop-blur-md">
       <ul id="loading-steps" class="flex flex-col gap-stack-sm font-body-md text-body-md text-on-surface-variant">
-        <li class="step-item flex items-center gap-3" data-icon="movie">
-          <span class="material-symbols-outlined text-[16px]">movie</span>
-          <span>İzlenen filmler taranıyor...</span>
+        <li class="step-item flex items-center gap-3" data-icon="travel_explore">
+          <span class="material-symbols-outlined text-[16px]">travel_explore</span>
+          <span>Profil ve watchlist taranıyor...</span>
         </li>
-        <li class="step-item flex items-center gap-3" data-icon="bookmark">
-          <span class="material-symbols-outlined text-[16px]">bookmark</span>
-          <span>Watchlist taranıyor...</span>
+        <li class="step-item flex items-center gap-3" data-icon="database">
+          <span class="material-symbols-outlined text-[16px]">database</span>
+          <span>Film bilgileri zenginleştiriliyor...</span>
         </li>
         <li class="step-item flex items-center gap-3" data-icon="psychology">
           <span class="material-symbols-outlined text-[16px]">psychology</span>
@@ -486,12 +494,12 @@ async function loadHealth() {
   } catch (_) {}
 }
 
-// ── Loading animation ──────────────────────────────────────────────────────
-let _loadTimer = null;
-let _stepIdx = 0;
+// ── Loading steps ──────────────────────────────────────────────────────────
+const STEP_MAP = { scraping: 0, enriching: 1, ranking: 2, llm: 3 };
+let _currentStep = -1;
 
 function resetSteps() {
-  _stepIdx = 0;
+  _currentStep = -1;
   document.querySelectorAll('#loading-steps .step-item').forEach(li => {
     li.className = 'step-item flex items-center gap-3';
     const icon = li.querySelector('.material-symbols-outlined');
@@ -501,8 +509,7 @@ function resetSteps() {
 }
 
 function completeStep(idx) {
-  const steps = document.querySelectorAll('#loading-steps .step-item');
-  const li = steps[idx];
+  const li = document.querySelectorAll('#loading-steps .step-item')[idx];
   if (!li) return;
   li.classList.remove('active');
   li.classList.add('done');
@@ -512,37 +519,31 @@ function completeStep(idx) {
 }
 
 function activateStep(idx) {
-  const steps = document.querySelectorAll('#loading-steps .step-item');
-  if (steps[idx]) steps[idx].classList.add('active');
+  const li = document.querySelectorAll('#loading-steps .step-item')[idx];
+  if (li) li.classList.add('active');
 }
 
-function startLoading() {
-  resetSteps();
-  startFactRotation();
-  activateStep(0);
-  _stepIdx = 1;
-  _loadTimer = setInterval(() => {
-    completeStep(_stepIdx - 1);
-    if (_stepIdx < 4) {
-      activateStep(_stepIdx);
-      _stepIdx++;
-    } else {
-      clearInterval(_loadTimer);
-    }
-  }, 3000);
+function onStep(stepName) {
+  const idx = STEP_MAP[stepName] ?? 0;
+  if (_currentStep >= 0) completeStep(_currentStep);
+  activateStep(idx);
+  _currentStep = idx;
 }
 
-function finishLoading(then) {
-  clearInterval(_loadTimer);
-  stopFactRotation();
-  const steps = document.querySelectorAll('#loading-steps .step-item');
-  let i = _stepIdx - 1;
-  const tick = setInterval(() => {
-    completeStep(i);
-    i++;
-    if (i < steps.length) activateStep(i);
-    else { clearInterval(tick); setTimeout(then, 400); }
-  }, 250);
+function finishSteps() {
+  if (_currentStep >= 0) completeStep(_currentStep);
+}
+
+// ── Queue UI ───────────────────────────────────────────────────────────────
+function showQueueInfo(ahead) {
+  $('queue-ahead').textContent = ahead;
+  $('queue-info').classList.remove('hidden');
+  $('queue-info').classList.add('flex');
+}
+
+function hideQueueInfo() {
+  $('queue-info').classList.add('hidden');
+  $('queue-info').classList.remove('flex');
 }
 
 // ── Hero card builder ──────────────────────────────────────────────────────
@@ -638,7 +639,7 @@ function renderResults(data) {
   showView('results');
 }
 
-// ── Main recommend flow ────────────────────────────────────────────────────
+// ── Main recommend flow (SSE) ──────────────────────────────────────────────
 async function recommend() {
   const username = $('username-input').value.trim();
   if (!username) { $('username-input').focus(); return; }
@@ -646,31 +647,61 @@ async function recommend() {
   setIdleError(null);
   $('btn-recommend').disabled = true;
   showView('loading');
-  startLoading();
+  resetSteps();
+  hideQueueInfo();
+  startFactRotation();
+
+  const done = (errMsg) => {
+    stopFactRotation();
+    finishSteps();
+    if (errMsg) {
+      showView('idle');
+      setIdleError(errMsg);
+    }
+    $('btn-recommend').disabled = false;
+  };
 
   try {
-    const r = await fetch(`${API_BASE}/api/recommend`, {
+    const resp = await fetch(`${API_BASE}/api/recommend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username }),
     });
-    const data = await r.json();
 
-    finishLoading(() => {
-      if (!r.ok) {
-        showView('idle');
-        setIdleError(data.detail || `Hata ${r.status}`);
-      } else {
-        renderResults(data);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) break;
+
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (event.type === 'queued') {
+          showQueueInfo(event.ahead);
+        } else if (event.type === 'step') {
+          hideQueueInfo();
+          onStep(event.step);
+        } else if (event.type === 'result') {
+          finishSteps();
+          stopFactRotation();
+          renderResults(event);
+          $('btn-recommend').disabled = false;
+        } else if (event.type === 'error') {
+          done(event.detail);
+        }
       }
-      $('btn-recommend').disabled = false;
-    });
+    }
   } catch (e) {
-    finishLoading(() => {
-      showView('idle');
-      setIdleError('Sunucuya ulaşılamadı. uvicorn çalışıyor mu?');
-      $('btn-recommend').disabled = false;
-    });
+    done('Sunucuya ulaşılamadı.');
   }
 }
 
