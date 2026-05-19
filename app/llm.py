@@ -1,77 +1,75 @@
-"""Layer 5 — LLM curation of the candidate pool.
+"""Layer 4 — LLM ile watchlist sıralaması.
 
-The similarity step produces ~25 mathematically-close films. GPT-5-mini then
-picks the best handful, ranks them by how well they fit *this* user, and
-writes a short reason grounded in specific watchlist films.
+Benzerlik katmanı en iyi N watchlist filmini seçti.
+GPT bu filmleri kullanıcının izleme geçmişine göre yeniden sıralar,
+her biri için kişiselleştirilmiş gerekçe ve genel zevk analizi üretir.
 
-If no OpenAI API key is configured, this layer falls back to plain
-similarity ordering so the pipeline still returns something useful.
+OpenAI key yoksa benzerlik sıralaması fallback olarak döner.
 """
 
 import json
 
 from .config import Settings
+from .enrich import EnrichedFilm
 
 
-def _watchlist_titles(watchlist: list) -> list[str]:
-    out = []
-    for f in watchlist:
-        title = f.title if hasattr(f, "title") else f.get("title", "")
-        year = f.year if hasattr(f, "year") else f.get("year")
-        director = f.director if hasattr(f, "director") else f.get("director", "")
-        label = title
-        if year:
-            label += f" ({year})"
-        if director:
-            label += f", dir. {director}"
-        out.append(label)
-    return out
+def _film_label(f: EnrichedFilm) -> str:
+    label = f.title
+    if f.year:
+        label += f" ({f.year})"
+    if f.director:
+        label += f", yön. {f.director}"
+    return label
 
 
-def _build_prompt(watchlist: list, candidates: list[dict], n: int) -> str:
-    wl = "; ".join(_watchlist_titles(watchlist))
+def _build_prompt(
+    watched: list[EnrichedFilm],
+    candidates: list[EnrichedFilm],
+    n: int,
+) -> str:
+    watched_block = "; ".join(_film_label(f) for f in watched[:120])  # prompt limiti
+
     lines = []
     for i, c in enumerate(candidates, start=1):
-        overview = (c.get("overview", "") or "")[:240]
-        genres = ", ".join(c.get("genres", []) or [])
+        overview = (c.overview or "")[:240]
+        genres = ", ".join(c.genres or [])
         lines.append(
-            f"[{i}] {c.get('title','')} ({c.get('year','')}) "
-            f"— dir. {c.get('director','') or 'unknown'} "
-            f"— genres: {genres or 'n/a'}\n    {overview}"
+            f"[{i}] {c.title} ({c.year or '?'}) "
+            f"— yön. {c.director or 'bilinmiyor'} "
+            f"— türler: {genres or 'n/a'}\n    {overview}"
         )
     candidate_block = "\n".join(lines)
 
     return (
-        "You are a thoughtful film recommendation expert.\n\n"
-        f"A user's Letterboxd watchlist contains these films:\n{wl}\n\n"
-        "Here is a pool of candidate films (pre-filtered for similarity). "
-        f"None of them are on the watchlist:\n{candidate_block}\n\n"
-        f"Pick the {n} best candidates for this user. For each pick, write a "
-        "one-or-two sentence reason that refers to SPECIFIC films on their "
-        "watchlist. Also write a 2-3 sentence overall taste analysis.\n\n"
-        "Respond with ONLY a JSON object, no prose, no markdown fences:\n"
+        "Sen deneyimli bir film öneri uzmanısın.\n\n"
+        f"Kullanıcının daha önce izlediği filmler (zevk profili):\n{watched_block}\n\n"
+        "Aşağıdaki filmler kullanıcının watchlist'inden seçilmiş adaylardır "
+        "(izleme geçmişine benzerliğe göre ön filtrelendi):\n"
+        f"{candidate_block}\n\n"
+        f"Bu kullanıcıya en uygun {n} filmi seç ve sırala. "
+        "Her film için, izleme geçmişindeki SOMUT filmlere atıfla "
+        "1-2 cümle gerekçe yaz (Türkçe). "
+        "Ayrıca 2-3 cümle genel zevk analizi yaz (Türkçe).\n\n"
+        "SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:\n"
         '{"taste_summary": "...", '
-        '"picks": [{"index": <number from the list above>, "reason": "..."}]}'
+        '"picks": [{"index": <yukarıdaki liste numarası>, "reason": "..."}]}'
     )
 
 
-def _fallback(candidates: list[dict], n: int) -> dict:
-    """Plain similarity ordering when the LLM is unavailable."""
+def _fallback(candidates: list[EnrichedFilm], n: int) -> dict:
+    """LLM yokken benzerlik sıralamasını döndür."""
     picks = []
     for c in candidates[:n]:
-        picks.append(
-            {
-                **c,
-                "reason": (
-                    "Closely matches the overall profile of your watchlist "
-                    f"(similarity score {c.get('similarity', 0)})."
-                ),
-            }
-        )
+        picks.append({
+            **c.to_dict(),
+            "reason": c.reason or (
+                f"İzleme geçmişinle benzerlik skoru: {c.similarity:.3f}"
+            ),
+        })
     return {
         "taste_summary": (
-            "LLM ranking is disabled (no OPENAI_API_KEY). These are the "
-            "films nearest your watchlist by embedding similarity."
+            "LLM sıralaması devre dışı (OPENAI_API_KEY yok). "
+            "Sonuçlar watchlist'inizden benzerlik skoruna göre sıralandı."
         ),
         "recommendations": picks,
         "llm_used": False,
@@ -79,9 +77,11 @@ def _fallback(candidates: list[dict], n: int) -> dict:
 
 
 async def rank_candidates(
-    settings: Settings, watchlist: list, candidates: list[dict]
+    settings: Settings,
+    watched: list[EnrichedFilm],
+    candidates: list[EnrichedFilm],
 ) -> dict:
-    """Curate the candidate pool into a ranked, explained recommendation set."""
+    """Aday watchlist filmlerini LLM ile sırala ve gerekçelendir."""
     n = settings.num_recommendations
     if not candidates:
         return {"taste_summary": "", "recommendations": [], "llm_used": False}
@@ -96,29 +96,29 @@ async def rank_candidates(
         response = await client.chat.completions.create(
             model=settings.openai_model,
             max_tokens=1500,
-            messages=[{"role": "user", "content": _build_prompt(watchlist, candidates, n)}],
+            messages=[{"role": "user", "content": _build_prompt(watched, candidates, n)}],
         )
         raw = response.choices[0].message.content or ""
         raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
         parsed = json.loads(raw.strip())
 
-        # Map the LLM's chosen indices back onto the candidate metadata.
         recommendations = []
         for pick in parsed.get("picks", []):
             idx = int(pick.get("index", 0)) - 1
             if 0 <= idx < len(candidates):
-                recommendations.append(
-                    {**candidates[idx], "reason": pick.get("reason", "")}
-                )
+                c = candidates[idx]
+                c.reason = pick.get("reason", "")
+                recommendations.append(c.to_dict())
+
         return {
             "taste_summary": parsed.get("taste_summary", ""),
             "recommendations": recommendations or _fallback(candidates, n)["recommendations"],
             "llm_used": True,
         }
-    except Exception as exc:  # noqa: BLE001 — degrade gracefully on any LLM error
+    except Exception as exc:  # noqa: BLE001
         result = _fallback(candidates, n)
         result["taste_summary"] = (
-            f"LLM ranking failed ({type(exc).__name__}); showing similarity "
-            "ordering instead."
+            f"LLM sıralaması başarısız ({type(exc).__name__}); "
+            "benzerlik sıralaması kullanıldı."
         )
         return result

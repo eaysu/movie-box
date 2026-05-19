@@ -256,21 +256,21 @@ tailwind.config = {
     <!-- Steps -->
     <div class="w-full bg-surface-container/50 border border-outline-variant/30 rounded-xl p-stack-md backdrop-blur-md">
       <ul id="loading-steps" class="flex flex-col gap-stack-sm font-body-md text-body-md text-on-surface-variant">
-        <li class="step-item flex items-center gap-3" data-icon="search">
-          <span class="material-symbols-outlined text-[16px]">search</span>
-          <span>Watchlist taranıyor...</span>
+        <li class="step-item flex items-center gap-3" data-icon="movie">
+          <span class="material-symbols-outlined text-[16px]">movie</span>
+          <span>İzlenen filmler taranıyor...</span>
         </li>
-        <li class="step-item flex items-center gap-3" data-icon="database">
-          <span class="material-symbols-outlined text-[16px]">database</span>
-          <span>Filmler zenginleştiriliyor...</span>
+        <li class="step-item flex items-center gap-3" data-icon="bookmark">
+          <span class="material-symbols-outlined text-[16px]">bookmark</span>
+          <span>Watchlist taranıyor...</span>
         </li>
         <li class="step-item flex items-center gap-3" data-icon="psychology">
           <span class="material-symbols-outlined text-[16px]">psychology</span>
-          <span>Zevk analiz ediliyor...</span>
+          <span>Zevk profili oluşturuluyor...</span>
         </li>
         <li class="step-item flex items-center gap-3" data-icon="auto_awesome">
           <span class="material-symbols-outlined text-[16px]">auto_awesome</span>
-          <span>Öneriler hazırlanıyor...</span>
+          <span>En iyi filmler seçiliyor...</span>
         </li>
       </ul>
     </div>
@@ -403,13 +403,9 @@ async function loadHealth() {
     if (!r.ok) return;
     const h = await r.json();
 
-    $('dot-catalog').className = `w-2 h-2 rounded-full transition-all duration-500 ${h.catalog_ready ? 'dot-orange' : 'dot-off'}`;
+    $('dot-catalog').className = `w-2 h-2 rounded-full transition-all duration-500 ${h.tmdb_enabled  ? 'dot-orange' : 'dot-off'}`;
     $('dot-tmdb').className    = `w-2 h-2 rounded-full transition-all duration-500 ${h.tmdb_enabled  ? 'dot-green'  : 'dot-off'}`;
     $('dot-llm').className     = `w-2 h-2 rounded-full transition-all duration-500 ${h.llm_enabled   ? 'dot-blue'   : 'dot-off'}`;
-
-    if (!h.catalog_ready) {
-      setIdleError('Katalog henüz kurulmadı. python -m scripts.build_catalog --source sample çalıştırın.');
-    }
   } catch (_) {}
 }
 
@@ -547,7 +543,7 @@ function renderResults(data) {
   const summary = data.taste_summary || 'Film zevkin analiz edildi.';
   $('taste-summary').textContent = summary;
   $('taste-meta').querySelector('span').textContent =
-    `${data.watchlist_count} film tarandı · ${data.matched_on_tmdb} TMDb eşleşmesi · ${data.meta?.llm_used ? 'LLM ile sıralandı' : 'benzerlik ile sıralandı'}`;
+    `${data.watched_count} film izlendi · ${data.watchlist_count} watchlist filmi · ${data.matched_on_tmdb} TMDb eşleşmesi · ${data.meta?.llm_used ? 'LLM ile sıralandı' : 'benzerlik ile sıralandı'}`;
 
   const all = data.recommendations;
   const main = all.slice(0, 5);

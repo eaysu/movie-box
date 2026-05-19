@@ -31,9 +31,13 @@ class EnrichedFilm:
     vote_average: float = 0.0
     poster_url: Optional[str] = None
     matched: bool = False  # True once TMDb data was found
+    similarity: float = 0.0
+    reason: str = ""
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["text_blob"] = self.text_blob
+        return d
 
     @property
     def text_blob(self) -> str:

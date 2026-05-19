@@ -1,103 +1,81 @@
-"""Layer 4 — similarity search over the film catalog.
+"""Layer 3 — watchlist'i zevk profiline göre sırala.
 
-The catalog is a set of films pre-embedded by `scripts/build_catalog.py`.
-A user's "taste vector" is the mean of their watchlist film vectors; the
-nearest catalog films (cosine similarity) become the candidate pool that
-the LLM layer then curates.
+Önceki katalog tabanlı yaklaşımın yerini aldı.
+Artık harici bir katalog yok — kullanıcının kendi watchlist'i aday havuzu,
+izlediği filmler zevk profilinin kaynağı.
+
+Akış:
+  watched_films + watchlist_films  →  TF-IDF fit (birleşik korpus)
+  watched vektörlerinin ortalaması  →  zevk profili
+  her watchlist filmi × zevk profili  →  cosine benzerlik skoru
+  en yüksek skorlu N film  →  LLM katmanına geçer
 """
 
-import json
-from pathlib import Path
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-from .config import Settings
-from .embeddings import Embedder
-
-
-def _norm_title(title: str) -> str:
-    return "".join(ch for ch in title.lower() if ch.isalnum())
+if TYPE_CHECKING:
+    from .enrich import EnrichedFilm
 
 
-class CatalogNotBuilt(Exception):
-    """Raised when the recommender is used before the catalog exists."""
+def rank_watchlist(
+    watched: list[EnrichedFilm],
+    watchlist: list[EnrichedFilm],
+    n: int = 8,
+) -> list[EnrichedFilm]:
+    """Watchlist filmlerini izleme geçmişine benzerliğe göre sırala.
 
+    Args:
+        watched:   Kullanıcının daha önce izlediği filmler (zevk profili kaynağı).
+        watchlist: İzlemek istediği filmler (aday havuzu).
+        n:         Döndürülecek film sayısı.
 
-class Recommender:
-    """Holds the catalog in memory and answers nearest-neighbour queries."""
+    Returns:
+        Watchlist'ten seçilmiş, benzerlik skoruna göre sıralanmış n film.
+        Her filmin .similarity ve .reason alanları doldurulmuş olur.
+    """
+    if not watchlist:
+        return []
 
-    def __init__(self, settings: Settings):
-        self.settings = settings
-        self.films: list[dict] = []
-        self.vectors: np.ndarray = np.zeros((0, 1), dtype=np.float32)
-        self.embedder: Embedder | None = None
-        self._load()
+    if not watched:
+        # İzleme geçmişi yoksa watchlist'in ilk n filmini döndür
+        for f in watchlist[:n]:
+            f.similarity = 0.0
+            f.reason = "İzleme geçmişi bulunamadı; sıralama yapılamadı."
+        return watchlist[:n]
 
-    def _load(self) -> None:
-        cat_path: Path = self.settings.catalog_path
-        vec_path: Path = self.settings.catalog_vectors_path
-        emb_path: Path = self.settings.data_path / "embedder.pkl"
+    # Tüm filmlerin metin bloblarını birleştir (TF-IDF birleşik korpusta fit olsun)
+    all_films = watched + watchlist
+    blobs = [f.text_blob for f in all_films]
 
-        if not (cat_path.exists() and vec_path.exists() and emb_path.exists()):
-            raise CatalogNotBuilt(
-                "Catalog not found. Build it first:\n"
-                "  python -m scripts.build_catalog --source sample"
-            )
+    vec = TfidfVectorizer(max_features=10_000, sublinear_tf=True, min_df=1)
+    matrix = vec.fit_transform(blobs)  # sparse (n_films × n_features)
 
-        self.films = json.loads(cat_path.read_text(encoding="utf-8"))
-        self.vectors = np.load(vec_path)
-        self.embedder = Embedder.load(emb_path)
+    n_watched = len(watched)
+    watched_matrix = matrix[:n_watched]
+    watchlist_matrix = matrix[n_watched:]
 
-    @property
-    def size(self) -> int:
-        return len(self.films)
+    # Zevk profili: izlenen filmlerin TF-IDF vektörlerinin ortalaması
+    taste = np.asarray(watched_matrix.mean(axis=0))  # (1, n_features)
 
-    def taste_vector(self, watchlist: list) -> np.ndarray:
-        """Average the embeddings of every watchlist film into one vector."""
-        blobs = [self._blob(f) for f in watchlist]
-        blobs = [b for b in blobs if b]
-        if not blobs:
-            raise ValueError("Watchlist produced no usable text to embed.")
-        vecs = self.embedder.embed(blobs)
-        mean = vecs.mean(axis=0, keepdims=True)
-        norm = np.linalg.norm(mean)
-        return mean / norm if norm else mean
+    # Her watchlist filminin zevk profiline cosine benzerliği
+    scores = cosine_similarity(taste, watchlist_matrix)[0]  # (n_watchlist,)
 
-    def recommend(self, watchlist: list, pool_size: int) -> list[dict]:
-        """Return the `pool_size` catalog films closest to the user's taste."""
-        taste = self.taste_vector(watchlist)
-        scores = (self.vectors @ taste.T).ravel()  # cosine, vectors are normalised
+    ranked_idx = np.argsort(-scores)[:n]
 
-        # Exclude anything already on the watchlist.
-        seen = {_norm_title(self._title(f)) for f in watchlist}
-        seen_ids = {self._tmdb_id(f) for f in watchlist if self._tmdb_id(f)}
+    results: list[EnrichedFilm] = []
+    for idx in ranked_idx:
+        film = watchlist[int(idx)]
+        film.similarity = round(float(scores[idx]), 4)
+        # Kısa fallback reason — LLM varsa zaten üzerine yazar
+        film.reason = (
+            f"İzleme geçmişinle benzerlik skoru: {film.similarity:.3f}"
+        )
+        results.append(film)
 
-        ranked = np.argsort(-scores)
-        out: list[dict] = []
-        for idx in ranked:
-            film = self.films[int(idx)]
-            if _norm_title(film.get("title", "")) in seen:
-                continue
-            if film.get("tmdb_id") and film["tmdb_id"] in seen_ids:
-                continue
-            out.append({**film, "similarity": round(float(scores[idx]), 4)})
-            if len(out) >= pool_size:
-                break
-        return out
-
-    # --- helpers: accept either dicts or EnrichedFilm objects ---
-    @staticmethod
-    def _blob(f) -> str:
-        if hasattr(f, "text_blob"):
-            return f.text_blob
-        if isinstance(f, dict):
-            return f.get("text_blob") or f.get("title", "")
-        return str(f)
-
-    @staticmethod
-    def _title(f) -> str:
-        return f.title if hasattr(f, "title") else f.get("title", "")
-
-    @staticmethod
-    def _tmdb_id(f):
-        return f.tmdb_id if hasattr(f, "tmdb_id") else f.get("tmdb_id")
+    return results

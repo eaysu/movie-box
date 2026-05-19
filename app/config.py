@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # --- API keys ---
     tmdb_api_key: str = ""
     openai_api_key: str = ""
-    openai_model: str = "gpt-5-mini"
+    openai_model: str = "gpt-4o-mini"
     supabase_url: str = ""
     supabase_key: str = ""
 
@@ -27,12 +27,12 @@ class Settings(BaseSettings):
     st_model: str = "all-MiniLM-L6-v2"
 
     # --- Recommender tuning ---
-    candidate_pool_size: int = 25
     num_recommendations: int = 8
 
     # --- Scraper ---
     scrape_delay: float = 1.0
-    scrape_max_pages: int = 40  # safety cap (~1100 films)
+    scrape_max_pages: int = 40   # watchlist için safety cap (~1100 film)
+    watched_max_pages: int = 6   # izlenen filmler için (~432 film, en recenti yeterli)
 
     # --- Storage ---
     data_dir: str = "data"
