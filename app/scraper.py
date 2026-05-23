@@ -19,19 +19,24 @@ BASE_URL = "https://letterboxd.com"
 
 # Gerçek bir tarayıcıya benzer User-Agent — Letterboxd bot tespitini azaltır
 USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/125.0.0.0 Safari/537.36"
+    "Chrome/124.0.0.0 Safari/537.36"
 )
 
 BASE_HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
+    "Accept-Encoding": "gzip, deflate, br",
     "DNT": "1",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
 }
 
 
@@ -65,52 +70,65 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
     soup = BeautifulSoup(html, "lxml")
     films: list[ScrapedFilm] = []
 
-    # Current markup (2024+): LazyPoster with data-item-slug
-    lazy_posters = soup.select("div[data-item-slug]")
-    if lazy_posters:
-        for div in lazy_posters:
-            slug = div.get("data-item-slug", "").strip()
-            if not slug:
-                continue
-            display_name = (
-                div.get("data-item-full-display-name", "")
-                or div.get("data-item-name", "")
-            ).strip()
-            title, year = (
-                _parse_year_from_name(display_name)
-                if display_name
-                else (_slug_to_title(slug), None)
-            )
-            films.append(ScrapedFilm(title=title, year=year, slug=slug))
-        return films
-
-    # Legacy markup: div[data-film-slug]
-    for poster in soup.select("div[data-film-slug]"):
-        slug = poster.get("data-film-slug", "").strip()
-        if not slug:
-            continue
-        title = ""
+    def _extract_poster(el) -> ScrapedFilm | None:
+        slug = (
+            el.get("data-item-slug")
+            or el.get("data-film-slug")
+            or el.get("data-target-link", "").strip("/").split("/")[-1]
+        ).strip()
+        if not slug or slug in ("", "/"):
+            return None
+        display_name = (
+            el.get("data-item-full-display-name", "")
+            or el.get("data-item-name", "")
+            or el.get("data-film-name", "")
+        ).strip()
+        title, year = (
+            _parse_year_from_name(display_name)
+            if display_name
+            else (_slug_to_title(slug), None)
+        )
+        if not year:
+            raw_year = el.get("data-film-release-year", "")
+            if raw_year.isdigit():
+                year = int(raw_year)
+            else:
+                m = re.search(r"-(\d{4})$", slug)
+                if m:
+                    year = int(m.group(1))
         poster_url: Optional[str] = None
-        img = poster.find("img")
+        img = el.find("img")
         if img:
-            if img.get("alt"):
+            if img.get("alt") and not title:
                 title = img["alt"].strip()
             src = img.get("src", "") or img.get("data-src", "")
             if src and "empty-poster" not in src:
                 poster_url = src
         if not title:
-            title = poster.get("data-film-name", "").strip()
-        if not title:
             title = _slug_to_title(slug)
-        year: Optional[int] = None
-        raw_year = poster.get("data-film-release-year", "")
-        if raw_year.isdigit():
-            year = int(raw_year)
-        else:
-            m = re.search(r"-(\d{4})$", slug)
-            if m:
-                year = int(m.group(1))
-        films.append(ScrapedFilm(title=title, year=year, slug=slug, poster_url=poster_url))
+        return ScrapedFilm(title=title, year=year, slug=slug, poster_url=poster_url)
+
+    # 2024+ LazyPoster: data-item-slug
+    candidates = soup.select("div[data-item-slug]")
+    # Legacy: data-film-slug
+    if not candidates:
+        candidates = soup.select("div[data-film-slug]")
+    # Newer list markup: li[data-film-slug] or li[data-item-slug]
+    if not candidates:
+        candidates = soup.select("li[data-film-slug], li[data-item-slug]")
+    # poster-list items with data-target-link pointing to /film/slug/
+    if not candidates:
+        candidates = [
+            el for el in soup.select("[data-target-link]")
+            if "/film/" in el.get("data-target-link", "")
+        ]
+
+    seen: set[str] = set()
+    for el in candidates:
+        film = _extract_poster(el)
+        if film and film.slug not in seen:
+            seen.add(film.slug)
+            films.append(film)
 
     return films
 
@@ -138,7 +156,17 @@ async def _scrape_list(
         headers=BASE_HEADERS,
         timeout=20.0,
         follow_redirects=True,
+        cookies=httpx.Cookies(),  # persist cookies across requests (session-like)
     ) as client:
+        # Warm-up: visit the profile page first so Letterboxd sets session cookies
+        try:
+            await client.get(
+                f"{BASE_URL}/{username}/",
+                headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate"},
+            )
+        except httpx.HTTPError:
+            pass  # non-critical
+
         for page in range(1, max_pages + 1):
             if page == 1:
                 url = f"{BASE_URL}/{username}/{list_path}/"
@@ -146,14 +174,13 @@ async def _scrape_list(
                 url = f"{BASE_URL}/{username}/{list_path}/page/{page}/"
 
             # Referer: önceki sayfa URL'si — Letterboxd bot tespitini azaltır
-            headers = {"Referer": f"{BASE_URL}/{username}/{list_path}/"}
-            if page > 1:
-                prev = (
-                    f"{BASE_URL}/{username}/{list_path}/"
-                    if page == 2
-                    else f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
-                )
-                headers["Referer"] = prev
+            headers = {"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate"}
+            if page == 1:
+                headers["Referer"] = f"{BASE_URL}/{username}/"
+            elif page == 2:
+                headers["Referer"] = f"{BASE_URL}/{username}/{list_path}/"
+            else:
+                headers["Referer"] = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
 
             try:
                 resp = await client.get(url, headers=headers)
