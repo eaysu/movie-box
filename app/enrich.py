@@ -33,6 +33,7 @@ class EnrichedFilm:
     matched: bool = False  # True once TMDb data was found
     similarity: float = 0.0
     reason: str = ""
+    user_rating: Optional[float] = None  # Letterboxd kullanıcı puanı (0.5-5.0)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -125,8 +126,13 @@ class Enricher:
             if rel[:4].isdigit() and not film.year:
                 film.year = int(rel[:4])
             poster_path = best.get("poster_path", "")
+            backdrop_path = best.get("backdrop_path", "")
             if poster_path:
                 film.poster_url = f"{TMDB_IMAGE_BASE}{poster_path}"
+            elif backdrop_path:
+                # Backdrop fallback: portrait poster yoksa landscape backdrop kullan.
+                # Frontend card'ları object-fit: cover ile bu durumu handle eder.
+                film.poster_url = f"https://image.tmdb.org/t/p/w780{backdrop_path}"
 
             # A second call gets keywords + director.
             if film.tmdb_id:
@@ -145,8 +151,8 @@ class Enricher:
 
             film.matched = True
         except httpx.HTTPError:
-            # Leave the film unmatched; the pipeline still runs on its title.
-            pass
+            # HTTP hatası (rate limit, timeout): cache'e yazma — bir sonraki istekte tekrar denensin.
+            return film
 
         self.cache.set("tmdb", cache_key, film.to_dict())
         return film
@@ -166,11 +172,15 @@ class Enricher:
                 scraped_poster = (
                     f.get("poster_url") if isinstance(f, dict) else getattr(f, "poster_url", None)
                 )
+                user_rating = (
+                    f.get("user_rating") if isinstance(f, dict) else getattr(f, "user_rating", None)
+                )
                 async with sem:
                     enriched = await self._enrich_one(client, title, year, slug)
-                    # Fall back to the Letterboxd-scraped poster if TMDb has none.
                     if not enriched.poster_url and scraped_poster:
                         enriched.poster_url = scraped_poster
+                    # user_rating TMDb cache'ine girmemeli (kişiye özel).
+                    enriched.user_rating = user_rating
                     return enriched
 
             return await asyncio.gather(*(worker(f) for f in films))

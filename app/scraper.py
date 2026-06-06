@@ -5,6 +5,7 @@ The CSS selectors are best-effort; Letterboxd can change its markup at any time.
 """
 
 import asyncio
+import html as _html
 import logging
 import re
 from dataclasses import dataclass, asdict
@@ -50,6 +51,7 @@ class ScrapedFilm:
     year: Optional[int]
     slug: str
     poster_url: Optional[str] = None
+    user_rating: Optional[float] = None  # Letterboxd 0.5-5.0 arası
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -78,11 +80,11 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
         ).strip()
         if not slug or slug in ("", "/"):
             return None
-        display_name = (
+        display_name = _html.unescape((
             el.get("data-item-full-display-name", "")
             or el.get("data-item-name", "")
             or el.get("data-film-name", "")
-        ).strip()
+        ).strip())
         title, year = (
             _parse_year_from_name(display_name)
             if display_name
@@ -101,8 +103,14 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
         if img:
             if img.get("alt") and not title:
                 title = img["alt"].strip()
+            # Letterboxd bazen src, bazen data-src, bazen srcset kullanır.
+            # srcset örneği: "https://a.ltrbxd.com/.../0-70-0-105-crop.jpg 1x, ...2x"
             src = img.get("src", "") or img.get("data-src", "")
-            if src and "empty-poster" not in src:
+            if not src:
+                srcset = img.get("srcset", "")
+                if srcset:
+                    src = srcset.split(",")[0].strip().split(" ")[0]
+            if src and "empty-poster" not in src and src.startswith("http"):
                 poster_url = src
         if not title:
             title = _slug_to_title(slug)
@@ -266,19 +274,21 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     films: list[ScrapedFilm] = []
     entries = re.findall(r"<item>(.*?)</item>", resp.text, re.DOTALL)
     for entry in entries:
-        title_m = re.search(r"<letterboxd:filmTitle>(.*?)</letterboxd:filmTitle>", entry)
-        year_m  = re.search(r"<letterboxd:filmYear>(\d{4})</letterboxd:filmYear>", entry)
-        link_m  = re.search(r"<link>(https://letterboxd\.com[^<]+)</link>", entry)
+        title_m  = re.search(r"<letterboxd:filmTitle>(.*?)</letterboxd:filmTitle>", entry)
+        year_m   = re.search(r"<letterboxd:filmYear>(\d{4})</letterboxd:filmYear>", entry)
+        link_m   = re.search(r"<link>(https://letterboxd\.com[^<]+)</link>", entry)
+        rating_m = re.search(r"<letterboxd:memberRating>([\d.]+)</letterboxd:memberRating>", entry)
         if not title_m:
             continue
-        title = title_m.group(1).strip()
-        year  = int(year_m.group(1)) if year_m else None
-        slug  = ""
+        title  = _html.unescape(title_m.group(1).strip())
+        year   = int(year_m.group(1)) if year_m else None
+        rating = float(rating_m.group(1)) if rating_m else None
+        slug   = ""
         if link_m:
             slug_match = re.search(r"/film/([^/]+)/", link_m.group(1))
             if slug_match:
                 slug = slug_match.group(1)
-        films.append(ScrapedFilm(title=title, year=year, slug=slug))
+        films.append(ScrapedFilm(title=title, year=year, slug=slug, user_rating=rating))
 
     return films
 
@@ -300,8 +310,8 @@ async def scrape_watched(
     """
     html_films = await _scrape_list(
         username, "films",
-        delay=0,         # tek sayfa, delay gereksiz
-        max_pages=1,
+        delay=delay,
+        max_pages=max_pages,   # 403 gelirse scraper sessizce durur
         film_limit=film_limit,
     )
     rss_films = await _scrape_watched_rss(username)

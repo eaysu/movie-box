@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import os
+import random as _random
 import time
 from pathlib import Path
 
@@ -68,6 +69,15 @@ def _make_cache(settings):
 
 class RecommendRequest(BaseModel):
     username: str
+
+
+class RandomRequest(BaseModel):
+    username: str
+
+
+class BlendRequest(BaseModel):
+    username1: str
+    username2: str
 
 
 @app.get("/")
@@ -197,6 +207,253 @@ async def recommend(req: RecommendRequest):
             finally:
                 async with _q_lock:
                     _q_active -= 1
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/random")
+async def random_pick(req: RandomRequest):
+    """SSE stream: watchlist'ten 3 rastgele film seç ve zenginleştir."""
+
+    async def generate():
+        settings = get_settings()
+
+        yield _sse({"type": "step", "step": "scraping"})
+        try:
+            scraped_watchlist = await scrape_watchlist(
+                req.username,
+                delay=settings.scrape_delay,
+                max_pages=settings.scrape_max_pages,
+                film_limit=settings.watchlist_film_limit,
+            )
+        except ScrapeError as exc:
+            yield _sse({"type": "error", "detail": str(exc)})
+            return
+
+        if not scraped_watchlist:
+            yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
+            return
+
+        # Posteri olan filmler varsa onlardan seç — postersize film göstermemek için.
+        # Letterboxd watchlist HTML'i neredeyse her zaman poster thumbnail içerir,
+        # bu yüzden filtreleme sonrası yeterli havuz kalır.
+        with_poster = [f for f in scraped_watchlist if f.poster_url]
+        pool = with_poster if len(with_poster) >= 3 else scraped_watchlist
+        count = min(3, len(pool))
+        chosen = _random.sample(pool, count)
+
+        yield _sse({"type": "step", "step": "enriching"})
+        _, cache = _make_cache(settings)
+        if settings.has_tmdb:
+            enricher = Enricher(settings.tmdb_api_key, cache)
+            films = await enricher.enrich(chosen)
+        else:
+            films = [
+                EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
+                for f in chosen
+            ]
+
+        yield _sse({
+            "type": "result",
+            "username": req.username,
+            "watchlist_count": len(scraped_watchlist),
+            "films": [f.to_dict() for f in films],
+        })
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
+    """Blend skoru, ortak filmler ve ortak yönetmen hesapla."""
+    from collections import Counter
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    def _cos(c1: Counter, c2: Counter) -> float:
+        """İki Counter arasında cosine similarity."""
+        keys = sorted(set(c1) | set(c2))
+        if not keys:
+            return 0.0
+        v1 = np.array([c1.get(k, 0) for k in keys], dtype=float)
+        v2 = np.array([c2.get(k, 0) for k in keys], dtype=float)
+        if not v1.any() or not v2.any():
+            return 0.0
+        return float(cosine_similarity(v1.reshape(1, -1), v2.reshape(1, -1))[0][0])
+
+    def _rating_weight(f) -> float:
+        """Puanlı filmler daha fazla ağırlık taşır; puan yoksa nötr (3.0) kabul et."""
+        r = f.user_rating
+        return (r / 3.0) if r else 1.0
+
+    # ── Ortak filmler ──────────────────────────────────────────────────────
+    # 1. Slug eşleşmesi (birincil)
+    slugs2 = {f.slug for f in watched2 if f.slug}
+    common_slugs = [f for f in watched1 if f.slug and f.slug in slugs2]
+
+    # 2. Başlık+yıl eşleşmesi (ikincil — slug yoksa veya eksikse)
+    seen_slugs = {f.slug for f in common_slugs}
+    keys2 = {(f.title.lower().strip(), f.year) for f in watched2}
+    common_title = [
+        f for f in watched1
+        if f.slug not in seen_slugs
+        and (f.title.lower().strip(), f.year) in keys2
+    ]
+    common = common_slugs + common_title
+    common_count = len(common)
+    # Posteri olan filmler öne gelsin; eşitlikte vote_average'a bak.
+    common.sort(key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True)
+    top_common = common[:top_n]
+
+    # ── Uyum skoru ─────────────────────────────────────────────────────────
+    # Sinyal 1-4: Rating-ağırlıklı özellik vektörleri
+    # 5 yıldız verilen film, 1 yıldızlı filmden ~5x daha fazla zevk profilini şekillendirir.
+    def _weighted_counter(films, key_fn) -> Counter:
+        c: Counter = Counter()
+        for f in films:
+            w = _rating_weight(f)
+            for k in key_fn(f):
+                c[k] += w
+        return c
+
+    genre_sim = _cos(
+        _weighted_counter(watched1, lambda f: f.genres or []),
+        _weighted_counter(watched2, lambda f: f.genres or []),
+    )
+    kw_sim = _cos(
+        _weighted_counter(watched1, lambda f: f.keywords or []),
+        _weighted_counter(watched2, lambda f: f.keywords or []),
+    )
+    dir_sim = _cos(
+        _weighted_counter(watched1, lambda f: [f.director] if f.director else []),
+        _weighted_counter(watched2, lambda f: [f.director] if f.director else []),
+    )
+    era_sim = _cos(
+        _weighted_counter(watched1, lambda f: [(f.year // 10) * 10] if f.year else []),
+        _weighted_counter(watched2, lambda f: [(f.year // 10) * 10] if f.year else []),
+    )
+
+    # Sinyal 5: Ortak filmlerde rating korelasyonu (Pearson)
+    # Her iki kullanıcının da puan verdiği ortak filmlerde, aynı filmleri
+    # benzer şekilde değerlendiriyorlarsa güçlü uyum sinyali.
+    rating_corr = 0.0
+    w2_by_slug = {f.slug: f for f in watched2 if f.slug}
+    w2_by_key  = {(f.title.lower().strip(), f.year): f for f in watched2}
+    pairs: list[tuple[float, float]] = []
+    for f1 in watched1:
+        if f1.user_rating is None:
+            continue
+        f2 = w2_by_slug.get(f1.slug) if f1.slug else None
+        if f2 is None:
+            f2 = w2_by_key.get((f1.title.lower().strip(), f1.year))
+        if f2 and f2.user_rating is not None:
+            pairs.append((f1.user_rating, f2.user_rating))
+
+    if len(pairs) >= 3:
+        r1 = np.array([p[0] for p in pairs])
+        r2 = np.array([p[1] for p in pairs])
+        # Pearson correlation: NaN güvenliği için std kontrolü
+        if r1.std() > 0 and r2.std() > 0:
+            rating_corr = float(np.corrcoef(r1, r2)[0, 1])
+            rating_corr = max(rating_corr, 0.0)  # negatif korelasyon → 0 (ceza vermiyoruz)
+
+    # Ağırlıklar: keyword ve director en ayrıştırıcı sinyaller.
+    # Rating korelasyonu varsa %20 pay alır, yoksa diğer sinyallere dağıtılır.
+    if pairs:
+        raw = (genre_sim * 0.12 + kw_sim * 0.28 + dir_sim * 0.28
+               + era_sim * 0.12 + rating_corr * 0.20)
+    else:
+        raw = genre_sim * 0.15 + kw_sim * 0.35 + dir_sim * 0.35 + era_sim * 0.15
+
+    # Tipik raw: farklı kullanıcılar 0.15-0.25, benzer 0.35-0.60 → ×1.6
+    score = max(min(round(raw * 1.6 * 100), 98), 2)
+
+    # ── Ortak en sevilen yönetmen ───────────────────────────────────────────
+    directors1 = Counter(f.director for f in watched1 if f.director)
+    directors2 = Counter(f.director for f in watched2 if f.director)
+    common_dirs = set(directors1) & set(directors2)
+
+    if common_dirs:
+        scored = {d: directors1[d] + directors2[d] for d in common_dirs}
+        top_dir = max(scored, key=scored.get)
+    elif directors1 or directors2:
+        top_dir = (directors1 + directors2).most_common(1)[0][0]
+    else:
+        top_dir = None
+
+    return {
+        "score": score,
+        "common_count": common_count,
+        "top_director": top_dir,
+        "top_director_count1": directors1.get(top_dir, 0) if top_dir else 0,
+        "top_director_count2": directors2.get(top_dir, 0) if top_dir else 0,
+        "films": top_common,
+    }
+
+
+@app.post("/api/blend")
+async def blend(req: BlendRequest):
+    """SSE stream: iki kullanıcının film zevkini harmanlayıp uyum skoru hesapla."""
+
+    async def generate():
+        settings = get_settings()
+
+        yield _sse({"type": "step", "step": "scraping"})
+        try:
+            # Blend için daha fazla film çek — ortak film bulma şansı artsın.
+            # max_pages=5: 403 gelirse sessizce durur (scraper bunu handle ediyor).
+            watched1, watched2 = await asyncio.gather(
+                scrape_watched(req.username1, delay=settings.scrape_delay,
+                               max_pages=5, film_limit=400),
+                scrape_watched(req.username2, delay=settings.scrape_delay,
+                               max_pages=5, film_limit=400),
+            )
+        except ScrapeError as exc:
+            yield _sse({"type": "error", "detail": str(exc)})
+            return
+
+        if not watched1:
+            yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
+            return
+        if not watched2:
+            yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
+            return
+
+        yield _sse({"type": "step", "step": "enriching"})
+        _, cache = _make_cache(settings)
+        if settings.has_tmdb:
+            enricher = Enricher(settings.tmdb_api_key, cache)
+            w1_enriched, w2_enriched = await asyncio.gather(
+                enricher.enrich(watched1),
+                enricher.enrich(watched2),
+            )
+        else:
+            w1_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched1]
+            w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
+
+        yield _sse({"type": "step", "step": "ranking"})
+        result = _calculate_blend(w1_enriched, w2_enriched, top_n=20)
+
+        yield _sse({
+            "type": "result",
+            "username1": req.username1,
+            "username2": req.username2,
+            "score": result["score"],
+            "watched_count1": len(w1_enriched),
+            "watched_count2": len(w2_enriched),
+            "common_count": result["common_count"],
+            "top_director": result["top_director"],
+            "top_director_count1": result["top_director_count1"],
+            "top_director_count2": result["top_director_count2"],
+            "films": [f.to_dict() for f in result["films"]],
+        })
 
     return StreamingResponse(
         generate(),
