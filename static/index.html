@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image.png"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
 tailwind.config = {
   darkMode: "class",
@@ -82,18 +82,20 @@ tailwind.config = {
         "margin-desktop": "48px", "margin-mobile": "16px", "unit": "4px", "stack-md": "16px"
       },
       fontFamily: {
-        "headline-lg": ["Geist"], "headline-lg-mobile": ["Geist"], "label-md": ["Geist"],
-        "headline-md": ["Geist"], "body-md": ["Geist"], "label-sm": ["Geist"],
-        "display-lg": ["Geist"], "body-lg": ["Geist"]
+        "headline-lg": ["Space Grotesk", "Geist"], "headline-lg-mobile": ["Space Grotesk", "Geist"],
+        "label-md": ["Space Grotesk", "Geist"],
+        "headline-md": ["Space Grotesk", "Geist"], "body-md": ["Geist"],
+        "label-sm": ["Space Grotesk", "Geist"],
+        "display-lg": ["Space Grotesk", "Geist"], "body-lg": ["Geist"]
       },
       fontSize: {
-        "headline-lg": ["32px", { lineHeight: "1.2", letterSpacing: "-0.03em", fontWeight: "600" }],
-        "headline-lg-mobile": ["24px", { lineHeight: "1.2", letterSpacing: "-0.02em", fontWeight: "600" }],
-        "label-md": ["12px", { lineHeight: "1", letterSpacing: "0.02em", fontWeight: "500" }],
-        "headline-md": ["20px", { lineHeight: "1.4", letterSpacing: "-0.02em", fontWeight: "600" }],
+        "headline-lg": ["36px", { lineHeight: "1.15", letterSpacing: "-0.03em", fontWeight: "700" }],
+        "headline-lg-mobile": ["26px", { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "700" }],
+        "label-md": ["12px", { lineHeight: "1", letterSpacing: "0.04em", fontWeight: "600" }],
+        "headline-md": ["22px", { lineHeight: "1.35", letterSpacing: "-0.02em", fontWeight: "700" }],
         "body-md": ["14px", { lineHeight: "1.5", letterSpacing: "0", fontWeight: "400" }],
-        "label-sm": ["10px", { lineHeight: "1", letterSpacing: "0.05em", fontWeight: "600" }],
-        "display-lg": ["48px", { lineHeight: "1.1", letterSpacing: "-0.04em", fontWeight: "700" }],
+        "label-sm": ["10px", { lineHeight: "1", letterSpacing: "0.06em", fontWeight: "700" }],
+        "display-lg": ["64px", { lineHeight: "1.05", letterSpacing: "-0.04em", fontWeight: "700" }],
         "body-lg": ["16px", { lineHeight: "1.6", letterSpacing: "-0.01em", fontWeight: "400" }]
       }
     }
@@ -101,14 +103,55 @@ tailwind.config = {
 }
 </script>
 <style>
-  body { font-family: 'Geist', sans-serif; min-height: max(884px, 100dvh); }
+  body {
+    font-family: 'Space Grotesk', 'Geist', sans-serif;
+    min-height: max(884px, 100dvh);
+    background-color: #0b0f11;
+  }
+
+  /* Film grain dokusu — ince, eğlenceli */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 180px 180px;
+  }
 
   .glass-panel {
-    background-color: rgba(19, 23, 42, 0.7);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(242, 244, 248, 0.1);
+    background-color: rgba(15, 19, 28, 0.72);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
-  .glass-panel:hover { border-color: rgba(242, 244, 248, 0.2); }
+  .glass-panel:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Gradient text utility */
+  .text-gradient-green {
+    background: linear-gradient(135deg, #43fe6d 0%, #00e054 60%, #40bcf4 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-orange {
+    background: linear-gradient(135deg, #ffb787 0%, #ff8000 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #6ccdff 0%, #40bcf4 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Film kartları hafif tilt hover */
+  article.tilt-card {
+    transition: transform 0.25s cubic-bezier(.22,1,.36,1), box-shadow 0.25s ease;
+  }
+  article.tilt-card:hover { transform: translateY(-4px) rotate(-0.5deg); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
 
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -228,7 +271,7 @@ tailwind.config = {
     <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
       <span class="material-symbols-outlined">movie_filter</span>
     </button>
-    <div class="font-headline-md text-headline-md tracking-tighter text-primary">LETTERBOXD · AI</div>
+    <div class="font-headline-md text-headline-md tracking-tighter text-gradient-green">LETTERBOXD · AI</div>
     <div class="w-6"></div>
   </div>
 </header>
@@ -241,14 +284,14 @@ tailwind.config = {
 
   <div class="relative z-10 w-full max-w-[800px] flex flex-col items-center text-center">
     <!-- Kicker badge -->
-    <span class="font-label-md text-label-md text-on-surface-variant tracking-[0.1em] uppercase mb-stack-md bg-surface border border-outline-variant/30 px-3 py-1 rounded-full backdrop-blur-md">
-      LETTERBOXD · AI
+    <span class="font-label-md text-label-md tracking-[0.12em] uppercase mb-stack-md px-4 py-1.5 rounded-full backdrop-blur-md text-gradient-green" style="background:rgba(0,224,84,0.08);border:1px solid rgba(0,224,84,0.2);box-shadow:0 0 20px rgba(0,224,84,0.08);">
+      ✦ LETTERBOXD · AI ✦
     </span>
 
     <!-- Headline -->
     <h1 id="idle-headline" class="font-display-lg text-display-lg text-on-surface mb-stack-md leading-tight">
       İzleme listende<br/>
-      <span id="idle-headline-accent" class="text-primary-container drop-shadow-[0_0_12px_rgba(0,224,84,0.3)]">ne izlemelisin?</span>
+      <span id="idle-headline-accent" class="text-gradient-green">ne izlemelisin?</span>
     </h1>
 
     <!-- Description -->
@@ -805,9 +848,9 @@ function setMode(mode) {
 
   // Headline & description
   const headlines = {
-    taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-primary-container drop-shadow-[0_0_12px_rgba(0,224,84,0.3)]',  desc: 'Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.' },
-    random: { line1: 'Watchlist\'inden',        accent: 'sürpriz bir film.',     accentColor: 'text-tertiary-container drop-shadow-[0_0_12px_rgba(108,205,255,0.3)]', desc: 'Watchlist\'inden rastgele bir film seç — maksimum 3 kez şansını dene.' },
-    blend:  { line1: 'İki sinema dünyasının',  accent: 'uyum skoru.',           accentColor: 'text-secondary-container drop-shadow-[0_0_12px_rgba(255,183,135,0.3)]', desc: 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
+    taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-gradient-green',  desc: 'Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.' },
+    random: { line1: 'Watchlist\'inden',        accent: 'sürpriz bir film.',     accentColor: 'text-gradient-blue', desc: 'Watchlist\'inden rastgele bir film seç — maksimum 3 kez şansını dene.' },
+    blend:  { line1: 'İki sinema dünyasının',  accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
   };
   const h = headlines[mode] || headlines.taste;
   $('idle-headline').childNodes[0].textContent = h.line1 + '\n';
@@ -920,7 +963,7 @@ function buildHeroCard(film) {
     : '';
 
   return `
-    <article class="glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
+    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
       <div class="md:w-[260px] shrink-0 aspect-[2/3] md:aspect-auto md:h-auto overflow-hidden relative bg-surface-container">
         ${poster}
         <div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/60 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-surface-container-lowest/30 pointer-events-none"></div>
@@ -955,7 +998,7 @@ function buildAltCard(film, idx) {
     ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 line-clamp-2 italic">${film.reason}</p>`
     : '';
   return `
-    <article class="glass-panel rounded-xl overflow-hidden group flex flex-col">
+    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${poster}
         <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-surface-container-lowest/80 to-transparent pointer-events-none"></div>
@@ -1109,7 +1152,7 @@ function buildBlendFilmCard(film, idx) {
           src="${film.poster_url}"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container"><span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span></div>`;
   return `
-    <article class="glass-panel rounded-xl overflow-hidden group flex flex-col"
+    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col"
       style="opacity:0;animation:blend-card-in .5s cubic-bezier(.22,1,.36,1) both;animation-delay:${idx * 80}ms">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${poster}
