@@ -372,9 +372,18 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
     else:
         raw = genre_sim * 0.05 + kw_sim * 0.47 + dir_sim * 0.47 + era_sim * 0.01
 
-    # Tipik raw: farklı kullanıcılar 0.10-0.22, benzer 0.28-0.45, çok benzer 0.45+
-    # ×1.5 ile çarpmak 0.45 → 67, 0.55 → 82 aralığı verir — daha gerçekçi.
-    score = max(min(round(raw * 1.5 * 100), 97), 3)
+    # Skor haritalama: yeterli veri varsa [70, 97], az verili çiftler ham skor alır.
+    # Letterboxd kullanıcıları zaten film tutkunları — "en farklı" çift bile 70'e layık.
+    # 50 film altı taranan kullanıcılar için güvenilir profil çıkmaz.
+    min_watched = min(len(watched1), len(watched2))
+    if min_watched >= 50:
+        # raw ≈ 0.0 (tamamen farklı) → 70,  raw ≈ 0.65+ (çok benzer) → 97
+        MAX_RAW = 0.65
+        normalized = max(0.0, min(raw / MAX_RAW, 1.0))
+        score = round(70 + normalized * 27)
+    else:
+        # Veri yetersiz: ham skor, 69 tavanı
+        score = max(3, min(69, round(raw * 1.5 * 100)))
 
     # ── Ortak en sevilen yönetmen ───────────────────────────────────────────
     directors1 = Counter(f.director for f in watched1 if f.director)
