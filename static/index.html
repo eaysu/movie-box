@@ -1279,43 +1279,55 @@ async function blendFlow() {
     $('btn-recommend').disabled = false;
   };
 
-  try {
-    const resp = await fetch(`${API_BASE}/api/blend`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username1: u1, username2: u2 }),
-    });
+  const attemptBlend = async (isRetry) => {
+    if (isRetry) {
+      resetBlendSteps();
+      $('bfact-badge').textContent = '⏳ Bağlanıyor';
+      $('bfact-text').textContent = 'Sunucu uyandırılıyor, lütfen bekleyin...';
+      $('bfact-author').textContent = '';
+      await new Promise(r => setTimeout(r, 12000));
+      _startBlendFact();
+    }
+    try {
+      const resp = await fetch(`${API_BASE}/api/blend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username1: u1, username2: u2 }),
+      });
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
 
-    while (true) {
-      const { done: streamDone, value } = await reader.read();
-      if (streamDone) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
+      while (true) {
+        const { done: streamDone, value } = await reader.read();
+        if (streamDone) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        let event;
-        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let event;
+          try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
-        if (event.type === 'step') {
-          onBlendStep(event.step);
-        } else if (event.type === 'result') {
-          finishBlendSteps();
-          $('btn-recommend').disabled = false;
-          await renderBlendResult(event);
-        } else if (event.type === 'error') {
-          done(event.detail);
+          if (event.type === 'step') {
+            onBlendStep(event.step);
+          } else if (event.type === 'result') {
+            finishBlendSteps();
+            $('btn-recommend').disabled = false;
+            await renderBlendResult(event);
+          } else if (event.type === 'error') {
+            done(event.detail);
+          }
         }
       }
+    } catch (_e) {
+      if (!isRetry) { return attemptBlend(true); }
+      done('Sunucuya ulaşılamadı. Birkaç dakika sonra tekrar deneyin.');
     }
-  } catch (_e) {
-    done('Sunucuya ulaşılamadı.');
-  }
+  };
+  await attemptBlend(false);
 }
 
 // ── Render random result ───────────────────────────────────────────────────
