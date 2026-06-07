@@ -415,7 +415,7 @@ async def blend(req: BlendRequest):
     async def generate():
         settings = get_settings()
         try:
-            # ── Scraping ──────────────────────────────────────────────────────────
+            # ── Scraping: her iki kullanıcı paralel ──────────────────────────────
             yield _sse({"type": "step", "step": "scraping"})
 
             async def _safe_watchlist(username):
@@ -426,32 +426,28 @@ async def blend(req: BlendRequest):
                 except ScrapeError:
                     return []
 
-            # Her await arasında ping göndererek proxy'nin bağlantıyı kesmesini önle.
             try:
-                watched1 = await scrape_watched(
-                    req.username1, delay=settings.scrape_delay, max_pages=5, film_limit=400
+                watched1, watched2, wl1, wl2 = await asyncio.gather(
+                    scrape_watched(req.username1, delay=settings.scrape_delay,
+                                   max_pages=2, film_limit=150),
+                    scrape_watched(req.username2, delay=settings.scrape_delay,
+                                   max_pages=2, film_limit=150),
+                    _safe_watchlist(req.username1),
+                    _safe_watchlist(req.username2),
                 )
             except ScrapeError as exc:
-                yield _sse({"type": "error", "detail": str(exc)}); return
-
-            yield _sse({"type": "ping"})
-
-            try:
-                watched2 = await scrape_watched(
-                    req.username2, delay=settings.scrape_delay, max_pages=5, film_limit=400
-                )
-            except ScrapeError as exc:
-                yield _sse({"type": "error", "detail": str(exc)}); return
-
-            yield _sse({"type": "ping"})
-            wl1 = await _safe_watchlist(req.username1)
-            yield _sse({"type": "ping"})
-            wl2 = await _safe_watchlist(req.username2)
+                yield _sse({"type": "error", "detail": str(exc)})
+                return
 
             if not watched1:
-                yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."}); return
+                yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
+                return
             if not watched2:
-                yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."}); return
+                yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
+                return
+
+            # Scraping bitti → proxy'ye veri gönder
+            yield _sse({"type": "ping"})
 
             # ── Ortak watchlist filmleri ───────────────────────────────────────────
             wl_slugs2 = {f.slug for f in wl2 if f.slug}
@@ -465,25 +461,17 @@ async def blend(req: BlendRequest):
             ]
             top_wl_raw = common_wl_raw[:6]
 
-            # ── Enrichment ────────────────────────────────────────────────────────
+            # ── Enrichment: her iki kullanıcı paralel ────────────────────────────
             yield _sse({"type": "step", "step": "enriching"})
             _, cache = _make_cache(settings)
             if settings.has_tmdb:
                 enricher = Enricher(settings.tmdb_api_key, cache)
-
-                # 30'luk chunk'lar halinde enrich: her chunk sonrası ping gönderilir.
-                # ~120 film / 30 = 4 chunk, her chunk ~3-5s → proxy hiç idle görmez.
-                w1_enriched = []
-                for i in range(0, len(watched1), 30):
-                    w1_enriched.extend(await enricher.enrich(watched1[i:i + 30]))
-                    yield _sse({"type": "ping"})
-
-                w2_enriched = []
-                for i in range(0, len(watched2), 30):
-                    w2_enriched.extend(await enricher.enrich(watched2[i:i + 30]))
-                    yield _sse({"type": "ping"})
-
-                wl_enriched = await enricher.enrich(top_wl_raw) if top_wl_raw else []
+                enrich_tasks = [enricher.enrich(watched1), enricher.enrich(watched2)]
+                if top_wl_raw:
+                    enrich_tasks.append(enricher.enrich(top_wl_raw))
+                results = await asyncio.gather(*enrich_tasks)
+                w1_enriched, w2_enriched = results[0], results[1]
+                wl_enriched = results[2] if top_wl_raw else []
                 wl_enriched.sort(
                     key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True
                 )
@@ -492,6 +480,9 @@ async def blend(req: BlendRequest):
                 w1_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched1]
                 w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
                 common_wl_films = []
+
+            # Enrichment bitti → proxy'ye veri gönder
+            yield _sse({"type": "ping"})
 
             # ── Ranking ───────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "ranking"})
@@ -513,8 +504,10 @@ async def blend(req: BlendRequest):
                 "watchlist_public": len(wl1) > 0 and len(wl2) > 0,
             })
 
-        except Exception as exc:
-            yield _sse({"type": "error", "detail": f"Sunucu hatası: {type(exc).__name__} — {exc}"})
+        except BaseException as exc:
+            # BaseException yakalar: Exception + CancelledError + diğerleri
+            if not isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                yield _sse({"type": "error", "detail": f"Sunucu hatası: {type(exc).__name__} — {exc}"})
 
     return StreamingResponse(
         generate(),
