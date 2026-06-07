@@ -594,6 +594,10 @@ tailwind.config = {
           <span id="br-common-count" class="font-headline-lg text-headline-lg text-primary-container">—</span>
           <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">ortak film</span>
         </div>
+        <div class="glass-panel rounded-xl px-6 py-4 flex flex-col items-center gap-1 min-w-[120px]">
+          <span id="br-scan-count" class="font-headline-lg text-headline-lg text-on-surface-variant">—</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">taranan film</span>
+        </div>
         <div id="br-director-card" class="hidden glass-panel rounded-xl px-6 py-4 flex flex-col items-center gap-1 min-w-[120px]">
           <span id="br-director" class="font-headline-md text-headline-md text-secondary-container text-center leading-tight"></span>
           <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">ortak yönetmen</span>
@@ -1178,6 +1182,7 @@ async function renderBlendResult(data) {
 
   // Stats
   $('br-common-count').textContent = common_count;
+  $('br-scan-count').textContent = watched_count1 + watched_count2;
   if (top_director) {
     $('br-director').textContent = top_director;
     $('br-director-counts').textContent = `${username1}: ${top_director_count1} · ${username2}: ${top_director_count2}`;

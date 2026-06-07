@@ -364,16 +364,17 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
             rating_corr = float(np.corrcoef(r1, r2)[0, 1])
             rating_corr = max(rating_corr, 0.0)  # negatif korelasyon → 0 (ceza vermiyoruz)
 
-    # Ağırlıklar: keyword ve director en ayrıştırıcı sinyaller.
-    # Rating korelasyonu varsa %20 pay alır, yoksa diğer sinyallere dağıtılır.
+    # Genre ve era sinyalleri çok non-discriminating (herkes Drama/Comedy, herkes 2010s izliyor).
+    # Keyword ve director gerçek zevk ayrımını yapar — ağırlıkları yükselt.
     if pairs:
-        raw = (genre_sim * 0.12 + kw_sim * 0.28 + dir_sim * 0.28
-               + era_sim * 0.12 + rating_corr * 0.20)
+        raw = (genre_sim * 0.04 + kw_sim * 0.37 + dir_sim * 0.37
+               + era_sim * 0.02 + rating_corr * 0.20)
     else:
-        raw = genre_sim * 0.15 + kw_sim * 0.35 + dir_sim * 0.35 + era_sim * 0.15
+        raw = genre_sim * 0.05 + kw_sim * 0.47 + dir_sim * 0.47 + era_sim * 0.01
 
-    # Tipik raw: farklı kullanıcılar 0.15-0.25, benzer 0.35-0.60 → ×1.6
-    score = max(min(round(raw * 1.6 * 100), 98), 2)
+    # Tipik raw: farklı kullanıcılar 0.10-0.22, benzer 0.28-0.45, çok benzer 0.45+
+    # ×1.5 ile çarpmak 0.45 → 67, 0.55 → 82 aralığı verir — daha gerçekçi.
+    score = max(min(round(raw * 1.5 * 100), 97), 3)
 
     # ── Ortak en sevilen yönetmen ───────────────────────────────────────────
     directors1 = Counter(f.director for f in watched1 if f.director)
