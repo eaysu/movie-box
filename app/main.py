@@ -414,37 +414,11 @@ async def blend(req: BlendRequest):
 
     async def generate():
         settings = get_settings()
-
-        # İlk byte'ı hemen gönder — proxy spin-up sırasında bağlantıyı kopmaz.
-        yield ": init\n\n"
-
-        # SSE keep-alive: proxy/load balancer'ların bağlantıyı kesmesini önler.
-        # ": ping" SSE comment formatı — tarayıcı ignore eder, proxy canlı sayar.
-        async def _keep_alive(task):
-            """Uzun async görevi çalışırken 4 saniyede bir ping gönderir."""
-            import asyncio as _aio
-            result_holder = []
-            exc_holder = []
-
-            async def run():
-                try:
-                    result_holder.append(await task)
-                except Exception as e:
-                    exc_holder.append(e)
-
-            runner = _aio.create_task(run())
-            while not runner.done():
-                await _aio.sleep(4)
-                if not runner.done():
-                    yield ": ping\n\n"
-            if exc_holder:
-                raise exc_holder[0]
-
         try:
+            # ── Scraping ──────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "scraping"})
 
             async def _safe_watchlist(username):
-                """Watchlist gizliyse hata fırlatmak yerine boş liste döner."""
                 try:
                     return await scrape_watchlist(
                         username, delay=settings.scrape_delay, max_pages=2, film_limit=200
@@ -452,28 +426,32 @@ async def blend(req: BlendRequest):
                 except ScrapeError:
                     return []
 
+            # Her await arasında ping göndererek proxy'nin bağlantıyı kesmesini önle.
             try:
-                scrape_task = asyncio.gather(
-                    scrape_watched(req.username1, delay=settings.scrape_delay,
-                                   max_pages=5, film_limit=400),
-                    scrape_watched(req.username2, delay=settings.scrape_delay,
-                                   max_pages=5, film_limit=400),
-                    _safe_watchlist(req.username1),
-                    _safe_watchlist(req.username2),
+                watched1 = await scrape_watched(
+                    req.username1, delay=settings.scrape_delay, max_pages=5, film_limit=400
                 )
-                async for ping in _keep_alive(scrape_task):
-                    yield ping
-                watched1, watched2, wl1, wl2 = scrape_task.result()
             except ScrapeError as exc:
-                yield _sse({"type": "error", "detail": str(exc)})
-                return
+                yield _sse({"type": "error", "detail": str(exc)}); return
+
+            yield _sse({"type": "ping"})
+
+            try:
+                watched2 = await scrape_watched(
+                    req.username2, delay=settings.scrape_delay, max_pages=5, film_limit=400
+                )
+            except ScrapeError as exc:
+                yield _sse({"type": "error", "detail": str(exc)}); return
+
+            yield _sse({"type": "ping"})
+            wl1 = await _safe_watchlist(req.username1)
+            yield _sse({"type": "ping"})
+            wl2 = await _safe_watchlist(req.username2)
 
             if not watched1:
-                yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
-                return
+                yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."}); return
             if not watched2:
-                yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
-                return
+                yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."}); return
 
             # ── Ortak watchlist filmleri ───────────────────────────────────────────
             wl_slugs2 = {f.slug for f in wl2 if f.slug}
@@ -485,21 +463,18 @@ async def blend(req: BlendRequest):
                 if f.slug not in seen_wl
                 and (f.title.lower().strip(), f.year) in wl_keys2
             ]
-            top_wl_raw = common_wl_raw[:6]  # 6 enrich et, poster olanlardan 3'ü seç
+            top_wl_raw = common_wl_raw[:6]
 
+            # ── Enrichment ────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "enriching"})
             _, cache = _make_cache(settings)
             if settings.has_tmdb:
                 enricher = Enricher(settings.tmdb_api_key, cache)
-                tasks_enrich = [enricher.enrich(watched1), enricher.enrich(watched2)]
-                if top_wl_raw:
-                    tasks_enrich.append(enricher.enrich(top_wl_raw))
-                enrich_task = asyncio.gather(*tasks_enrich)
-                async for ping in _keep_alive(enrich_task):
-                    yield ping
-                results = enrich_task.result()
-                w1_enriched, w2_enriched = results[0], results[1]
-                wl_enriched = results[2] if top_wl_raw else []
+                w1_enriched = await enricher.enrich(watched1)
+                yield _sse({"type": "ping"})
+                w2_enriched = await enricher.enrich(watched2)
+                yield _sse({"type": "ping"})
+                wl_enriched = await enricher.enrich(top_wl_raw) if top_wl_raw else []
                 wl_enriched.sort(
                     key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True
                 )
@@ -509,6 +484,7 @@ async def blend(req: BlendRequest):
                 w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
                 common_wl_films = []
 
+            # ── Ranking ───────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "ranking"})
             result = _calculate_blend(w1_enriched, w2_enriched, top_n=20)
 
