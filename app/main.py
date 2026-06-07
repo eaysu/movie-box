@@ -415,6 +415,28 @@ async def blend(req: BlendRequest):
     async def generate():
         settings = get_settings()
 
+        # SSE keep-alive: proxy/load balancer'ların bağlantıyı kesmesini önler.
+        # ": ping" SSE comment formatı — tarayıcı ignore eder, proxy canlı sayar.
+        async def _keep_alive(task):
+            """Uzun async görevi çalışırken 8 saniyede bir ping gönderir."""
+            import asyncio as _aio
+            result_holder = []
+            exc_holder = []
+
+            async def run():
+                try:
+                    result_holder.append(await task)
+                except Exception as e:
+                    exc_holder.append(e)
+
+            runner = _aio.create_task(run())
+            while not runner.done():
+                await _aio.sleep(8)
+                if not runner.done():
+                    yield ": ping\n\n"
+            if exc_holder:
+                raise exc_holder[0]
+
         yield _sse({"type": "step", "step": "scraping"})
 
         async def _safe_watchlist(username):
@@ -427,7 +449,7 @@ async def blend(req: BlendRequest):
                 return []
 
         try:
-            watched1, watched2, wl1, wl2 = await asyncio.gather(
+            scrape_task = asyncio.gather(
                 scrape_watched(req.username1, delay=settings.scrape_delay,
                                max_pages=5, film_limit=400),
                 scrape_watched(req.username2, delay=settings.scrape_delay,
@@ -435,6 +457,9 @@ async def blend(req: BlendRequest):
                 _safe_watchlist(req.username1),
                 _safe_watchlist(req.username2),
             )
+            async for ping in _keep_alive(scrape_task):
+                yield ping
+            watched1, watched2, wl1, wl2 = scrape_task.result()
         except ScrapeError as exc:
             yield _sse({"type": "error", "detail": str(exc)})
             return
@@ -462,10 +487,13 @@ async def blend(req: BlendRequest):
         _, cache = _make_cache(settings)
         if settings.has_tmdb:
             enricher = Enricher(settings.tmdb_api_key, cache)
-            tasks = [enricher.enrich(watched1), enricher.enrich(watched2)]
+            tasks_enrich = [enricher.enrich(watched1), enricher.enrich(watched2)]
             if top_wl_raw:
-                tasks.append(enricher.enrich(top_wl_raw))
-            results = await asyncio.gather(*tasks)
+                tasks_enrich.append(enricher.enrich(top_wl_raw))
+            enrich_task = asyncio.gather(*tasks_enrich)
+            async for ping in _keep_alive(enrich_task):
+                yield ping
+            results = enrich_task.result()
             w1_enriched, w2_enriched = results[0], results[1]
             wl_enriched = results[2] if top_wl_raw else []
             wl_enriched.sort(
