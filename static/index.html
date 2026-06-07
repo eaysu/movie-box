@@ -269,7 +269,6 @@ tailwind.config = {
 <header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
   <div class="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto">
     <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
-      <span class="material-symbols-outlined">movie_filter</span>
     </button>
     <div class="font-headline-md text-headline-md tracking-tighter text-gradient-green">LETTERBOXD · AI</div>
     <div class="w-6"></div>
@@ -283,11 +282,6 @@ tailwind.config = {
   <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-tertiary-container/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
 
   <div class="relative z-10 w-full max-w-[800px] flex flex-col items-center text-center">
-    <!-- Kicker badge -->
-    <span class="font-label-md text-label-md tracking-[0.12em] uppercase mb-stack-md px-4 py-1.5 rounded-full backdrop-blur-md text-gradient-green" style="background:rgba(0,224,84,0.08);border:1px solid rgba(0,224,84,0.2);box-shadow:0 0 20px rgba(0,224,84,0.08);">
-      ✦ LETTERBOXD · AI ✦
-    </span>
-
     <!-- Headline -->
     <h1 id="idle-headline" class="font-display-lg text-display-lg text-on-surface mb-stack-md leading-tight">
       İzleme listende<br/>
@@ -850,7 +844,7 @@ function setMode(mode) {
   const headlines = {
     taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-gradient-green',  desc: 'Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.' },
     random: { line1: 'Watchlist\'inden',        accent: 'sürpriz bir film.',     accentColor: 'text-gradient-blue', desc: 'Watchlist\'inden rastgele bir film seç — maksimum 3 kez şansını dene.' },
-    blend:  { line1: 'İki sinema dünyasının',  accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
+    blend:  { line1: 'İki sinefilin',          accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
   };
   const h = headlines[mode] || headlines.taste;
   $('idle-headline').childNodes[0].textContent = h.line1 + '\n';
