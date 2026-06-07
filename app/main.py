@@ -411,12 +411,15 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
 @app.post("/api/blend")
 async def blend(req: BlendRequest):
     """SSE stream: iki kullanıcının film zevkini harmanlayıp uyum skoru hesapla."""
+    log.warning("blend request: %s / %s", req.username1, req.username2)
 
     async def generate():
+        t0 = time.perf_counter()
         settings = get_settings()
         try:
             # ── Scraping: her iki kullanıcı paralel ──────────────────────────────
             yield _sse({"type": "step", "step": "scraping"})
+            t1 = time.perf_counter()
 
             async def _safe_watchlist(username):
                 try:
@@ -436,8 +439,12 @@ async def blend(req: BlendRequest):
                     _safe_watchlist(req.username2),
                 )
             except ScrapeError as exc:
+                log.warning("blend scrape error: %s", exc)
                 yield _sse({"type": "error", "detail": str(exc)})
                 return
+
+            log.warning("blend scraping %.2fs  w1=%d w2=%d wl1=%d wl2=%d",
+                        time.perf_counter() - t1, len(watched1), len(watched2), len(wl1), len(wl2))
 
             if not watched1:
                 yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
@@ -463,6 +470,7 @@ async def blend(req: BlendRequest):
 
             # ── Enrichment: her iki kullanıcı paralel ────────────────────────────
             yield _sse({"type": "step", "step": "enriching"})
+            t2 = time.perf_counter()
             _, cache = _make_cache(settings)
             if settings.has_tmdb:
                 enricher = Enricher(settings.tmdb_api_key, cache)
@@ -481,12 +489,18 @@ async def blend(req: BlendRequest):
                 w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
                 common_wl_films = []
 
+            log.warning("blend enriching %.2fs  w1=%d w2=%d wl=%d",
+                        time.perf_counter() - t2, len(w1_enriched), len(w2_enriched), len(common_wl_films))
+
             # Enrichment bitti → proxy'ye veri gönder
             yield _sse({"type": "ping"})
 
             # ── Ranking ───────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "ranking"})
             result = _calculate_blend(w1_enriched, w2_enriched, top_n=20)
+
+            log.warning("blend TOTAL %.2fs  score=%d common=%d",
+                        time.perf_counter() - t0, result["score"], result["common_count"])
 
             yield _sse({
                 "type": "result",
@@ -507,6 +521,7 @@ async def blend(req: BlendRequest):
         except BaseException as exc:
             # BaseException yakalar: Exception + CancelledError + diğerleri
             if not isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                log.warning("blend EXCEPTION %s: %s", type(exc).__name__, exc)
                 yield _sse({"type": "error", "detail": f"Sunucu hatası: {type(exc).__name__} — {exc}"})
 
     return StreamingResponse(
