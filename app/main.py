@@ -470,10 +470,19 @@ async def blend(req: BlendRequest):
             _, cache = _make_cache(settings)
             if settings.has_tmdb:
                 enricher = Enricher(settings.tmdb_api_key, cache)
-                w1_enriched = await enricher.enrich(watched1)
-                yield _sse({"type": "ping"})
-                w2_enriched = await enricher.enrich(watched2)
-                yield _sse({"type": "ping"})
+
+                # 30'luk chunk'lar halinde enrich: her chunk sonrası ping gönderilir.
+                # ~120 film / 30 = 4 chunk, her chunk ~3-5s → proxy hiç idle görmez.
+                w1_enriched = []
+                for i in range(0, len(watched1), 30):
+                    w1_enriched.extend(await enricher.enrich(watched1[i:i + 30]))
+                    yield _sse({"type": "ping"})
+
+                w2_enriched = []
+                for i in range(0, len(watched2), 30):
+                    w2_enriched.extend(await enricher.enrich(watched2[i:i + 30]))
+                    yield _sse({"type": "ping"})
+
                 wl_enriched = await enricher.enrich(top_wl_raw) if top_wl_raw else []
                 wl_enriched.sort(
                     key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True
