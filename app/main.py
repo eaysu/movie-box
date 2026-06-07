@@ -406,14 +406,24 @@ async def blend(req: BlendRequest):
         settings = get_settings()
 
         yield _sse({"type": "step", "step": "scraping"})
+
+        async def _safe_watchlist(username):
+            """Watchlist gizliyse hata fırlatmak yerine boş liste döner."""
+            try:
+                return await scrape_watchlist(
+                    username, delay=settings.scrape_delay, max_pages=2, film_limit=200
+                )
+            except ScrapeError:
+                return []
+
         try:
-            # Blend için daha fazla film çek — ortak film bulma şansı artsın.
-            # max_pages=5: 403 gelirse sessizce durur (scraper bunu handle ediyor).
-            watched1, watched2 = await asyncio.gather(
+            watched1, watched2, wl1, wl2 = await asyncio.gather(
                 scrape_watched(req.username1, delay=settings.scrape_delay,
                                max_pages=5, film_limit=400),
                 scrape_watched(req.username2, delay=settings.scrape_delay,
                                max_pages=5, film_limit=400),
+                _safe_watchlist(req.username1),
+                _safe_watchlist(req.username2),
             )
         except ScrapeError as exc:
             yield _sse({"type": "error", "detail": str(exc)})
@@ -426,17 +436,36 @@ async def blend(req: BlendRequest):
             yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
             return
 
+        # ── Ortak watchlist filmleri ───────────────────────────────────────────
+        wl_slugs2 = {f.slug for f in wl2 if f.slug}
+        common_wl_raw = [f for f in wl1 if f.slug and f.slug in wl_slugs2]
+        wl_keys2 = {(f.title.lower().strip(), f.year) for f in wl2}
+        seen_wl = {f.slug for f in common_wl_raw}
+        common_wl_raw += [
+            f for f in wl1
+            if f.slug not in seen_wl
+            and (f.title.lower().strip(), f.year) in wl_keys2
+        ]
+        top_wl_raw = common_wl_raw[:6]  # 6 enrich et, poster olanlardan 3'ü seç
+
         yield _sse({"type": "step", "step": "enriching"})
         _, cache = _make_cache(settings)
         if settings.has_tmdb:
             enricher = Enricher(settings.tmdb_api_key, cache)
-            w1_enriched, w2_enriched = await asyncio.gather(
-                enricher.enrich(watched1),
-                enricher.enrich(watched2),
+            tasks = [enricher.enrich(watched1), enricher.enrich(watched2)]
+            if top_wl_raw:
+                tasks.append(enricher.enrich(top_wl_raw))
+            results = await asyncio.gather(*tasks)
+            w1_enriched, w2_enriched = results[0], results[1]
+            wl_enriched = results[2] if top_wl_raw else []
+            wl_enriched.sort(
+                key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True
             )
+            common_wl_films = wl_enriched[:3]
         else:
             w1_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched1]
             w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
+            common_wl_films = []
 
         yield _sse({"type": "step", "step": "ranking"})
         result = _calculate_blend(w1_enriched, w2_enriched, top_n=20)
@@ -453,6 +482,8 @@ async def blend(req: BlendRequest):
             "top_director_count1": result["top_director_count1"],
             "top_director_count2": result["top_director_count2"],
             "films": [f.to_dict() for f in result["films"]],
+            "common_watchlist_films": [f.to_dict() for f in common_wl_films],
+            "watchlist_public": len(wl1) > 0 and len(wl2) > 0,
         })
 
     return StreamingResponse(

@@ -580,6 +580,21 @@ tailwind.config = {
       <p class="font-body-lg text-body-lg text-on-surface-variant">Henüz ortak izlenmiş film bulunamadı.<br/>Ama zevk analizi yapıldı!</p>
     </div>
 
+    <!-- Ortak watchlist filmleri -->
+    <section id="br-wishlist-section" class="hidden flex flex-col gap-stack-md">
+      <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
+        <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">bookmark_add</span>
+        Birlikte İzlemek İstedikleriniz
+      </h2>
+      <div id="br-wishlist-grid" class="grid grid-cols-3 gap-gutter"></div>
+    </section>
+
+    <!-- Ortak watchlist yok fallback -->
+    <div id="br-no-wishlist" class="hidden glass-panel rounded-xl p-stack-lg text-center">
+      <span class="material-symbols-outlined text-[40px] text-on-surface-variant/30 mb-stack-sm block">bookmark_remove</span>
+      <p class="font-body-lg text-body-lg text-on-surface-variant">Ortak izlenmek istenen film bulunamadı.<br/><span class="text-on-surface-variant/50 text-sm">Watchlist'ler gizli veya ortak film yok.</span></p>
+    </div>
+
   </div>
 </div>
 
@@ -631,11 +646,11 @@ tailwind.config = {
 <!-- ═══════════════════════════  FOOTER  ═══════════════════════════ -->
 <footer id="main-footer" class="w-full py-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
   <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto">
-    <div class="font-label-md text-label-md text-on-surface">© 2025 Digital Craftsmanship. Cinema AI Engine.</div>
+    <div class="font-label-md text-label-md text-on-surface">© 2025 Letterboxd AI · Yapay Zeka Film Motoru</div>
     <div class="flex items-center gap-gutter font-label-md text-label-md">
-      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Privacy</a>
-      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Terms</a>
-      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">API Status</a>
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Gizlilik</a>
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Kullanım Koşulları</a>
+      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">API Durumu</a>
     </div>
   </div>
 </footer>
@@ -1109,7 +1124,8 @@ function buildBlendFilmCard(film, idx) {
 
 async function renderBlendResult(data) {
   const { username1, username2, score, common_count, top_director,
-          top_director_count1, top_director_count2, films } = data;
+          top_director_count1, top_director_count2, films,
+          common_watchlist_films = [], watchlist_public = false } = data;
 
   const info = getScoreInfo(score);
 
@@ -1138,7 +1154,7 @@ async function renderBlendResult(data) {
     `radial-gradient(circle at 85% 75%, ${info.bg}0.04) 0%, transparent 40%)`,
   ].join(',');
 
-  // Films
+  // Ortak izlenen filmler
   if (films && films.length > 0) {
     $('br-grid').innerHTML = films.map(buildBlendFilmCard).join('');
     $('br-films-section').classList.remove('hidden');
@@ -1147,6 +1163,17 @@ async function renderBlendResult(data) {
   } else {
     $('br-films-section').classList.add('hidden');
     $('br-no-common').classList.remove('hidden');
+  }
+
+  // Ortak watchlist filmleri
+  if (common_watchlist_films && common_watchlist_films.length > 0) {
+    $('br-wishlist-grid').innerHTML = common_watchlist_films.map(buildBlendFilmCard).join('');
+    $('br-wishlist-section').classList.remove('hidden');
+    $('br-wishlist-section').classList.add('flex');
+    $('br-no-wishlist').classList.add('hidden');
+  } else {
+    $('br-wishlist-section').classList.add('hidden');
+    $('br-no-wishlist').classList.remove('hidden');
   }
 
   showView('blend-result');
