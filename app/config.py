@@ -33,11 +33,12 @@ class Settings(BaseSettings):
     # --- Scraper ---
     # curl-cffi (retry + parmak izi rotasyonu + humanize) asıl iş gücü;
     # ScraperAPI sadece bloklanan sayfalar için sıkı bütçeli son çare.
-    scrape_delay: float = 1.0       # sayfalar arası temel gecikme (jitter eklenir)
-    scrape_max_pages: int = 8       # watchlist için max sayfa (~570 film)
-    watched_max_pages: int = 8      # izlenen filmler için max sayfa (~570 film)
-    watched_film_limit: int = 500   # hard limit — recommend/blend için profil
-    watchlist_film_limit: int = 400 # watchlist'ten candidate havuzu
+    # Agresif mod: hız öncelikli — daha kısa gecikme, daha düşük film tavanı.
+    scrape_delay: float = 0.6       # sayfalar arası temel gecikme (jitter eklenir)
+    scrape_max_pages: int = 8       # watchlist için max sayfa
+    watched_max_pages: int = 8      # izlenen filmler için max sayfa
+    watched_film_limit: int = 300   # hard limit — taste/blend için yeterli profil
+    watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
     # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
     # Şu an kapalı: yalnızca kendi curl-cffi scraper'ımız kullanılır, 0 kredi.

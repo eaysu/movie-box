@@ -163,7 +163,7 @@ class Enricher:
         async with httpx.AsyncClient(timeout=20.0) as client:
             await self._load_genre_map(client)
 
-            sem = asyncio.Semaphore(20)
+            sem = asyncio.Semaphore(40)
 
             async def worker(f) -> EnrichedFilm:
                 title = f["title"] if isinstance(f, dict) else f.title
