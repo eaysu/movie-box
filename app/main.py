@@ -130,12 +130,14 @@ async def recommend(req: RecommendRequest):
                             delay=settings.scrape_delay,
                             max_pages=settings.watched_max_pages,
                             film_limit=settings.watched_film_limit,
+                            scraperapi_key=settings.scraperapi_key,
                         ),
                         scrape_watchlist(
                             req.username,
                             delay=settings.scrape_delay,
                             max_pages=settings.scrape_max_pages,
                             film_limit=settings.watchlist_film_limit,
+                            scraperapi_key=settings.scraperapi_key,
                         ),
                     )
                 except ScrapeError as exc:
@@ -229,6 +231,7 @@ async def random_pick(req: RandomRequest):
                 delay=settings.scrape_delay,
                 max_pages=settings.scrape_max_pages,
                 film_limit=settings.watchlist_film_limit,
+                scraperapi_key=settings.scraperapi_key,
             )
         except ScrapeError as exc:
             yield _sse({"type": "error", "detail": str(exc)})
@@ -423,20 +426,21 @@ async def blend(req: BlendRequest):
             async def _safe_watchlist(username):
                 try:
                     return await scrape_watchlist(
-                        username, delay=0.4, max_pages=5, film_limit=400
+                        username, delay=0.4, max_pages=5, film_limit=400,
+                        scraperapi_key=settings.scraperapi_key,
                     )
                 except ScrapeError:
                     return []
 
             # ── Faz 1: her iki kullanıcının izledikleri (paralel) ────────────────
-            # Faz 1 ve 2'yi ayırarak Cloudflare burst'ü yarıya düşürüyoruz.
-            # (4-paralel yerine 2+2: watchlist Render IP'sinde artık çalışmalı)
             try:
                 watched1, watched2 = await asyncio.gather(
                     scrape_watched(req.username1, delay=0.4,
-                                   max_pages=6, film_limit=500),
+                                   max_pages=6, film_limit=500,
+                                   scraperapi_key=settings.scraperapi_key),
                     scrape_watched(req.username2, delay=0.4,
-                                   max_pages=6, film_limit=500),
+                                   max_pages=6, film_limit=500,
+                                   scraperapi_key=settings.scraperapi_key),
                 )
             except ScrapeError as exc:
                 log.warning("blend scrape error (watched): %s", exc)

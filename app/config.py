@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # --- API keys ---
     tmdb_api_key: str = ""
     openai_api_key: str = ""
+    scraperapi_key: str = ""
     openai_model: str = "gpt-5-mini-2025-08-07"
     supabase_url: str = ""
     supabase_key: str = ""

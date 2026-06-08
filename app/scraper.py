@@ -8,6 +8,7 @@ import asyncio
 import html as _html
 import logging
 import re
+import urllib.parse
 from dataclasses import dataclass, asdict
 from typing import Optional
 
@@ -17,6 +18,11 @@ from bs4 import BeautifulSoup
 log = logging.getLogger("moviebox")
 
 BASE_URL = "https://letterboxd.com"
+
+
+def _scraperapi_url(url: str, api_key: str) -> str:
+    """Wrap a URL through ScraperAPI to bypass Cloudflare IP blocks."""
+    return f"http://api.scraperapi.com?api_key={api_key}&url={urllib.parse.quote(url)}"
 
 # curl-cffi impersonate="chrome124" otomatik olarak Chrome TLS + HTTP/2 parmak izi kullanır.
 # Sadece navigasyon için Referer gibi ek başlıklar gerektiğinde kullanılır.
@@ -130,10 +136,13 @@ async def _scrape_list(
     delay: float = 0.4,
     max_pages: int = 40,
     film_limit: int | None = None,
+    scraperapi_key: str = "",
 ) -> list[ScrapedFilm]:
     """Generic paginated scraper for any Letterboxd film grid.
 
-    curl-cffi ile Chrome TLS parmak izi taklit edilerek Cloudflare bypass yapılır.
+    scraperapi_key verilirse tüm istekler ScraperAPI üzerinden proxy'lenir
+    (Render gibi cloud IP'lerinin Cloudflare tarafından engellenmesini aşmak için).
+    Yoksa curl-cffi ile Chrome TLS parmak izi taklit edilir.
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
     """
     username = username.strip().lstrip("@").lower()
@@ -144,31 +153,39 @@ async def _scrape_list(
     seen_slugs: set[str] = set()
 
     async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
-        # Warm-up: profil sayfasını ziyaret et → Cloudflare oturum cookie'si kurar
-        try:
-            await session.get(f"{BASE_URL}/{username}/", timeout=20)
-        except Exception:
-            pass  # non-critical
+        # Warm-up: ScraperAPI kullanılmıyorsa profil sayfasını ziyaret et
+        if not scraperapi_key:
+            try:
+                await session.get(f"{BASE_URL}/{username}/", timeout=20)
+            except Exception:
+                pass  # non-critical
 
         for page in range(1, max_pages + 1):
-            url = (
+            direct_url = (
                 f"{BASE_URL}/{username}/{list_path}/"
                 if page == 1
                 else f"{BASE_URL}/{username}/{list_path}/page/{page}/"
             )
 
-            # Referer: önceki sayfa URL'si — gerçek tarayıcı gezintisini taklit eder
-            if page == 1:
-                referer = f"{BASE_URL}/{username}/"
-            elif page == 2:
-                referer = f"{BASE_URL}/{username}/{list_path}/"
+            if scraperapi_key:
+                fetch_url = _scraperapi_url(direct_url, scraperapi_key)
+                extra_headers: dict = {}
+                fetch_timeout = 60
             else:
-                referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
+                fetch_url = direct_url
+                if page == 1:
+                    referer = f"{BASE_URL}/{username}/"
+                elif page == 2:
+                    referer = f"{BASE_URL}/{username}/{list_path}/"
+                else:
+                    referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
+                extra_headers = {"Referer": referer}
+                fetch_timeout = 20
 
             try:
-                resp = await session.get(url, headers={"Referer": referer}, timeout=20)
+                resp = await session.get(fetch_url, headers=extra_headers, timeout=fetch_timeout)
             except Exception as exc:
-                raise ScrapeError(f"Network error fetching {url}: {exc}") from exc
+                raise ScrapeError(f"Network error fetching {direct_url}: {exc}") from exc
 
             if resp.status_code == 404:
                 if page == 1:
@@ -221,9 +238,14 @@ async def scrape_watchlist(
     delay: float = 1.0,
     max_pages: int = 40,
     film_limit: int | None = None,
+    scraperapi_key: str = "",
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlemek istediği film listesini çeker."""
-    return await _scrape_list(username, "watchlist", delay=delay, max_pages=max_pages, film_limit=film_limit)
+    return await _scrape_list(
+        username, "watchlist",
+        delay=delay, max_pages=max_pages, film_limit=film_limit,
+        scraperapi_key=scraperapi_key,
+    )
 
 
 async def scrape_diary(
@@ -231,14 +253,14 @@ async def scrape_diary(
     *,
     max_pages: int = 5,
     film_limit: int = 250,
+    scraperapi_key: str = "",
 ) -> list[ScrapedFilm]:
-    """Diary HTML sayfalarından ek film listesi çeker.
-
-    RSS son 50 girişi verir; diary HTML sayfaları 2+ daha eski izlemeleri sağlar.
-    Cloudflare /films/page/2+/ 'yı engelliyor ama /films/diary/page/N/ genellikle açık.
-    Hata durumunda ScrapeError fırlatır — sarmalayıcı [] döndürmeli.
-    """
-    return await _scrape_list(username, "films/diary", delay=0.5, max_pages=max_pages, film_limit=film_limit)
+    """Diary HTML sayfalarından ek film listesi çeker."""
+    return await _scrape_list(
+        username, "films/diary",
+        delay=0.5, max_pages=max_pages, film_limit=film_limit,
+        scraperapi_key=scraperapi_key,
+    )
 
 
 async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
@@ -284,11 +306,12 @@ async def scrape_watched(
     delay: float = 0.4,
     max_pages: int = 10,
     film_limit: int = 300,
+    scraperapi_key: str = "",
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlediği filmleri çeker (zevk profili için).
 
     Strateji:
-      1. /films/ HTML — curl-cffi ile Chrome parmak izi → sayfa N'e kadar erişilebilir
+      1. /films/ HTML — ScraperAPI varsa proxy üzerinden, yoksa curl-cffi ile
       2. /rss/ — en son ~50 diary kaydı (rating bilgisi içerir)
     İki kaynak slug ile tekilleştirilip birleştirilir.
     film_limit hard cap olarak uygulanır (varsayılan 300).
@@ -296,8 +319,9 @@ async def scrape_watched(
     html_films = await _scrape_list(
         username, "films",
         delay=delay,
-        max_pages=max_pages,   # 403 gelirse scraper sessizce durur
+        max_pages=max_pages,
         film_limit=film_limit,
+        scraperapi_key=scraperapi_key,
     )
     rss_films = await _scrape_watched_rss(username)
 
