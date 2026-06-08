@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     watchlist_film_limit: int = 400 # watchlist'ten candidate havuzu
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
     # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
-    scraperapi_max_pages: int = 2
+    # Şu an kapalı: yalnızca kendi curl-cffi scraper'ımız kullanılır, 0 kredi.
+    scraperapi_max_pages: int = 0
 
     # --- Storage ---
     data_dir: str = "data"
