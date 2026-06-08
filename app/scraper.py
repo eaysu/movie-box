@@ -253,6 +253,21 @@ async def scrape_watchlist(
     return await _scrape_list(username, "watchlist", delay=delay, max_pages=max_pages, film_limit=film_limit)
 
 
+async def scrape_diary(
+    username: str,
+    *,
+    max_pages: int = 5,
+    film_limit: int = 250,
+) -> list[ScrapedFilm]:
+    """Diary HTML sayfalarından ek film listesi çeker.
+
+    RSS son 50 girişi verir; diary HTML sayfaları 2+ daha eski izlemeleri sağlar.
+    Cloudflare /films/page/2+/ 'yı engelliyor ama /films/diary/page/N/ genellikle açık.
+    Hata durumunda ScrapeError fırlatır — sarmalayıcı [] döndürmeli.
+    """
+    return await _scrape_list(username, "films/diary", delay=0.5, max_pages=max_pages, film_limit=film_limit)
+
+
 async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     """RSS feed'den en son 50 izlenen filmi çeker.
 

@@ -31,7 +31,7 @@ from .database import upsert_user
 from .enrich import Enricher, EnrichedFilm
 from .llm import rank_candidates
 from .recommender import rank_watchlist
-from .scraper import ScrapeError, scrape_watchlist, scrape_watched
+from .scraper import ScrapeError, scrape_diary, scrape_watchlist, scrape_watched
 
 app = FastAPI(title="Letterboxd AI Recommender", version="0.3.0")
 log = logging.getLogger("moviebox")
@@ -417,7 +417,6 @@ async def blend(req: BlendRequest):
         t0 = time.perf_counter()
         settings = get_settings()
         try:
-            # ── Scraping: her iki kullanıcı paralel ──────────────────────────────
             yield _sse({"type": "step", "step": "scraping"})
             t1 = time.perf_counter()
 
@@ -429,22 +428,25 @@ async def blend(req: BlendRequest):
                 except ScrapeError:
                     return []
 
+            async def _safe_diary(username):
+                try:
+                    return await scrape_diary(username, max_pages=5, film_limit=250)
+                except ScrapeError:
+                    return []
+
+            # ── Faz 1: her iki kullanıcının izledikleri (paralel) ────────────────
+            # Faz 1 ve 2'yi ayırarak Cloudflare burst engellemesini azaltıyoruz.
             try:
-                watched1, watched2, wl1, wl2 = await asyncio.gather(
+                watched1, watched2 = await asyncio.gather(
                     scrape_watched(req.username1, delay=settings.scrape_delay,
                                    max_pages=2, film_limit=150),
                     scrape_watched(req.username2, delay=settings.scrape_delay,
                                    max_pages=2, film_limit=150),
-                    _safe_watchlist(req.username1),
-                    _safe_watchlist(req.username2),
                 )
             except ScrapeError as exc:
-                log.warning("blend scrape error: %s", exc)
+                log.warning("blend scrape error (watched): %s", exc)
                 yield _sse({"type": "error", "detail": str(exc)})
                 return
-
-            log.warning("blend scraping %.2fs  w1=%d w2=%d wl1=%d wl2=%d",
-                        time.perf_counter() - t1, len(watched1), len(watched2), len(wl1), len(wl2))
 
             if not watched1:
                 yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
@@ -453,8 +455,28 @@ async def blend(req: BlendRequest):
                 yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
                 return
 
-            # Scraping bitti → proxy'ye veri gönder
-            yield _sse({"type": "ping"})
+            yield _sse({"type": "ping"})  # Faz 1 bitti → proxy canlı tut
+
+            # ── Faz 2: watchlist + diary (paralel, faz 1'den sonra) ─────────────
+            # Watchlist ve diary, watched'dan ayrı başlatılıyor → burst yarı yarıya düşüyor.
+            wl1, wl2, diary1, diary2 = await asyncio.gather(
+                _safe_watchlist(req.username1),
+                _safe_watchlist(req.username2),
+                _safe_diary(req.username1),
+                _safe_diary(req.username2),
+            )
+
+            # Diary filmlerini watched listesine ekle (slug ile tekilleştir)
+            def _extend(base, extra):
+                seen = {f.slug for f in base if f.slug}
+                return list(base) + [f for f in extra if f.slug and f.slug not in seen]
+
+            watched1 = _extend(watched1, diary1)
+            watched2 = _extend(watched2, diary2)
+
+            log.warning("blend scraping %.2fs  w1=%d w2=%d wl1=%d wl2=%d diary1=%d diary2=%d",
+                        time.perf_counter() - t1, len(watched1), len(watched2),
+                        len(wl1), len(wl2), len(diary1), len(diary2))
 
             # ── Ortak watchlist filmleri ───────────────────────────────────────────
             wl_slugs2 = {f.slug for f in wl2 if f.slug}
