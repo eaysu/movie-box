@@ -394,10 +394,12 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
     common_dirs = set(directors1) & set(directors2)
 
     if common_dirs:
-        scored = {d: directors1[d] + directors2[d] for d in common_dirs}
+        # min(d1, d2): her iki kullanıcının da gerçekten sevdiği yönetmeni öne çıkar.
+        # Toplam (d1+d2) yerine min kullanmak tek taraflı baskınlığı engeller.
+        # Eşitlikte toplam tiebreaker olarak kullanılır.
+        scored = {d: (min(directors1[d], directors2[d]), directors1[d] + directors2[d])
+                  for d in common_dirs}
         top_dir = max(scored, key=scored.get)
-    elif directors1 or directors2:
-        top_dir = (directors1 + directors2).most_common(1)[0][0]
     else:
         top_dir = None
 
