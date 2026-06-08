@@ -30,11 +30,12 @@ class Settings(BaseSettings):
     num_recommendations: int = 8
 
     # --- Scraper ---
-    scrape_delay: float = 0.5
-    scrape_max_pages: int = 40      # watchlist için safety cap (~1100 film)
-    watched_max_pages: int = 10     # güvenlik sınırı (her sayfa ~72 film)
-    watched_film_limit: int = 100   # hard limit — en son 100 izlenen film
-    watchlist_film_limit: int = 200 # watchlist'ten fazlasını çekme
+    # curl-cffi ile Cloudflare bypass çalıştığından sayfa 2+ artık erişilebilir.
+    scrape_delay: float = 0.4
+    scrape_max_pages: int = 6       # watchlist için max sayfa (~400 film)
+    watched_max_pages: int = 5      # izlenen filmler için max sayfa (~360 film)
+    watched_film_limit: int = 300   # hard limit — recommend için yeterli profil
+    watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
 
     # --- Storage ---
     data_dir: str = "data"

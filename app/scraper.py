@@ -12,33 +12,16 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 
 import httpx
+from curl_cffi.requests import AsyncSession
 from bs4 import BeautifulSoup
 
 log = logging.getLogger("moviebox")
 
 BASE_URL = "https://letterboxd.com"
 
-# Gerçek bir tarayıcıya benzer User-Agent — Letterboxd bot tespitini azaltır
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
-)
-
-BASE_HEADERS = {
-    "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    # Accept-Encoding intentionally omitted — let httpx advertise only what it can decompress
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0",
-}
+# curl-cffi impersonate="chrome124" otomatik olarak Chrome TLS + HTTP/2 parmak izi kullanır.
+# Sadece navigasyon için Referer gibi ek başlıklar gerektiğinde kullanılır.
+_CHROME_IMPERSONATE = "chrome124"
 
 
 class ScrapeError(Exception):
@@ -145,12 +128,13 @@ async def _scrape_list(
     username: str,
     list_path: str,
     *,
-    delay: float = 1.0,
+    delay: float = 0.4,
     max_pages: int = 40,
     film_limit: int | None = None,
 ) -> list[ScrapedFilm]:
     """Generic paginated scraper for any Letterboxd film grid.
 
+    curl-cffi ile Chrome TLS parmak izi taklit edilerek Cloudflare bypass yapılır.
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
     """
     username = username.strip().lstrip("@").lower()
@@ -160,39 +144,31 @@ async def _scrape_list(
     films: list[ScrapedFilm] = []
     seen_slugs: set[str] = set()
 
-    async with httpx.AsyncClient(
-        headers=BASE_HEADERS,
-        timeout=20.0,
-        follow_redirects=True,
-        cookies=httpx.Cookies(),  # persist cookies across requests (session-like)
-    ) as client:
-        # Warm-up: visit the profile page first so Letterboxd sets session cookies
+    async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
+        # Warm-up: profil sayfasını ziyaret et → Cloudflare oturum cookie'si kurar
         try:
-            await client.get(
-                f"{BASE_URL}/{username}/",
-                headers={"Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate"},
-            )
-        except httpx.HTTPError:
+            await session.get(f"{BASE_URL}/{username}/", timeout=20)
+        except Exception:
             pass  # non-critical
 
         for page in range(1, max_pages + 1):
-            if page == 1:
-                url = f"{BASE_URL}/{username}/{list_path}/"
-            else:
-                url = f"{BASE_URL}/{username}/{list_path}/page/{page}/"
+            url = (
+                f"{BASE_URL}/{username}/{list_path}/"
+                if page == 1
+                else f"{BASE_URL}/{username}/{list_path}/page/{page}/"
+            )
 
-            # Referer: önceki sayfa URL'si — Letterboxd bot tespitini azaltır
-            headers = {"Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate"}
+            # Referer: önceki sayfa URL'si — gerçek tarayıcı gezintisini taklit eder
             if page == 1:
-                headers["Referer"] = f"{BASE_URL}/{username}/"
+                referer = f"{BASE_URL}/{username}/"
             elif page == 2:
-                headers["Referer"] = f"{BASE_URL}/{username}/{list_path}/"
+                referer = f"{BASE_URL}/{username}/{list_path}/"
             else:
-                headers["Referer"] = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
+                referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
 
             try:
-                resp = await client.get(url, headers=headers)
-            except httpx.HTTPError as exc:
+                resp = await session.get(url, headers={"Referer": referer}, timeout=20)
+            except Exception as exc:
                 raise ScrapeError(f"Network error fetching {url}: {exc}") from exc
 
             if resp.status_code == 404:
@@ -217,7 +193,6 @@ async def _scrape_list(
             page_films = _parse_page(resp.text)
             if not page_films:
                 if page == 1:
-                    # 200 ama film yok → büyük ihtimalle bot/captcha sayfası
                     preview = resp.text[:300].replace("\n", " ")
                     log.warning("scraper: page 1 empty (status=%s). HTML preview: %s", resp.status_code, preview)
                     raise ScrapeError(
@@ -231,7 +206,6 @@ async def _scrape_list(
                     seen_slugs.add(film.slug)
                     films.append(film)
 
-            # Hard limit'e ulaştıysak dur
             if film_limit and len(films) >= film_limit:
                 films = films[:film_limit]
                 break
@@ -269,21 +243,18 @@ async def scrape_diary(
 
 
 async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
-    """RSS feed'den en son 50 izlenen filmi çeker.
+    """RSS feed'den en son ~50 izlenen filmi çeker (rating dahil).
 
-    Letterboxd /films/page/2+/ 403 döndürdüğü için RSS ile
-    HTML page-1'i birleştirip daha geniş bir örneklem elde ediyoruz.
+    HTML scrape ile birleştirilerek kapsam genişletilir.
     Başarısız olursa boş liste döner — kritik değil.
     """
     url = f"{BASE_URL}/{username}/rss/"
     try:
-        async with httpx.AsyncClient(
-            headers=BASE_HEADERS, timeout=20.0, follow_redirects=True
-        ) as client:
-            resp = await client.get(url)
+        async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
+            resp = await session.get(url, timeout=20)
         if resp.status_code != 200:
             return []
-    except httpx.HTTPError:
+    except Exception:
         return []
 
     films: list[ScrapedFilm] = []
@@ -311,15 +282,15 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
 async def scrape_watched(
     username: str,
     *,
-    delay: float = 1.0,
+    delay: float = 0.4,
     max_pages: int = 10,
     film_limit: int = 300,
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlediği filmleri çeker (zevk profili için).
 
     Strateji:
-      1. /films/ HTML — sayfa 1 (≈72 film, sayfa 2+ Letterboxd tarafından engelleniyor)
-      2. /rss/ — en son 50 diary kaydı (engelleme yok)
+      1. /films/ HTML — curl-cffi ile Chrome parmak izi → sayfa N'e kadar erişilebilir
+      2. /rss/ — en son ~50 diary kaydı (rating bilgisi içerir)
     İki kaynak slug ile tekilleştirilip birleştirilir.
     film_limit hard cap olarak uygulanır (varsayılan 300).
     """

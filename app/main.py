@@ -423,7 +423,7 @@ async def blend(req: BlendRequest):
             async def _safe_watchlist(username):
                 try:
                     return await scrape_watchlist(
-                        username, delay=settings.scrape_delay, max_pages=2, film_limit=200
+                        username, delay=0.4, max_pages=5, film_limit=400
                     )
                 except ScrapeError:
                     return []
@@ -433,10 +433,10 @@ async def blend(req: BlendRequest):
             # (4-paralel yerine 2+2: watchlist Render IP'sinde artık çalışmalı)
             try:
                 watched1, watched2 = await asyncio.gather(
-                    scrape_watched(req.username1, delay=settings.scrape_delay,
-                                   max_pages=2, film_limit=150),
-                    scrape_watched(req.username2, delay=settings.scrape_delay,
-                                   max_pages=2, film_limit=150),
+                    scrape_watched(req.username1, delay=0.4,
+                                   max_pages=6, film_limit=500),
+                    scrape_watched(req.username2, delay=0.4,
+                                   max_pages=6, film_limit=500),
                 )
             except ScrapeError as exc:
                 log.warning("blend scrape error (watched): %s", exc)
