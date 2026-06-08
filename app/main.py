@@ -121,6 +121,7 @@ async def _load_user_films(
     enricher,
     pcache,
     scrape_kwargs: dict,
+    force: bool = False,
 ):
     """Bir kullanıcının bir listesi için zenginleştirilmiş filmleri döndür.
 
@@ -128,11 +129,12 @@ async def _load_user_films(
     Sadece TEMIZ biten (complete=True) scrape'ler cache'lenir; bloklu/eksik
     taramalar 24 saat boyunca kötü veri servis etmesin diye yazılmaz.
 
+    force=True → cache okumasını atlar, taze çekip üzerine yazar (cache warmer).
     list_type: 'watched' | 'watchlist'.
     Döner: (list[EnrichedFilm], from_cache: bool).
     """
     ns = f"films_{list_type}"
-    if pcache is not None:
+    if pcache is not None and not force:
         cached = pcache.get(ns, username, ttl=TTL_USER_FILMS)
         if cached:
             log.warning("cache HIT  %s/%s (%d films)", list_type, username, len(cached))
