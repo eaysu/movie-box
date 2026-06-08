@@ -11,7 +11,6 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-import httpx
 from curl_cffi.requests import AsyncSession
 from bs4 import BeautifulSoup
 
