@@ -58,6 +58,29 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+async def _await_with_heartbeat(coro, holder: dict, *, interval: float = 5.0):
+    """`coro`'yu çalıştırırken her `interval` saniyede bir 'ping' SSE üretir.
+
+    Humanize edilmiş scraping uzun sürebildiğinden (10-40s), bu süre boyunca
+    bağlantıyı canlı tutmak için periyodik ping gönderir — aksi halde araya
+    giren proxy'ler idle bağlantıyı kesebilir. Sonuç holder['result']'a,
+    istisna holder['error']'a yazılır.
+    """
+    task = asyncio.ensure_future(coro)
+    while not task.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=interval)
+        except asyncio.TimeoutError:
+            yield _sse({"type": "ping"})
+        except BaseException:
+            break  # task hatası aşağıda exception() ile ele alınır
+    exc = task.exception()
+    if exc is not None:
+        holder["error"] = exc
+    else:
+        holder["result"] = task.result()
+
+
 def _make_cache(settings):
     sqlite_cache = Cache(settings.cache_db_path)
     if settings.has_supabase:
@@ -120,29 +143,41 @@ async def recommend(req: RecommendRequest):
                 _q_active  += 1
 
             try:
-                # 1. Scraping
+                # 1. Scraping (heartbeat'li — humanize gecikmelerinde bağlantı canlı kalsın)
                 yield _sse({"type": "step", "step": "scraping"})
                 t1 = time.perf_counter()
-                try:
-                    scraped_watched, scraped_watchlist = await asyncio.gather(
+                hs: dict = {}
+                async for ping in _await_with_heartbeat(
+                    asyncio.gather(
                         scrape_watched(
                             req.username,
                             delay=settings.scrape_delay,
                             max_pages=settings.watched_max_pages,
                             film_limit=settings.watched_film_limit,
+                            max_retries=settings.scrape_max_retries,
                             scraperapi_key=settings.scraperapi_key,
+                            scraperapi_max_pages=settings.scraperapi_max_pages,
                         ),
                         scrape_watchlist(
                             req.username,
                             delay=settings.scrape_delay,
                             max_pages=settings.scrape_max_pages,
                             film_limit=settings.watchlist_film_limit,
+                            max_retries=settings.scrape_max_retries,
                             scraperapi_key=settings.scraperapi_key,
+                            scraperapi_max_pages=settings.scraperapi_max_pages,
                         ),
-                    )
-                except ScrapeError as exc:
-                    yield _sse({"type": "error", "detail": str(exc)})
-                    return
+                    ),
+                    hs,
+                ):
+                    yield ping
+                if "error" in hs:
+                    exc = hs["error"]
+                    if isinstance(exc, ScrapeError):
+                        yield _sse({"type": "error", "detail": str(exc)})
+                        return
+                    raise exc
+                scraped_watched, scraped_watchlist = hs["result"]
                 log.warning("⏱ scraping       %.2fs  (watched=%d, watchlist=%d)",
                             time.perf_counter() - t1, len(scraped_watched), len(scraped_watchlist))
 
@@ -225,17 +260,27 @@ async def random_pick(req: RandomRequest):
         settings = get_settings()
 
         yield _sse({"type": "step", "step": "scraping"})
-        try:
-            scraped_watchlist = await scrape_watchlist(
+        hr: dict = {}
+        async for ping in _await_with_heartbeat(
+            scrape_watchlist(
                 req.username,
                 delay=settings.scrape_delay,
                 max_pages=settings.scrape_max_pages,
                 film_limit=settings.watchlist_film_limit,
+                max_retries=settings.scrape_max_retries,
                 scraperapi_key=settings.scraperapi_key,
-            )
-        except ScrapeError as exc:
-            yield _sse({"type": "error", "detail": str(exc)})
-            return
+                scraperapi_max_pages=settings.scraperapi_max_pages,
+            ),
+            hr,
+        ):
+            yield ping
+        if "error" in hr:
+            exc = hr["error"]
+            if isinstance(exc, ScrapeError):
+                yield _sse({"type": "error", "detail": str(exc)})
+                return
+            raise exc
+        scraped_watchlist = hr["result"]
 
         if not scraped_watchlist:
             yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
@@ -428,26 +473,42 @@ async def blend(req: BlendRequest):
             async def _safe_watchlist(username):
                 try:
                     return await scrape_watchlist(
-                        username, delay=0.4, max_pages=5, film_limit=400,
+                        username,
+                        delay=settings.scrape_delay,
+                        max_pages=settings.scrape_max_pages,
+                        film_limit=settings.watchlist_film_limit,
+                        max_retries=settings.scrape_max_retries,
                         scraperapi_key=settings.scraperapi_key,
+                        scraperapi_max_pages=settings.scraperapi_max_pages,
                     )
                 except ScrapeError:
                     return []
 
-            # ── Faz 1: her iki kullanıcının izledikleri (paralel) ────────────────
-            try:
-                watched1, watched2 = await asyncio.gather(
-                    scrape_watched(req.username1, delay=0.4,
-                                   max_pages=6, film_limit=500,
-                                   scraperapi_key=settings.scraperapi_key),
-                    scrape_watched(req.username2, delay=0.4,
-                                   max_pages=6, film_limit=500,
-                                   scraperapi_key=settings.scraperapi_key),
+            async def _watched(username):
+                return await scrape_watched(
+                    username,
+                    delay=settings.scrape_delay,
+                    max_pages=settings.watched_max_pages,
+                    film_limit=settings.watched_film_limit,
+                    max_retries=settings.scrape_max_retries,
+                    scraperapi_key=settings.scraperapi_key,
+                    scraperapi_max_pages=settings.scraperapi_max_pages,
                 )
-            except ScrapeError as exc:
-                log.warning("blend scrape error (watched): %s", exc)
-                yield _sse({"type": "error", "detail": str(exc)})
-                return
+
+            # ── Faz 1: her iki kullanıcının izledikleri (paralel, heartbeat'li) ──
+            h1: dict = {}
+            async for ping in _await_with_heartbeat(
+                asyncio.gather(_watched(req.username1), _watched(req.username2)), h1
+            ):
+                yield ping
+            if "error" in h1:
+                exc = h1["error"]
+                if isinstance(exc, ScrapeError):
+                    log.warning("blend scrape error (watched): %s", exc)
+                    yield _sse({"type": "error", "detail": str(exc)})
+                    return
+                raise exc
+            watched1, watched2 = h1["result"]
 
             if not watched1:
                 yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
@@ -458,11 +519,15 @@ async def blend(req: BlendRequest):
 
             yield _sse({"type": "ping"})  # Faz 1 bitti → proxy canlı tut
 
-            # ── Faz 2: watchlist (paralel, faz 1'den sonra) ──────────────────────
-            wl1, wl2 = await asyncio.gather(
-                _safe_watchlist(req.username1),
-                _safe_watchlist(req.username2),
-            )
+            # ── Faz 2: watchlist (paralel, faz 1'den sonra, heartbeat'li) ────────
+            h2: dict = {}
+            async for ping in _await_with_heartbeat(
+                asyncio.gather(_safe_watchlist(req.username1), _safe_watchlist(req.username2)), h2
+            ):
+                yield ping
+            if "error" in h2:
+                raise h2["error"]
+            wl1, wl2 = h2["result"]
 
             log.warning("blend scraping %.2fs  w1=%d w2=%d wl1=%d wl2=%d",
                         time.perf_counter() - t1, len(watched1), len(watched2), len(wl1), len(wl2))

@@ -7,6 +7,7 @@ The CSS selectors are best-effort; Letterboxd can change its markup at any time.
 import asyncio
 import html as _html
 import logging
+import random
 import re
 import urllib.parse
 from dataclasses import dataclass, asdict
@@ -24,9 +25,101 @@ def _scraperapi_url(url: str, api_key: str) -> str:
     """Wrap a URL through ScraperAPI to bypass Cloudflare IP blocks."""
     return f"http://api.scraperapi.com?api_key={api_key}&url={urllib.parse.quote(url)}"
 
-# curl-cffi impersonate="chrome124" otomatik olarak Chrome TLS + HTTP/2 parmak izi kullanır.
-# Sadece navigasyon için Referer gibi ek başlıklar gerektiğinde kullanılır.
-_CHROME_IMPERSONATE = "chrome124"
+
+# ── Tarayıcı taklidi ────────────────────────────────────────────────────────
+# curl-cffi `impersonate` ile Chrome/Safari TLS + HTTP/2 parmak izini taklit eder.
+# Her retry'da havuzdan farklı bir parmak izi seçilir — tek bir parmak izine
+# kilitli kalmak yerine, bloklandığında başka bir "tarayıcı" gibi görünürüz.
+_DEFAULT_IMPERSONATE = "chrome124"
+_IMPERSONATE_POOL = [
+    "chrome124", "chrome123", "chrome120",
+    "chrome131", "edge101", "safari17_0",
+]
+
+# Gerçek tarayıcı navigasyon başlıkları — TLS parmak izini davranışsal olarak tamamlar.
+_NAV_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+async def _human_pause(base: float) -> None:
+    """İnsan benzeri, rastgele gecikme. Sabit aralık yerine jitter + ara sıra mola.
+
+    Düzenli aralıklarla atılan istekler bot imzasıdır; gerçek bir kullanıcı
+    sayfalar arasında değişken sürelerde gezinir, ara sıra durup "okur".
+    """
+    if base <= 0:
+        return
+    d = base * random.uniform(0.7, 1.8)
+    if random.random() < 0.12:
+        d += random.uniform(1.5, 4.0)  # ara sıra uzun "okuma" molası
+    await asyncio.sleep(d)
+
+
+async def _warmup(session, username: str) -> None:
+    """Doğal gezinme taklidi: anasayfa → profil. Cloudflare oturum cookie'leri kurar.
+
+    Bir tarayıcı film listesine doğrudan girmez; önce anasayfayı ve profili
+    ziyaret eder. Bu istekler cf_clearance / oturum cookie'lerini set edebilir,
+    sonraki liste isteklerinin engellenme olasılığını düşürür. Hatalar kritik değil.
+    """
+    for url in (f"{BASE_URL}/", f"{BASE_URL}/{username}/"):
+        try:
+            await session.get(url, headers=_NAV_HEADERS, timeout=20)
+            await _human_pause(0.5)
+        except Exception:
+            pass
+
+
+async def _fetch_with_retry(
+    session, url: str, referer: str, *, max_retries: int = 3
+):
+    """Bir sayfayı getir; 403/429'da backoff + parmak izi rotasyonu ile tekrar dene.
+
+    Cloudflare datacenter IP'lerini olasılıksal olarak engeller — aynı istek
+    biraz bekleyip farklı parmak iziyle tekrar denendiğinde sıklıkla geçer.
+
+    Döner: (resp | None, last_status). resp None → tüm denemeler ağ hatası ile bitti.
+    Engelli (403/429) son yanıt da döndürülür; karar çağırana bırakılır.
+    """
+    headers = {**_NAV_HEADERS, "Referer": referer}
+    resp = None
+    last_status = 0
+    for attempt in range(max_retries):
+        impersonate = _IMPERSONATE_POOL[attempt % len(_IMPERSONATE_POOL)]
+        try:
+            resp = await session.get(
+                url, headers=headers, timeout=25, impersonate=impersonate
+            )
+        except Exception as exc:
+            last_status = -1
+            log.warning("scraper: network error (attempt %d) %s: %s", attempt + 1, url, exc)
+            if attempt == max_retries - 1:
+                return None, last_status
+            await _human_pause(1.5 * (attempt + 1))
+            continue
+
+        last_status = resp.status_code
+        if resp.status_code not in (403, 429):
+            return resp, resp.status_code
+
+        # Engellendi → backoff (artan) + jitter, sonra farklı parmak iziyle tekrar
+        if attempt < max_retries - 1:
+            backoff = (attempt + 1) * 2.5 + random.uniform(0.5, 2.0)
+            log.warning("scraper: HTTP %d on %s — retry %d/%d after %.1fs",
+                        resp.status_code, url, attempt + 2, max_retries, backoff)
+            await asyncio.sleep(backoff)
+
+    return resp, last_status
 
 
 class ScrapeError(Exception):
@@ -133,16 +226,23 @@ async def _scrape_list(
     username: str,
     list_path: str,
     *,
-    delay: float = 0.4,
+    delay: float = 1.0,
     max_pages: int = 40,
     film_limit: int | None = None,
+    max_retries: int = 3,
     scraperapi_key: str = "",
+    scraperapi_max_pages: int = 2,
 ) -> list[ScrapedFilm]:
     """Generic paginated scraper for any Letterboxd film grid.
 
-    scraperapi_key verilirse tüm istekler ScraperAPI üzerinden proxy'lenir
-    (Render gibi cloud IP'lerinin Cloudflare tarafından engellenmesini aşmak için).
-    Yoksa curl-cffi ile Chrome TLS parmak izi taklit edilir.
+    Strateji (kredi-dostu, kapsamlı):
+      1. Tek bir oturumda doğal warm-up (anasayfa → profil) ile cookie kur.
+      2. Her sayfayı curl-cffi ile getir; humanize edilmiş jitter'lı gecikmeler.
+      3. 403/429 gelirse backoff + parmak izi rotasyonu ile birkaç kez tekrar dene.
+      4. curl-cffi bir sayfada tamamen bloklanırsa ve bütçe varsa, SADECE o sayfa
+         için ScraperAPI'ye düş (sayfa başına ~10 kredi). `scraperapi_max_pages`
+         ile toplam proxy çağrısı sıkıca sınırlanır.
+
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
     """
     username = username.strip().lstrip("@").lower()
@@ -151,16 +251,10 @@ async def _scrape_list(
 
     films: list[ScrapedFilm] = []
     seen_slugs: set[str] = set()
+    sapi_used = 0  # ScraperAPI çağrı sayacı — kredi koruması
 
-    _curl_warmup_done = False
-
-    async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
-        if not scraperapi_key:
-            try:
-                await session.get(f"{BASE_URL}/{username}/", timeout=20)
-            except Exception:
-                pass
-            _curl_warmup_done = True
+    async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+        await _warmup(session, username)
 
         for page in range(1, max_pages + 1):
             direct_url = (
@@ -175,84 +269,81 @@ async def _scrape_list(
             else:
                 referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
 
-            resp = None
+            # ── 1) curl-cffi (asıl iş gücü) — retry + parmak izi rotasyonu ──────
+            resp, status = await _fetch_with_retry(
+                session, direct_url, referer, max_retries=max_retries
+            )
 
-            # ── ScraperAPI (primary) ──────────────────────────────────────────
-            if scraperapi_key:
+            # ── 2) Bloklandıysa ve bütçe varsa → ScraperAPI son çare (o sayfaya)
+            blocked = resp is None or status in (403, 429)
+            if blocked and scraperapi_key and sapi_used < scraperapi_max_pages:
+                sapi_used += 1
+                log.warning(
+                    "scraper: curl-cffi blocked (status=%s) on %s — ScraperAPI fallback #%d/%d",
+                    status, direct_url, sapi_used, scraperapi_max_pages,
+                )
                 try:
                     r = await session.get(
                         _scraperapi_url(direct_url, scraperapi_key),
-                        headers={}, timeout=60,
+                        headers={}, timeout=70,
                     )
                     if r.status_code in (200, 404):
-                        resp = r
+                        resp, status = r, r.status_code
                     else:
-                        log.warning(
-                            "scraper: ScraperAPI returned %d for %s — falling back to direct",
-                            r.status_code, direct_url,
-                        )
+                        log.warning("scraper: ScraperAPI returned %d for %s", r.status_code, direct_url)
                 except Exception as exc:
-                    log.warning(
-                        "scraper: ScraperAPI error (%s) for %s — falling back to direct",
-                        exc, direct_url,
-                    )
+                    log.warning("scraper: ScraperAPI fallback error: %s", exc)
 
-            # ── curl-cffi direct (fallback or primary when no key) ────────────
+            # ── Durum kodu değerlendirmesi ─────────────────────────────────────
             if resp is None:
-                if scraperapi_key and not _curl_warmup_done:
-                    try:
-                        await session.get(f"{BASE_URL}/{username}/", timeout=20)
-                    except Exception:
-                        pass
-                    _curl_warmup_done = True
-                try:
-                    resp = await session.get(
-                        direct_url, headers={"Referer": referer}, timeout=20,
-                    )
-                except Exception as exc:
-                    raise ScrapeError(f"Network error fetching {direct_url}: {exc}") from exc
-
-            if resp.status_code == 404:
+                if page == 1:
+                    raise ScrapeError(f"Letterboxd'a ulaşılamadı: {direct_url}")
+                break
+            if status == 404:
                 if page == 1:
                     raise ScrapeError(
-                        f"Letterboxd kullanıcısı '{username}' bulunamadı "
-                        "(ya da liste gizli)."
+                        f"Letterboxd kullanıcısı '{username}' bulunamadı (ya da liste gizli)."
                     )
                 break
-            if resp.status_code in (403, 429):
+            if status in (403, 429):
                 if page == 1:
                     raise ScrapeError(
-                        f"Letterboxd erişimi engelledi (HTTP {resp.status_code}). "
-                        "Hesap gizli olabilir."
+                        f"Letterboxd erişimi engelledi (HTTP {status}). "
+                        "Hesap gizli olabilir veya sunucu IP'si geçici olarak bloklu."
                     )
+                break  # sonraki sayfalar bloklu → elimizdekiyle devam et
+            if status != 200:
+                if page == 1:
+                    raise ScrapeError(f"Letterboxd HTTP {status} döndürdü: {direct_url}")
                 break
-            if resp.status_code != 200:
-                raise ScrapeError(
-                    f"Letterboxd HTTP {resp.status_code} döndürdü: {direct_url}"
-                )
 
             page_films = _parse_page(resp.text)
             if not page_films:
                 if page == 1:
                     preview = resp.text[:300].replace("\n", " ")
-                    log.warning("scraper: page 1 empty (status=%s). HTML preview: %s", resp.status_code, preview)
+                    log.warning("scraper: page 1 empty (status=%s). HTML preview: %s", status, preview)
                     raise ScrapeError(
                         "Letterboxd film listesi okunamadı — sunucu IP'si engellenmiş olabilir. "
                         "Birkaç dakika sonra tekrar dene."
                     )
                 break
 
+            new_count = 0
             for film in page_films:
                 if film.slug not in seen_slugs:
                     seen_slugs.add(film.slug)
                     films.append(film)
+                    new_count += 1
+
+            # Sayfa tamamen tekrar (yeni film yok) → pagination bitti, dur.
+            if new_count == 0:
+                break
 
             if film_limit and len(films) >= film_limit:
                 films = films[:film_limit]
                 break
 
-            if delay:
-                await asyncio.sleep(delay)
+            await _human_pause(delay)
 
     return films
 
@@ -263,13 +354,16 @@ async def scrape_watchlist(
     delay: float = 1.0,
     max_pages: int = 40,
     film_limit: int | None = None,
+    max_retries: int = 3,
     scraperapi_key: str = "",
+    scraperapi_max_pages: int = 2,
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlemek istediği film listesini çeker."""
     return await _scrape_list(
         username, "watchlist",
         delay=delay, max_pages=max_pages, film_limit=film_limit,
-        scraperapi_key=scraperapi_key,
+        max_retries=max_retries,
+        scraperapi_key=scraperapi_key, scraperapi_max_pages=scraperapi_max_pages,
     )
 
 
@@ -278,13 +372,16 @@ async def scrape_diary(
     *,
     max_pages: int = 5,
     film_limit: int = 250,
+    max_retries: int = 3,
     scraperapi_key: str = "",
+    scraperapi_max_pages: int = 2,
 ) -> list[ScrapedFilm]:
     """Diary HTML sayfalarından ek film listesi çeker."""
     return await _scrape_list(
         username, "films/diary",
-        delay=0.5, max_pages=max_pages, film_limit=film_limit,
-        scraperapi_key=scraperapi_key,
+        delay=0.6, max_pages=max_pages, film_limit=film_limit,
+        max_retries=max_retries,
+        scraperapi_key=scraperapi_key, scraperapi_max_pages=scraperapi_max_pages,
     )
 
 
@@ -296,8 +393,8 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     """
     url = f"{BASE_URL}/{username}/rss/"
     try:
-        async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
-            resp = await session.get(url, timeout=20)
+        async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+            resp = await session.get(url, headers=_NAV_HEADERS, timeout=20)
         if resp.status_code != 200:
             return []
     except Exception:
@@ -328,15 +425,17 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
 async def scrape_watched(
     username: str,
     *,
-    delay: float = 0.4,
+    delay: float = 1.0,
     max_pages: int = 10,
     film_limit: int = 300,
+    max_retries: int = 3,
     scraperapi_key: str = "",
+    scraperapi_max_pages: int = 2,
 ) -> list[ScrapedFilm]:
     """Kullanıcının izlediği filmleri çeker (zevk profili için).
 
     Strateji:
-      1. /films/ HTML — ScraperAPI varsa proxy üzerinden, yoksa curl-cffi ile
+      1. /films/ HTML — curl-cffi (retry + parmak izi rotasyonu), bütçeli ScraperAPI
       2. /rss/ — en son ~50 diary kaydı (rating bilgisi içerir)
     İki kaynak slug ile tekilleştirilip birleştirilir.
     film_limit hard cap olarak uygulanır (varsayılan 300).
@@ -346,7 +445,9 @@ async def scrape_watched(
         delay=delay,
         max_pages=max_pages,
         film_limit=film_limit,
+        max_retries=max_retries,
         scraperapi_key=scraperapi_key,
+        scraperapi_max_pages=scraperapi_max_pages,
     )
     rss_films = await _scrape_watched_rss(username)
 

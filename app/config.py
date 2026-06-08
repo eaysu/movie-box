@@ -31,12 +31,16 @@ class Settings(BaseSettings):
     num_recommendations: int = 8
 
     # --- Scraper ---
-    # curl-cffi ile Cloudflare bypass çalıştığından sayfa 2+ artık erişilebilir.
-    scrape_delay: float = 0.4
-    scrape_max_pages: int = 6       # watchlist için max sayfa (~400 film)
-    watched_max_pages: int = 5      # izlenen filmler için max sayfa (~360 film)
-    watched_film_limit: int = 300   # hard limit — recommend için yeterli profil
-    watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
+    # curl-cffi (retry + parmak izi rotasyonu + humanize) asıl iş gücü;
+    # ScraperAPI sadece bloklanan sayfalar için sıkı bütçeli son çare.
+    scrape_delay: float = 1.0       # sayfalar arası temel gecikme (jitter eklenir)
+    scrape_max_pages: int = 8       # watchlist için max sayfa (~570 film)
+    watched_max_pages: int = 8      # izlenen filmler için max sayfa (~570 film)
+    watched_film_limit: int = 500   # hard limit — recommend/blend için profil
+    watchlist_film_limit: int = 400 # watchlist'ten candidate havuzu
+    scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
+    # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
+    scraperapi_max_pages: int = 2
 
     # --- Storage ---
     data_dir: str = "data"
