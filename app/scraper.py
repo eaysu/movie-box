@@ -152,13 +152,15 @@ async def _scrape_list(
     films: list[ScrapedFilm] = []
     seen_slugs: set[str] = set()
 
+    _curl_warmup_done = False
+
     async with AsyncSession(impersonate=_CHROME_IMPERSONATE) as session:
-        # Warm-up: ScraperAPI kullanılmıyorsa profil sayfasını ziyaret et
         if not scraperapi_key:
             try:
                 await session.get(f"{BASE_URL}/{username}/", timeout=20)
             except Exception:
-                pass  # non-critical
+                pass
+            _curl_warmup_done = True
 
         for page in range(1, max_pages + 1):
             direct_url = (
@@ -166,26 +168,49 @@ async def _scrape_list(
                 if page == 1
                 else f"{BASE_URL}/{username}/{list_path}/page/{page}/"
             )
-
-            if scraperapi_key:
-                fetch_url = _scraperapi_url(direct_url, scraperapi_key)
-                extra_headers: dict = {}
-                fetch_timeout = 60
+            if page == 1:
+                referer = f"{BASE_URL}/{username}/"
+            elif page == 2:
+                referer = f"{BASE_URL}/{username}/{list_path}/"
             else:
-                fetch_url = direct_url
-                if page == 1:
-                    referer = f"{BASE_URL}/{username}/"
-                elif page == 2:
-                    referer = f"{BASE_URL}/{username}/{list_path}/"
-                else:
-                    referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
-                extra_headers = {"Referer": referer}
-                fetch_timeout = 20
+                referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
 
-            try:
-                resp = await session.get(fetch_url, headers=extra_headers, timeout=fetch_timeout)
-            except Exception as exc:
-                raise ScrapeError(f"Network error fetching {direct_url}: {exc}") from exc
+            resp = None
+
+            # ── ScraperAPI (primary) ──────────────────────────────────────────
+            if scraperapi_key:
+                try:
+                    r = await session.get(
+                        _scraperapi_url(direct_url, scraperapi_key),
+                        headers={}, timeout=60,
+                    )
+                    if r.status_code in (200, 404):
+                        resp = r
+                    else:
+                        log.warning(
+                            "scraper: ScraperAPI returned %d for %s — falling back to direct",
+                            r.status_code, direct_url,
+                        )
+                except Exception as exc:
+                    log.warning(
+                        "scraper: ScraperAPI error (%s) for %s — falling back to direct",
+                        exc, direct_url,
+                    )
+
+            # ── curl-cffi direct (fallback or primary when no key) ────────────
+            if resp is None:
+                if scraperapi_key and not _curl_warmup_done:
+                    try:
+                        await session.get(f"{BASE_URL}/{username}/", timeout=20)
+                    except Exception:
+                        pass
+                    _curl_warmup_done = True
+                try:
+                    resp = await session.get(
+                        direct_url, headers={"Referer": referer}, timeout=20,
+                    )
+                except Exception as exc:
+                    raise ScrapeError(f"Network error fetching {direct_url}: {exc}") from exc
 
             if resp.status_code == 404:
                 if page == 1:
@@ -200,10 +225,10 @@ async def _scrape_list(
                         f"Letterboxd erişimi engelledi (HTTP {resp.status_code}). "
                         "Hesap gizli olabilir."
                     )
-                break  # sonraki sayfalar kısıtlıysa elimizdekiyle devam et
+                break
             if resp.status_code != 200:
                 raise ScrapeError(
-                    f"Letterboxd HTTP {resp.status_code} döndürdü: {url}"
+                    f"Letterboxd HTTP {resp.status_code} döndürdü: {direct_url}"
                 )
 
             page_films = _parse_page(resp.text)
