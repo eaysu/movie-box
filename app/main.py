@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 from .config import get_settings
 from .cache import Cache
-from .database import upsert_user
+from .database import upsert_user, SupabaseCache
 from .enrich import Enricher, EnrichedFilm
 from .llm import rank_candidates
 from .recommender import rank_watchlist
@@ -90,6 +90,77 @@ def _make_cache(settings):
     return None, sqlite_cache
 
 
+# ── Kullanıcı profili kalıcı cache'i ─────────────────────────────────────────
+# Çekilip zenginleştirilmiş film listeleri kullanıcı başına Supabase'e kaydedilir.
+# Sonraki oturumlar scrape + TMDb adımlarını tamamen atlar → ~100s yerine ~5s.
+# Supabase yoksa SQLite'a yazılır (lokal kalıcı, Render'da redeploy'da silinir).
+TTL_USER_FILMS = 24 * 3600  # 1 gün
+
+
+def _make_persistent_cache(settings, client):
+    """Kullanıcı film profilleri için kalıcı cache (Supabase tercih edilir)."""
+    if client is not None:
+        return SupabaseCache(client)
+    return Cache(settings.cache_db_path)
+
+
+def _enriched_from_cache(rows: list[dict]) -> list[EnrichedFilm]:
+    """Cache JSON'undan EnrichedFilm listesi kur (text_blob hesaplanan alan, atılır)."""
+    out: list[EnrichedFilm] = []
+    for d in rows:
+        d = {k: v for k, v in d.items() if k != "text_blob"}
+        out.append(EnrichedFilm(**d))
+    return out
+
+
+async def _load_user_films(
+    username: str,
+    list_type: str,
+    *,
+    settings,
+    enricher,
+    pcache,
+    scrape_kwargs: dict,
+):
+    """Bir kullanıcının bir listesi için zenginleştirilmiş filmleri döndür.
+
+    Sıra: kalıcı cache (Supabase) → yoksa scrape + TMDb enrich → cache'e yaz.
+    Sadece TEMIZ biten (complete=True) scrape'ler cache'lenir; bloklu/eksik
+    taramalar 24 saat boyunca kötü veri servis etmesin diye yazılmaz.
+
+    list_type: 'watched' | 'watchlist'.
+    Döner: (list[EnrichedFilm], from_cache: bool).
+    """
+    ns = f"films_{list_type}"
+    if pcache is not None:
+        cached = pcache.get(ns, username, ttl=TTL_USER_FILMS)
+        if cached:
+            log.warning("cache HIT  %s/%s (%d films)", list_type, username, len(cached))
+            return _enriched_from_cache(cached), True
+
+    scrape_fn = scrape_watched if list_type == "watched" else scrape_watchlist
+    scraped, complete = await scrape_fn(username, **scrape_kwargs)
+    if not scraped:
+        return [], False
+
+    if enricher is not None:
+        films = await enricher.enrich(scraped)
+    else:
+        films = [
+            EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
+            for f in scraped
+        ]
+
+    # Yalnızca temiz biten taramaları cache'le (eksik profil 24s yapışmasın).
+    if pcache is not None and films and complete:
+        pcache.set(ns, username, [f.to_dict() for f in films])
+        log.warning("cache SET  %s/%s (%d films)", list_type, username, len(films))
+    elif not complete:
+        log.warning("cache SKIP %s/%s — scrape incomplete (blocked)", list_type, username)
+
+    return films, False
+
+
 class RecommendRequest(BaseModel):
     username: str
 
@@ -143,30 +214,40 @@ async def recommend(req: RecommendRequest):
                 _q_active  += 1
 
             try:
-                # 1. Scraping (heartbeat'li — humanize gecikmelerinde bağlantı canlı kalsın)
+                # Cache + enricher hazırlığı
+                supabase_client, cache = _make_cache(settings)
+                pcache = _make_persistent_cache(settings, supabase_client)
+                if supabase_client is not None:
+                    upsert_user(supabase_client, req.username)
+                enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+
+                watched_kwargs = dict(
+                    delay=settings.scrape_delay,
+                    max_pages=settings.watched_max_pages,
+                    film_limit=settings.watched_film_limit,
+                    max_retries=settings.scrape_max_retries,
+                    scraperapi_key=settings.scraperapi_key,
+                    scraperapi_max_pages=settings.scraperapi_max_pages,
+                )
+                watchlist_kwargs = dict(
+                    delay=settings.scrape_delay,
+                    max_pages=settings.scrape_max_pages,
+                    film_limit=settings.watchlist_film_limit,
+                    max_retries=settings.scrape_max_retries,
+                    scraperapi_key=settings.scraperapi_key,
+                    scraperapi_max_pages=settings.scraperapi_max_pages,
+                )
+
+                # 1+2. Cache'ten oku ya da scrape + TMDb enrich (heartbeat'li)
                 yield _sse({"type": "step", "step": "scraping"})
                 t1 = time.perf_counter()
                 hs: dict = {}
                 async for ping in _await_with_heartbeat(
                     asyncio.gather(
-                        scrape_watched(
-                            req.username,
-                            delay=settings.scrape_delay,
-                            max_pages=settings.watched_max_pages,
-                            film_limit=settings.watched_film_limit,
-                            max_retries=settings.scrape_max_retries,
-                            scraperapi_key=settings.scraperapi_key,
-                            scraperapi_max_pages=settings.scraperapi_max_pages,
-                        ),
-                        scrape_watchlist(
-                            req.username,
-                            delay=settings.scrape_delay,
-                            max_pages=settings.scrape_max_pages,
-                            film_limit=settings.watchlist_film_limit,
-                            max_retries=settings.scrape_max_retries,
-                            scraperapi_key=settings.scraperapi_key,
-                            scraperapi_max_pages=settings.scraperapi_max_pages,
-                        ),
+                        _load_user_films(req.username, "watched", settings=settings,
+                                         enricher=enricher, pcache=pcache, scrape_kwargs=watched_kwargs),
+                        _load_user_films(req.username, "watchlist", settings=settings,
+                                         enricher=enricher, pcache=pcache, scrape_kwargs=watchlist_kwargs),
                     ),
                     hs,
                 ):
@@ -177,38 +258,15 @@ async def recommend(req: RecommendRequest):
                         yield _sse({"type": "error", "detail": str(exc)})
                         return
                     raise exc
-                scraped_watched, scraped_watchlist = hs["result"]
-                log.warning("⏱ scraping       %.2fs  (watched=%d, watchlist=%d)",
-                            time.perf_counter() - t1, len(scraped_watched), len(scraped_watchlist))
+                (watched_films, w_cached), (watchlist_films, wl_cached) = hs["result"]
+                yield _sse({"type": "step", "step": "enriching"})
+                log.warning("⏱ load films      %.2fs  (watched=%d[cache=%s], watchlist=%d[cache=%s])",
+                            time.perf_counter() - t1, len(watched_films), w_cached,
+                            len(watchlist_films), wl_cached)
 
-                if not scraped_watchlist:
+                if not watchlist_films:
                     yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
                     return
-
-                # 2. TMDb enrichment
-                yield _sse({"type": "step", "step": "enriching"})
-                t2 = time.perf_counter()
-                supabase_client, cache = _make_cache(settings)
-                if supabase_client is not None:
-                    upsert_user(supabase_client, req.username)
-
-                if settings.has_tmdb:
-                    enricher = Enricher(settings.tmdb_api_key, cache)
-                    watched_films, watchlist_films = await asyncio.gather(
-                        enricher.enrich(scraped_watched),
-                        enricher.enrich(scraped_watchlist),
-                    )
-                else:
-                    watched_films = [
-                        EnrichedFilm(title=f.title, year=f.year, slug=f.slug)
-                        for f in scraped_watched
-                    ]
-                    watchlist_films = [
-                        EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
-                        for f in scraped_watchlist
-                    ]
-                cache_hits = getattr(enricher, "_cache_hits", "?") if settings.has_tmdb else 0
-                log.warning("⏱ tmdb enrich     %.2fs  (sqlite_hits=%s)", time.perf_counter() - t2, cache_hits)
 
                 # 3. TF-IDF ranking
                 yield _sse({"type": "step", "step": "ranking"})
@@ -258,7 +316,29 @@ async def random_pick(req: RandomRequest):
 
     async def generate():
         settings = get_settings()
+        supabase_client, cache = _make_cache(settings)
+        pcache = _make_persistent_cache(settings, supabase_client)
 
+        # 0. Kalıcı cache'te zenginleştirilmiş watchlist varsa → scrape'siz seç
+        cached = pcache.get("films_watchlist", req.username, ttl=TTL_USER_FILMS) if pcache else None
+        if cached:
+            enriched = _enriched_from_cache(cached)
+            with_poster = [f for f in enriched if f.poster_url]
+            pool = with_poster if len(with_poster) >= 3 else enriched
+            if not pool:
+                yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
+                return
+            chosen = _random.sample(pool, min(3, len(pool)))
+            log.warning("cache HIT  watchlist/%s (random pick)", req.username)
+            yield _sse({
+                "type": "result",
+                "username": req.username,
+                "watchlist_count": len(enriched),
+                "films": [f.to_dict() for f in chosen],
+            })
+            return
+
+        # 1. Cache yok → scrape (heartbeat'li). Ucuz yol: sadece seçilen 3 film enrich.
         yield _sse({"type": "step", "step": "scraping"})
         hr: dict = {}
         async for ping in _await_with_heartbeat(
@@ -280,22 +360,19 @@ async def random_pick(req: RandomRequest):
                 yield _sse({"type": "error", "detail": str(exc)})
                 return
             raise exc
-        scraped_watchlist = hr["result"]
+        scraped_watchlist, _complete = hr["result"]
 
         if not scraped_watchlist:
             yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
             return
 
         # Posteri olan filmler varsa onlardan seç — postersize film göstermemek için.
-        # Letterboxd watchlist HTML'i neredeyse her zaman poster thumbnail içerir,
-        # bu yüzden filtreleme sonrası yeterli havuz kalır.
         with_poster = [f for f in scraped_watchlist if f.poster_url]
         pool = with_poster if len(with_poster) >= 3 else scraped_watchlist
         count = min(3, len(pool))
         chosen = _random.sample(pool, count)
 
         yield _sse({"type": "step", "step": "enriching"})
-        _, cache = _make_cache(settings)
         if settings.has_tmdb:
             enricher = Enricher(settings.tmdb_api_key, cache)
             films = await enricher.enrich(chosen)
@@ -467,38 +544,44 @@ async def blend(req: BlendRequest):
         t0 = time.perf_counter()
         settings = get_settings()
         try:
+            supabase_client, cache = _make_cache(settings)
+            pcache = _make_persistent_cache(settings, supabase_client)
+            if supabase_client is not None:
+                upsert_user(supabase_client, req.username1)
+                upsert_user(supabase_client, req.username2)
+            enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+
+            watched_kwargs = dict(
+                delay=settings.scrape_delay, max_pages=settings.watched_max_pages,
+                film_limit=settings.watched_film_limit, max_retries=settings.scrape_max_retries,
+                scraperapi_key=settings.scraperapi_key, scraperapi_max_pages=settings.scraperapi_max_pages,
+            )
+            watchlist_kwargs = dict(
+                delay=settings.scrape_delay, max_pages=settings.scrape_max_pages,
+                film_limit=settings.watchlist_film_limit, max_retries=settings.scrape_max_retries,
+                scraperapi_key=settings.scraperapi_key, scraperapi_max_pages=settings.scraperapi_max_pages,
+            )
+
+            def _load(username, list_type, kwargs):
+                return _load_user_films(username, list_type, settings=settings,
+                                        enricher=enricher, pcache=pcache, scrape_kwargs=kwargs)
+
+            async def _safe_load(username, list_type, kwargs):
+                try:
+                    return await _load(username, list_type, kwargs)
+                except ScrapeError:
+                    return [], False
+
             yield _sse({"type": "step", "step": "scraping"})
             t1 = time.perf_counter()
 
-            async def _safe_watchlist(username):
-                try:
-                    return await scrape_watchlist(
-                        username,
-                        delay=settings.scrape_delay,
-                        max_pages=settings.scrape_max_pages,
-                        film_limit=settings.watchlist_film_limit,
-                        max_retries=settings.scrape_max_retries,
-                        scraperapi_key=settings.scraperapi_key,
-                        scraperapi_max_pages=settings.scraperapi_max_pages,
-                    )
-                except ScrapeError:
-                    return []
-
-            async def _watched(username):
-                return await scrape_watched(
-                    username,
-                    delay=settings.scrape_delay,
-                    max_pages=settings.watched_max_pages,
-                    film_limit=settings.watched_film_limit,
-                    max_retries=settings.scrape_max_retries,
-                    scraperapi_key=settings.scraperapi_key,
-                    scraperapi_max_pages=settings.scraperapi_max_pages,
-                )
-
-            # ── Faz 1: her iki kullanıcının izledikleri (paralel, heartbeat'li) ──
+            # ── Faz 1: izlenen filmler (cache→scrape+enrich, paralel, heartbeat'li) ──
             h1: dict = {}
             async for ping in _await_with_heartbeat(
-                asyncio.gather(_watched(req.username1), _watched(req.username2)), h1
+                asyncio.gather(
+                    _load(req.username1, "watched", watched_kwargs),
+                    _load(req.username2, "watched", watched_kwargs),
+                ), h1,
             ):
                 yield ping
             if "error" in h1:
@@ -508,68 +591,44 @@ async def blend(req: BlendRequest):
                     yield _sse({"type": "error", "detail": str(exc)})
                     return
                 raise exc
-            watched1, watched2 = h1["result"]
+            (w1_enriched, _c1), (w2_enriched, _c2) = h1["result"]
 
-            if not watched1:
+            if not w1_enriched:
                 yield _sse({"type": "error", "detail": f"@{req.username1} profili bulunamadı veya gizli."})
                 return
-            if not watched2:
+            if not w2_enriched:
                 yield _sse({"type": "error", "detail": f"@{req.username2} profili bulunamadı veya gizli."})
                 return
 
-            yield _sse({"type": "ping"})  # Faz 1 bitti → proxy canlı tut
+            yield _sse({"type": "step", "step": "enriching"})
 
-            # ── Faz 2: watchlist (paralel, faz 1'den sonra, heartbeat'li) ────────
+            # ── Faz 2: watchlist (opsiyonel, cache→scrape+enrich, heartbeat'li) ──────
             h2: dict = {}
             async for ping in _await_with_heartbeat(
-                asyncio.gather(_safe_watchlist(req.username1), _safe_watchlist(req.username2)), h2
+                asyncio.gather(
+                    _safe_load(req.username1, "watchlist", watchlist_kwargs),
+                    _safe_load(req.username2, "watchlist", watchlist_kwargs),
+                ), h2,
             ):
                 yield ping
             if "error" in h2:
                 raise h2["error"]
-            wl1, wl2 = h2["result"]
+            (wl1e, _w1), (wl2e, _w2) = h2["result"]
 
-            log.warning("blend scraping %.2fs  w1=%d w2=%d wl1=%d wl2=%d",
-                        time.perf_counter() - t1, len(watched1), len(watched2), len(wl1), len(wl2))
+            log.warning("blend load %.2fs  w1=%d w2=%d wl1=%d wl2=%d",
+                        time.perf_counter() - t1, len(w1_enriched), len(w2_enriched), len(wl1e), len(wl2e))
 
-            # ── Ortak watchlist filmleri ───────────────────────────────────────────
-            wl_slugs2 = {f.slug for f in wl2 if f.slug}
-            common_wl_raw = [f for f in wl1 if f.slug and f.slug in wl_slugs2]
-            wl_keys2 = {(f.title.lower().strip(), f.year) for f in wl2}
-            seen_wl = {f.slug for f in common_wl_raw}
-            common_wl_raw += [
-                f for f in wl1
-                if f.slug not in seen_wl
-                and (f.title.lower().strip(), f.year) in wl_keys2
+            # ── Ortak watchlist filmleri (zenginleştirilmiş listelerden) ────────────
+            wl_slugs2 = {f.slug for f in wl2e if f.slug}
+            common_wl = [f for f in wl1e if f.slug and f.slug in wl_slugs2]
+            seen_wl = {f.slug for f in common_wl}
+            wl_keys2 = {(f.title.lower().strip(), f.year) for f in wl2e}
+            common_wl += [
+                f for f in wl1e
+                if f.slug not in seen_wl and (f.title.lower().strip(), f.year) in wl_keys2
             ]
-            top_wl_raw = common_wl_raw[:6]
-
-            # ── Enrichment: her iki kullanıcı paralel ────────────────────────────
-            yield _sse({"type": "step", "step": "enriching"})
-            t2 = time.perf_counter()
-            _, cache = _make_cache(settings)
-            if settings.has_tmdb:
-                enricher = Enricher(settings.tmdb_api_key, cache)
-                enrich_tasks = [enricher.enrich(watched1), enricher.enrich(watched2)]
-                if top_wl_raw:
-                    enrich_tasks.append(enricher.enrich(top_wl_raw))
-                results = await asyncio.gather(*enrich_tasks)
-                w1_enriched, w2_enriched = results[0], results[1]
-                wl_enriched = results[2] if top_wl_raw else []
-                wl_enriched.sort(
-                    key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True
-                )
-                common_wl_films = wl_enriched[:3]
-            else:
-                w1_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched1]
-                w2_enriched = [EnrichedFilm(title=f.title, year=f.year, slug=f.slug) for f in watched2]
-                common_wl_films = []
-
-            log.warning("blend enriching %.2fs  w1=%d w2=%d wl=%d",
-                        time.perf_counter() - t2, len(w1_enriched), len(w2_enriched), len(common_wl_films))
-
-            # Enrichment bitti → proxy'ye veri gönder
-            yield _sse({"type": "ping"})
+            common_wl.sort(key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True)
+            common_wl_films = common_wl[:3]
 
             # ── Ranking ───────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "ranking"})
@@ -591,7 +650,7 @@ async def blend(req: BlendRequest):
                 "top_director_count2": result["top_director_count2"],
                 "films": [f.to_dict() for f in result["films"]],
                 "common_watchlist_films": [f.to_dict() for f in common_wl_films],
-                "watchlist_public": len(wl1) > 0 and len(wl2) > 0,
+                "watchlist_public": len(wl1e) > 0 and len(wl2e) > 0,
             })
 
         except BaseException as exc:

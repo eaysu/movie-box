@@ -74,14 +74,14 @@ async def _warmup(session, username: str) -> None:
     """
     for url in (f"{BASE_URL}/", f"{BASE_URL}/{username}/"):
         try:
-            await session.get(url, headers=_NAV_HEADERS, timeout=20)
+            await session.get(url, headers=_NAV_HEADERS, timeout=10)
             await _human_pause(0.5)
         except Exception:
             pass
 
 
 async def _fetch_with_retry(
-    session, url: str, referer: str, *, max_retries: int = 3
+    session, url: str, referer: str, *, max_retries: int = 3, timeout: float = 14.0
 ):
     """Bir sayfayı getir; 403/429'da backoff + parmak izi rotasyonu ile tekrar dene.
 
@@ -98,14 +98,14 @@ async def _fetch_with_retry(
         impersonate = _IMPERSONATE_POOL[attempt % len(_IMPERSONATE_POOL)]
         try:
             resp = await session.get(
-                url, headers=headers, timeout=25, impersonate=impersonate
+                url, headers=headers, timeout=timeout, impersonate=impersonate
             )
         except Exception as exc:
             last_status = -1
             log.warning("scraper: network error (attempt %d) %s: %s", attempt + 1, url, exc)
             if attempt == max_retries - 1:
                 return None, last_status
-            await _human_pause(1.5 * (attempt + 1))
+            await _human_pause(1.0 * (attempt + 1))
             continue
 
         last_status = resp.status_code
@@ -232,7 +232,7 @@ async def _scrape_list(
     max_retries: int = 3,
     scraperapi_key: str = "",
     scraperapi_max_pages: int = 2,
-) -> list[ScrapedFilm]:
+) -> tuple[list[ScrapedFilm], bool]:
     """Generic paginated scraper for any Letterboxd film grid.
 
     Strateji (kredi-dostu, kapsamlı):
@@ -244,6 +244,8 @@ async def _scrape_list(
          ile toplam proxy çağrısı sıkıca sınırlanır.
 
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
+    Döner: (films, complete). complete=False → tarama bir blok/hata ile yarıda
+    kaldı (eksik olabilir); cache'lenmemeli. complete=True → doğal son / limit.
     """
     username = username.strip().lstrip("@").lower()
     if not username:
@@ -252,6 +254,7 @@ async def _scrape_list(
     films: list[ScrapedFilm] = []
     seen_slugs: set[str] = set()
     sapi_used = 0  # ScraperAPI çağrı sayacı — kredi koruması
+    complete = True  # blok/hata ile yarıda kalırsa False'a çekilir
 
     async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
         await _warmup(session, username)
@@ -298,8 +301,10 @@ async def _scrape_list(
             if resp is None:
                 if page == 1:
                     raise ScrapeError(f"Letterboxd'a ulaşılamadı: {direct_url}")
+                complete = False  # ağ hatası ile yarıda kaldı
                 break
             if status == 404:
+                # 404: bu sayfa yok → liste doğal olarak bitti (eksik değil).
                 if page == 1:
                     raise ScrapeError(
                         f"Letterboxd kullanıcısı '{username}' bulunamadı (ya da liste gizli)."
@@ -311,10 +316,12 @@ async def _scrape_list(
                         f"Letterboxd erişimi engelledi (HTTP {status}). "
                         "Hesap gizli olabilir veya sunucu IP'si geçici olarak bloklu."
                     )
-                break  # sonraki sayfalar bloklu → elimizdekiyle devam et
+                complete = False  # bloklandı → kalan sayfalar eksik
+                break
             if status != 200:
                 if page == 1:
                     raise ScrapeError(f"Letterboxd HTTP {status} döndürdü: {direct_url}")
+                complete = False
                 break
 
             page_films = _parse_page(resp.text)
@@ -326,7 +333,7 @@ async def _scrape_list(
                         "Letterboxd film listesi okunamadı — sunucu IP'si engellenmiş olabilir. "
                         "Birkaç dakika sonra tekrar dene."
                     )
-                break
+                break  # boş sayfa = pagination doğal sonu
 
             new_count = 0
             for film in page_films:
@@ -345,7 +352,7 @@ async def _scrape_list(
 
             await _human_pause(delay)
 
-    return films
+    return films, complete
 
 
 async def scrape_watchlist(
@@ -357,8 +364,8 @@ async def scrape_watchlist(
     max_retries: int = 3,
     scraperapi_key: str = "",
     scraperapi_max_pages: int = 2,
-) -> list[ScrapedFilm]:
-    """Kullanıcının izlemek istediği film listesini çeker."""
+) -> tuple[list[ScrapedFilm], bool]:
+    """Kullanıcının izlemek istediği film listesini çeker. Döner: (films, complete)."""
     return await _scrape_list(
         username, "watchlist",
         delay=delay, max_pages=max_pages, film_limit=film_limit,
@@ -375,8 +382,8 @@ async def scrape_diary(
     max_retries: int = 3,
     scraperapi_key: str = "",
     scraperapi_max_pages: int = 2,
-) -> list[ScrapedFilm]:
-    """Diary HTML sayfalarından ek film listesi çeker."""
+) -> tuple[list[ScrapedFilm], bool]:
+    """Diary HTML sayfalarından ek film listesi çeker. Döner: (films, complete)."""
     return await _scrape_list(
         username, "films/diary",
         delay=0.6, max_pages=max_pages, film_limit=film_limit,
@@ -431,7 +438,7 @@ async def scrape_watched(
     max_retries: int = 3,
     scraperapi_key: str = "",
     scraperapi_max_pages: int = 2,
-) -> list[ScrapedFilm]:
+) -> tuple[list[ScrapedFilm], bool]:
     """Kullanıcının izlediği filmleri çeker (zevk profili için).
 
     Strateji:
@@ -439,8 +446,9 @@ async def scrape_watched(
       2. /rss/ — en son ~50 diary kaydı (rating bilgisi içerir)
     İki kaynak slug ile tekilleştirilip birleştirilir.
     film_limit hard cap olarak uygulanır (varsayılan 300).
+    Döner: (films, complete) — complete, HTML scrape'in temiz bitip bitmediği.
     """
-    html_films = await _scrape_list(
+    html_films, complete = await _scrape_list(
         username, "films",
         delay=delay,
         max_pages=max_pages,
@@ -464,4 +472,4 @@ async def scrape_watched(
                 seen.add(key)
                 combined.append(f)
 
-    return combined[:film_limit]
+    return combined[:film_limit], complete
