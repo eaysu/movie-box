@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
     # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
-    # Şu an kapalı: yalnızca kendi curl-cffi scraper'ımız kullanılır, 0 kredi.
-    scraperapi_max_pages: int = 0
+    # curl-cffi tamamen bloklanırsa (olasılıksal Cloudflare bloğu) devreye girer;
+    # normal çalışmada hiç tetiklenmez, kredi harcamaz. Küçük bütçe tutuluyor.
+    scraperapi_max_pages: int = 3
 
     # --- Storage ---
     data_dir: str = "data"

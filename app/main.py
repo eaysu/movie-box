@@ -12,6 +12,7 @@ Akış:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -58,19 +59,34 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _await_with_heartbeat(coro, holder: dict, *, interval: float = 5.0):
+async def _await_with_heartbeat(coro, holder: dict, *, interval: float = 5.0, max_total: float = 75.0):
     """`coro`'yu çalıştırırken her `interval` saniyede bir 'ping' SSE üretir.
 
     Humanize edilmiş scraping uzun sürebildiğinden (10-40s), bu süre boyunca
     bağlantıyı canlı tutmak için periyodik ping gönderir — aksi halde araya
     giren proxy'ler idle bağlantıyı kesebilir. Sonuç holder['result']'a,
     istisna holder['error']'a yazılır.
+
+    `max_total` saniyeyi aşarsa görev iptal edilir ve holder['error'] bir
+    ScrapeError ile doldurulur — Cloudflare'ın olasılıksal engellemesi retry
+    bütçesini beklenenden çok aştığında istek sonsuza kadar asılı kalmasın.
     """
     task = asyncio.ensure_future(coro)
+    elapsed = 0.0
     while not task.done():
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=interval)
         except asyncio.TimeoutError:
+            elapsed += interval
+            if elapsed >= max_total:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+                holder["error"] = ScrapeError(
+                    f"Letterboxd {max_total:.0f} saniye içinde yanıt vermedi — "
+                    "sunucu IP'si geçici olarak engellenmiş olabilir. Birkaç dakika sonra tekrar dene."
+                )
+                return
             yield _sse({"type": "ping"})
         except BaseException:
             break  # task hatası aşağıda exception() ile ele alınır
