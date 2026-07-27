@@ -1,4 +1,4 @@
-"""OG image üretici — static/og-image.png oluşturur.
+"""OG image üretici — static/og-image-v3.png oluşturur.
 Çalıştır: python scripts/generate_og.py
 """
 from pathlib import Path
