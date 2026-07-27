@@ -85,8 +85,8 @@ draw.ellipse([cx       - r, 504 - r, cx       + r, 504 + r], fill=ORANGE)
 draw.ellipse([cx + 52  - r, 504 - r, cx + 52  + r, 504 + r], fill=BLUE)
 
 # ── URL ───────────────────────────────────────────────────────────────────
-draw.text((W // 2, 566), "movie-box-jo3x.onrender.com", font=f_url, fill=OUTLINE, anchor="mm")
+draw.text((W // 2, 566), "movie-boxd.onrender.com", font=f_url, fill=OUTLINE, anchor="mm")
 
-out = Path(__file__).parent.parent / "static" / "og-image.png"
+out = Path(__file__).parent.parent / "static" / "og-image-v3.png"
 img.save(out, "PNG", optimize=True)
 print(f"✓ Kaydedildi: {out}  ({out.stat().st_size // 1024} KB)")

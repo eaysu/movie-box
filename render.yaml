@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: movie-box
+    name: movie-boxd
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
