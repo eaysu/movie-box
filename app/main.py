@@ -59,7 +59,7 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _await_with_heartbeat(coro, holder: dict, *, interval: float = 5.0, max_total: float = 75.0):
+async def _await_with_heartbeat(coro, holder: dict, *, interval: float = 5.0, max_total: float = 120.0):
     """`coro`'yu çalıştırırken her `interval` saniyede bir 'ping' SSE üretir.
 
     Humanize edilmiş scraping uzun sürebildiğinden (10-40s), bu süre boyunca
