@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     scrape_max_pages: int = 8       # watchlist için max sayfa
     watched_max_pages: int = 8      # izlenen filmler için max sayfa
     watched_film_limit: int = 100   # hard limit — en son izlenen N film (taste profili)
-    watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
+    watchlist_film_limit: int = 150 # candidate havuzu — en son eklenen N film (varsayılan sıra: en yeni önce)
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
     # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
     # curl-cffi tamamen bloklanırsa (olasılıksal Cloudflare bloğu) devreye girer;
