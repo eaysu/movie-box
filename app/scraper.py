@@ -434,42 +434,68 @@ async def scrape_watched(
     *,
     delay: float = 1.0,
     max_pages: int = 10,
-    film_limit: int = 300,
+    film_limit: int = 100,
     max_retries: int = 3,
     scraperapi_key: str = "",
     scraperapi_max_pages: int = 2,
 ) -> tuple[list[ScrapedFilm], bool]:
-    """Kullanıcının izlediği filmleri çeker (zevk profili için).
+    """Kullanıcının en son izlediği filmleri çeker (zevk profili için).
 
-    Strateji:
-      1. /films/ HTML — curl-cffi (retry + parmak izi rotasyonu), bütçeli ScraperAPI
-      2. /rss/ — en son ~50 diary kaydı (rating bilgisi içerir)
-    İki kaynak slug ile tekilleştirilip birleştirilir.
-    film_limit hard cap olarak uygulanır (varsayılan 300).
-    Döner: (films, complete) — complete, HTML scrape'in temiz bitip bitmediği.
+    Öncelik — hepsi tarihli/kronolojik, en yeni önce:
+      1. Diary sayfaları (film_limit'e yetecek kadar, ~50 kayıt/sayfa)
+      2. /rss/ — en son ~50 diary kaydı, diary'nin kaçırdığını tamamlar
+      3. /films/ HTML (tarihsiz, sıra garantisiz) — sadece 1+2 film_limit'i
+         doldurmazsa (az/dağınık diary kaydı olan kullanıcılar için) dolgu.
+    film_limit hard cap olarak uygulanır (varsayılan 100) — "en son izlenen N film".
+    Döner: (films, complete) — complete, taramanın bir blokla yarıda kalıp kalmadığı.
     """
-    html_films, complete = await _scrape_list(
-        username, "films",
-        delay=delay,
-        max_pages=max_pages,
-        film_limit=film_limit,
-        max_retries=max_retries,
-        scraperapi_key=scraperapi_key,
-        scraperapi_max_pages=scraperapi_max_pages,
-    )
-    rss_films = await _scrape_watched_rss(username)
+    diary_pages = max(1, -(-film_limit // 50))
+    try:
+        diary_films, complete = await scrape_diary(
+            username,
+            max_pages=diary_pages,
+            film_limit=film_limit,
+            max_retries=max_retries,
+            scraperapi_key=scraperapi_key,
+            scraperapi_max_pages=scraperapi_max_pages,
+        )
+    except ScrapeError:
+        diary_films, complete = [], True  # diary boş/gizli olabilir, kritik değil
 
-    seen: set[str] = {f.slug for f in html_films if f.slug}
-    combined = list(html_films)
-    for f in rss_films:
-        if f.slug and f.slug not in seen:
-            seen.add(f.slug)
-            combined.append(f)
-        elif not f.slug:
-            # Slug yoksa başlık+yıl ile tekrar kontrolü yap
-            key = f"{f.title.lower()}:{f.year}"
-            if key not in seen:
-                seen.add(key)
+    seen: set[str] = {f.slug for f in diary_films if f.slug}
+    combined = list(diary_films)
+
+    if len(combined) < film_limit:
+        rss_films = await _scrape_watched_rss(username)
+        for f in rss_films:
+            if f.slug and f.slug not in seen:
+                seen.add(f.slug)
+                combined.append(f)
+            elif not f.slug:
+                key = f"{f.title.lower()}:{f.year}"
+                if key not in seen:
+                    seen.add(key)
+                    combined.append(f)
+
+    if len(combined) < film_limit:
+        try:
+            html_films, html_complete = await _scrape_list(
+                username, "films",
+                delay=delay,
+                max_pages=max_pages,
+                film_limit=film_limit,
+                max_retries=max_retries,
+                scraperapi_key=scraperapi_key,
+                scraperapi_max_pages=scraperapi_max_pages,
+            )
+        except ScrapeError:
+            html_films, html_complete = [], complete
+        complete = complete and html_complete
+        for f in html_films:
+            if len(combined) >= film_limit:
+                break
+            if f.slug and f.slug not in seen:
+                seen.add(f.slug)
                 combined.append(f)
 
     return combined[:film_limit], complete

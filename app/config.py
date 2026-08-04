@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     scrape_delay: float = 0.6       # sayfalar arası temel gecikme (jitter eklenir)
     scrape_max_pages: int = 8       # watchlist için max sayfa
     watched_max_pages: int = 8      # izlenen filmler için max sayfa
-    watched_film_limit: int = 300   # hard limit — taste/blend için yeterli profil
+    watched_film_limit: int = 100   # hard limit — en son izlenen N film (taste profili)
     watchlist_film_limit: int = 300 # watchlist'ten candidate havuzu
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
     # ScraperAPI fallback bütçesi (sayfa başına ~10 kredi). 0 = tamamen kapalı.
