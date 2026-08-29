@@ -1,27 +1,24 @@
 # Letterboxd AI Recommender
 
-A working skeleton: give it a Letterboxd username, it scrapes the watchlist,
-analyses the user's taste, and recommends films — using an **embedding +
-LLM hybrid** recommender.
+A username-first film recommender: give it a public Letterboxd username, it
+analyses recent watched films and ranks that user's own watchlist with a
+**TF-IDF + LLM hybrid** recommender.
 
 ```
-username → scrape → enrich (TMDb) → embed → similarity search → LLM ranking → recommendations
+username → direct scrape → enrich (TMDb) → similarity rank → LLM rerank → recommendations
 ```
 
-Every external dependency is optional. The pipeline **degrades gracefully**:
-no TMDb key → enrichment is skipped; no Anthropic key → the LLM step falls
-back to plain similarity ordering. You can run the whole thing offline
-against the bundled sample catalog.
+TMDb and OpenAI are optional. Without TMDb, enrichment is skipped; without an
+OpenAI key, the final step falls back to local similarity ordering.
 
-## The five layers
+## The four layers
 
 | Layer | File | What it does |
 |-------|------|--------------|
-| 1. Scraper | `app/scraper.py` | Fetches and parses the watchlist HTML pages |
+| 1. Scraper | `app/scraper.py` | Fetches public watched/watchlist HTML and diary RSS |
 | 2. Enrichment | `app/enrich.py` | Adds TMDb metadata: overview, genres, director, keywords |
-| 3. Embeddings | `app/embeddings.py` | Turns film text into vectors (tfidf or sentence-transformers) |
-| 4. Recommender | `app/recommender.py` | Builds a taste vector, finds nearest catalog films |
-| 5. LLM ranking | `app/llm.py` | Curates the candidate pool, writes the reasons |
+| 3. Recommender | `app/recommender.py` | Builds a rating-aware taste vector and ranks the watchlist |
+| 4. LLM ranking | `app/llm.py` | Curates the candidate pool and writes the reasons |
 
 `app/main.py` wires them together behind a FastAPI endpoint.
 
@@ -37,19 +34,7 @@ pip install -r requirements.txt
 cp .env.example .env          # then optionally add your API keys
 ```
 
-### 1. Build the catalog
-
-The recommender searches against a pool of pre-embedded films. Build it once.
-
-```bash
-# Offline — uses the 35 bundled sample films. No API key needed.
-python -m scripts.build_catalog --source sample
-
-# Or, for a real catalog of ~300 top-rated films (needs TMDB_API_KEY):
-python -m scripts.build_catalog --source tmdb --pages 15
-```
-
-### 2. Run the server
+### Run the server
 
 ```bash
 uvicorn app.main:app --reload
@@ -61,9 +46,11 @@ Open http://localhost:8000
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/health` | Shows which keys / catalog are configured |
-| `GET /api/watchlist/{username}` | Just the scraping step — useful for debugging the parser |
-| `POST /api/recommend` | The full pipeline. Body: `{"username": "..."}` |
+| `GET /api/health` | Shows which integrations are configured |
+| `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
+| `POST /api/random` | Three random picks from the user's watchlist |
+| `POST /api/blend` | Two-user taste compatibility and common films |
+| `DELETE /api/data` | Deletes one username's profile and recommendation caches |
 
 ```bash
 curl -X POST localhost:8000/api/recommend \
@@ -71,42 +58,44 @@ curl -X POST localhost:8000/api/recommend \
   -d '{"username": "your-letterboxd-name"}'
 ```
 
-## API keys (both optional)
+## API keys (optional)
 
 - **TMDb** — free at <https://www.themoviedb.org/settings/api>. Enables the
   enrichment layer (much better recommendations).
-- **Anthropic** — <https://console.anthropic.com/>. Enables the LLM ranking
-  layer with written, taste-aware explanations.
+- **OpenAI** — <https://platform.openai.com/api-keys>. Enables LLM reranking
+  with taste-aware explanations.
+- **Supabase** — persists user film and recommendation caches across deploys.
 
-Put them in `.env`. The model used for ranking is set by `ANTHROPIC_MODEL`
-(default `claude-sonnet-4-6`).
-
-## Better embeddings
-
-The default `tfidf` backend is keyword-based and installs with no heavy
-dependencies — fine for getting started. For genuinely *semantic* similarity
-(e.g. recognising that Solaris and 2001 are close even with different words):
-
-```bash
-pip install sentence-transformers
-# then in .env:
-EMBEDDING_PROVIDER=sentence-transformers
-```
-
-Rebuild the catalog after switching providers — the catalog and the watchlist
-must share one vector space.
+Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 
 ## Notes & caveats
 
-- **Letterboxd has no public API.** The scraper parses HTML, and the CSS
+- **Letterboxd's official API access is restricted and currently unavailable for
+  recommendation projects.** The scraper therefore parses public HTML, and the
   selectors in `app/scraper.py` can break if Letterboxd changes its markup.
-  It also respects a polite delay between requests (`SCRAPE_DELAY`). Check
-  Letterboxd's terms of service before using this at any scale; the most
-  robust alternative is to let users upload their watchlist CSV export.
-- TMDb lookups and scraped watchlists are cached in `data/cache.sqlite3`.
-- This is a skeleton — intended as a starting point, not a finished product.
-  Natural next steps: CSV-upload support, weighting watched/rated films,
-  a real vector database (FAISS / pgvector) instead of the in-memory matrix.
+  It also respects a polite delay between requests (`SCRAPE_DELAY`) and uses
+  no proxy or paid scraping service. Check Letterboxd's terms of service before
+  using this at any scale.
+- User profiles use stale-while-revalidate caching. An unchanged first-page
+  fingerprint skips the full crawl; a full crawl still runs at least weekly.
+- Identical concurrent scrapes are coalesced and TMDb uses a shared bounded pool.
+- TMDb metadata uses a local SQLite L1 and a batched Supabase L2, so deploys can
+  reuse enrichment results without turning every film into a separate DB request.
+- Taste, Random and Blend share an anonymous per-IP budget of five heavy requests
+  per ten minutes, with at most two starting inside fifteen seconds. Health checks
+  do not consume this budget. The limiter is process-local and intended for the
+  single-instance deployment.
+- “Verimi Sil” removes username-scoped profile, refresh, recommendation and user
+  tracking rows. It is anonymous and separately IP-limited until account login is
+  added; shared TMDb film metadata is not user-specific and remains cached.
+- Blend returns a calibrated 0–100 similarity score plus an independent low,
+  medium or high data-confidence indicator. The score is shown before the two
+  watchlists finish loading; common watchlist titles arrive lazily.
+- Recommendation ranking uses rating-aware negative signals and MMR diversity.
+  LLM context includes explicit 3.5+ ratings (with their scores); unrated history
+  is used only when the profile has no rating data.
+- Without Supabase, caches live in `data/cache.sqlite3` and are ephemeral on hosts
+  without persistent disks.
 
 ## Project layout
 
@@ -114,19 +103,18 @@ must share one vector space.
 letterboxd-recommender/
 ├── app/
 │   ├── config.py        settings / .env loading
-│   ├── cache.py         SQLite key-value cache
+│   ├── cache.py         layered SQLite/Supabase key-value cache
 │   ├── scraper.py       layer 1 — watchlist scraping
 │   ├── enrich.py        layer 2 — TMDb enrichment
-│   ├── embeddings.py    layer 3 — pluggable embeddings
-│   ├── recommender.py   layer 4 — similarity search
-│   ├── llm.py           layer 5 — LLM ranking
+│   ├── recommender.py   layer 3 — rating-aware similarity ranking
+│   ├── llm.py           layer 4 — LLM reranking
 │   └── main.py          FastAPI app
 ├── scripts/
-│   └── build_catalog.py one-time catalog builder
+│   ├── check_scraper.py direct scraper canary
+│   ├── check_profiles.py isolated real-profile pipeline check
+│   └── warm_cache.py    profile cache warmer
 ├── static/
 │   └── index.html       frontend
-├── data/
-│   └── sample_films.json bundled offline catalog source
 ├── requirements.txt
 └── .env.example
 ```

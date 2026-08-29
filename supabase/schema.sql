@@ -19,13 +19,19 @@ CREATE TABLE IF NOT EXISTS public.tmdb_cache (
   PRIMARY KEY (namespace, key)
 );
 
--- Row Level Security — servis anahtarı (SUPABASE_KEY = service_role) her şeyi okuyup yazabilir.
+-- Row Level Security — backend yalnızca service_role secret ile bağlanır.
+-- anon/authenticated rolleri browser veya ele geçirilmiş public key üzerinden bu
+-- tablolardaki kullanıcı adlarını ve cache verisini okuyamaz/değiştiremez.
 ALTER TABLE public.users     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tmdb_cache ENABLE ROW LEVEL SECURITY;
 
--- Servis anahtarıyla tüm operasyonlara izin ver.
-CREATE POLICY "service_all_users"      ON public.users
-  USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "service_all_users" ON public.users;
+DROP POLICY IF EXISTS "service_all_tmdb_cache" ON public.tmdb_cache;
 
-CREATE POLICY "service_all_tmdb_cache" ON public.tmdb_cache
-  USING (true) WITH CHECK (true);
+REVOKE ALL ON TABLE public.users FROM anon, authenticated;
+REVOKE ALL ON TABLE public.tmdb_cache FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.users_id_seq FROM anon, authenticated;
+
+GRANT ALL ON TABLE public.users TO service_role;
+GRANT ALL ON TABLE public.tmdb_cache TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.users_id_seq TO service_role;

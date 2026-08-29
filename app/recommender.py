@@ -23,6 +23,38 @@ if TYPE_CHECKING:
     from .enrich import EnrichedFilm
 
 
+def _mmr_indices(scores, watchlist_matrix, n: int, relevance_weight: float = 0.72):
+    """Select a relevant but non-repetitive shortlist with Maximal Marginal Relevance."""
+    if n <= 0 or len(scores) == 0:
+        return []
+
+    # Diversity work is bounded even for large watchlists. The best 4×N items
+    # remain eligible, so weak candidates cannot enter merely by being different.
+    pool_size = min(len(scores), max(n * 4, n))
+    pool = [int(i) for i in np.argsort(-scores)[:pool_size]]
+    pairwise = cosine_similarity(watchlist_matrix[pool])
+    selected_positions: list[int] = []
+
+    while pool and len(selected_positions) < min(n, pool_size):
+        if not selected_positions:
+            best_position = 0
+        else:
+            selected_set = set(selected_positions)
+            best_position = max(
+                (position for position in range(pool_size) if position not in selected_set),
+                key=lambda position: (
+                    relevance_weight * float(scores[pool[position]])
+                    - (1.0 - relevance_weight)
+                    * max(float(pairwise[position, chosen]) for chosen in selected_positions),
+                    float(scores[pool[position]]),
+                    -position,
+                ),
+            )
+        selected_positions.append(best_position)
+
+    return [pool[position] for position in selected_positions]
+
+
 def rank_watchlist(
     watched: list[EnrichedFilm],
     watchlist: list[EnrichedFilm],
@@ -60,13 +92,40 @@ def rank_watchlist(
     watched_matrix = matrix[:n_watched]
     watchlist_matrix = matrix[n_watched:]
 
-    # Zevk profili: izlenen filmlerin TF-IDF vektörlerinin ortalaması
-    taste = np.asarray(watched_matrix.mean(axis=0))  # (1, n_features)
+    # Zevk profili: puansız kayıtlar pozitif implicit sinyal; puanlı kayıtlarda
+    # 3–5 yıldız giderek güçlenen pozitif, 0.5–2 yıldız negatif sinyaldir.
+    ratings = np.array([
+        np.nan if film.user_rating is None else float(film.user_rating)
+        for film in watched
+    ])
+    positive_weights = np.where(
+        np.isnan(ratings),
+        1.0,
+        np.clip((ratings - 2.5) / 2.5, 0.0, 1.0),
+    )
+    negative_weights = np.where(
+        np.isnan(ratings),
+        0.0,
+        np.clip((2.5 - ratings) / 2.5, 0.0, 1.0),
+    )
 
-    # Her watchlist filminin zevk profiline cosine benzerliği
-    scores = cosine_similarity(taste, watchlist_matrix)[0]  # (n_watchlist,)
+    if positive_weights.sum() > 0:
+        taste = np.asarray(
+            watched_matrix.multiply(positive_weights[:, None]).sum(axis=0)
+            / positive_weights.sum()
+        )
+        scores = cosine_similarity(taste, watchlist_matrix)[0]
+    else:
+        scores = np.zeros(len(watchlist), dtype=float)
 
-    ranked_idx = np.argsort(-scores)[:n]
+    if negative_weights.sum() > 0:
+        negative_taste = np.asarray(
+            watched_matrix.multiply(negative_weights[:, None]).sum(axis=0)
+            / negative_weights.sum()
+        )
+        scores -= 0.6 * cosine_similarity(negative_taste, watchlist_matrix)[0]
+
+    ranked_idx = _mmr_indices(scores, watchlist_matrix, n)
 
     results: list[EnrichedFilm] = []
     for idx in ranked_idx:

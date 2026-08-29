@@ -9,7 +9,7 @@ import html as _html
 import logging
 import random
 import re
-import urllib.parse
+import time
 from dataclasses import dataclass, asdict
 from typing import Optional
 
@@ -20,10 +20,31 @@ log = logging.getLogger("moviebox")
 
 BASE_URL = "https://letterboxd.com"
 
+_scrape_flights: dict[tuple, asyncio.Task] = {}
+_scrape_flight_lock = asyncio.Lock()
 
-def _scraperapi_url(url: str, api_key: str) -> str:
-    """Wrap a URL through ScraperAPI to bypass Cloudflare IP blocks."""
-    return f"http://api.scraperapi.com?api_key={api_key}&url={urllib.parse.quote(url)}"
+
+async def _coalesce_scrape(key: tuple, factory):
+    """Coalesce identical direct scrape calls, including across API modes."""
+    async with _scrape_flight_lock:
+        task = _scrape_flights.get(key)
+        if task is None:
+            task = asyncio.create_task(factory())
+            _scrape_flights[key] = task
+
+            def _clear_finished(done_task, flight_key=key):
+                if _scrape_flights.get(flight_key) is done_task:
+                    _scrape_flights.pop(flight_key, None)
+                try:
+                    done_task.exception()
+                except asyncio.CancelledError:
+                    pass
+
+            task.add_done_callback(_clear_finished)
+        else:
+            log.warning("scraper single-flight JOIN %s", key[:2])
+
+    return await asyncio.shield(task)
 
 
 # ── Tarayıcı taklidi ────────────────────────────────────────────────────────
@@ -65,19 +86,23 @@ async def _human_pause(base: float) -> None:
     await asyncio.sleep(d)
 
 
-async def _warmup(session, username: str) -> None:
+async def _warmup(session, username: str) -> int | None:
     """Doğal gezinme taklidi: anasayfa → profil. Cloudflare oturum cookie'leri kurar.
 
     Bir tarayıcı film listesine doğrudan girmez; önce anasayfayı ve profili
     ziyaret eder. Bu istekler cf_clearance / oturum cookie'lerini set edebilir,
     sonraki liste isteklerinin engellenme olasılığını düşürür. Hatalar kritik değil.
     """
-    for url in (f"{BASE_URL}/", f"{BASE_URL}/{username}/"):
+    profile_status: int | None = None
+    for index, url in enumerate((f"{BASE_URL}/", f"{BASE_URL}/{username}/")):
         try:
-            await session.get(url, headers=_NAV_HEADERS, timeout=10)
+            response = await session.get(url, headers=_NAV_HEADERS, timeout=10)
+            if index == 1:
+                profile_status = response.status_code
             await _human_pause(0.5)
         except Exception:
             pass
+    return profile_status
 
 
 async def _fetch_with_retry(
@@ -124,6 +149,72 @@ async def _fetch_with_retry(
 
 class ScrapeError(Exception):
     """Raised when a Letterboxd page cannot be retrieved."""
+
+    code = "scrape_failed"
+
+    def __init__(self, message: str, *, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+
+class ProfileNotFoundError(ScrapeError):
+    code = "profile_not_found"
+
+
+class PrivateListError(ScrapeError):
+    code = "profile_or_list_private"
+
+
+class EmptyListError(ScrapeError):
+    code = "list_empty"
+
+
+class AccessBlockedError(ScrapeError):
+    code = "letterboxd_blocked"
+
+
+class MarkupChangedError(ScrapeError):
+    code = "markup_changed"
+
+
+class ScrapeNetworkError(ScrapeError):
+    code = "network_error"
+
+
+def _empty_page_error(username: str, list_path: str, html: str) -> ScrapeError:
+    """Classify a 200 response whose expected film grid could not be parsed."""
+    text = BeautifulSoup(html, "lxml").get_text(" ", strip=True).lower()
+    raw = html.lower()
+    if any(marker in text for marker in (
+        "profile is private",
+        "member's profile is private",
+        "member’s profile is private",
+        "private account",
+        "watchlist is private",
+    )):
+        return PrivateListError(
+            f"@{username} profili veya bu liste gizli; yalnızca herkese açık veriler okunabilir."
+        )
+    if any(marker in raw for marker in ("cf-chl-", "challenge-platform")) or any(
+        marker in text for marker in ("just a moment", "attention required")
+    ):
+        return AccessBlockedError(
+            "Letterboxd erişimi geçici olarak engelledi. Birkaç dakika sonra tekrar dene."
+        )
+    empty_markers = (
+        "watchlist is empty",
+        "no films in this watchlist",
+        "no diary entries",
+        "hasn't logged any films",
+        "hasn’t logged any films",
+        "0 films",
+    )
+    if any(marker in text for marker in empty_markers):
+        label = "Watchlist" if list_path == "watchlist" else "Film listesi"
+        return EmptyListError(f"@{username} için {label.lower()} boş.")
+    return MarkupChangedError(
+        "Letterboxd sayfası açıldı ancak film kartları okunamadı; sayfa yapısı değişmiş olabilir."
+    )
 
 
 @dataclass
@@ -230,18 +321,13 @@ async def _scrape_list(
     max_pages: int = 40,
     film_limit: int | None = None,
     max_retries: int = 3,
-    scraperapi_key: str = "",
-    scraperapi_max_pages: int = 2,
 ) -> tuple[list[ScrapedFilm], bool]:
     """Generic paginated scraper for any Letterboxd film grid.
 
-    Strateji (kredi-dostu, kapsamlı):
+    Strateji (ücretsiz ve doğrudan):
       1. Tek bir oturumda doğal warm-up (anasayfa → profil) ile cookie kur.
       2. Her sayfayı curl-cffi ile getir; humanize edilmiş jitter'lı gecikmeler.
       3. 403/429 gelirse backoff + parmak izi rotasyonu ile birkaç kez tekrar dene.
-      4. curl-cffi bir sayfada tamamen bloklanırsa ve bütçe varsa, SADECE o sayfa
-         için ScraperAPI'ye düş (sayfa başına ~10 kredi). `scraperapi_max_pages`
-         ile toplam proxy çağrısı sıkıca sınırlanır.
 
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
     Döner: (films, complete). complete=False → tarama bir blok/hata ile yarıda
@@ -253,11 +339,16 @@ async def _scrape_list(
 
     films: list[ScrapedFilm] = []
     seen_slugs: set[str] = set()
-    sapi_used = 0  # ScraperAPI çağrı sayacı — kredi koruması
     complete = True  # blok/hata ile yarıda kalırsa False'a çekilir
+    started = time.perf_counter()
+    pages_fetched = 0
 
     async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
-        await _warmup(session, username)
+        profile_status = await _warmup(session, username)
+        if profile_status == 404:
+            raise ProfileNotFoundError(
+                f"Letterboxd kullanıcısı '@{username}' bulunamadı.", status=404
+            )
 
         for page in range(1, max_pages + 1):
             direct_url = (
@@ -272,49 +363,37 @@ async def _scrape_list(
             else:
                 referer = f"{BASE_URL}/{username}/{list_path}/page/{page - 1}/"
 
-            # ── 1) curl-cffi (asıl iş gücü) — retry + parmak izi rotasyonu ──────
+            # curl-cffi — retry + parmak izi rotasyonu
             resp, status = await _fetch_with_retry(
                 session, direct_url, referer, max_retries=max_retries
             )
 
-            # ── 2) Bloklandıysa ve bütçe varsa → ScraperAPI son çare (o sayfaya)
-            blocked = resp is None or status in (403, 429)
-            if blocked and scraperapi_key and sapi_used < scraperapi_max_pages:
-                sapi_used += 1
-                log.warning(
-                    "scraper: curl-cffi blocked (status=%s) on %s — ScraperAPI fallback #%d/%d",
-                    status, direct_url, sapi_used, scraperapi_max_pages,
-                )
-                try:
-                    r = await session.get(
-                        _scraperapi_url(direct_url, scraperapi_key),
-                        headers={}, timeout=70,
-                    )
-                    if r.status_code in (200, 404):
-                        resp, status = r, r.status_code
-                    else:
-                        log.warning("scraper: ScraperAPI returned %d for %s", r.status_code, direct_url)
-                except Exception as exc:
-                    log.warning("scraper: ScraperAPI fallback error: %s", exc)
-
             # ── Durum kodu değerlendirmesi ─────────────────────────────────────
             if resp is None:
                 if page == 1:
-                    raise ScrapeError(f"Letterboxd'a ulaşılamadı: {direct_url}")
+                    raise ScrapeNetworkError(
+                        "Letterboxd'a ağ üzerinden ulaşılamadı. Lütfen tekrar dene."
+                    )
                 complete = False  # ağ hatası ile yarıda kaldı
                 break
             if status == 404:
                 # 404: bu sayfa yok → liste doğal olarak bitti (eksik değil).
                 if page == 1:
-                    raise ScrapeError(
-                        f"Letterboxd kullanıcısı '{username}' bulunamadı (ya da liste gizli)."
+                    if profile_status == 200:
+                        raise PrivateListError(
+                            f"@{username} profili bulundu ancak bu liste gizli veya erişilemiyor.",
+                            status=404,
+                        )
+                    raise ProfileNotFoundError(
+                        f"Letterboxd kullanıcısı '@{username}' bulunamadı.", status=404
                     )
                 break
             if status in (403, 429):
                 if page == 1:
-                    raise ScrapeError(
+                    raise AccessBlockedError(
                         f"Letterboxd erişimi engelledi (HTTP {status}). "
-                        "Hesap gizli olabilir veya sunucu IP'si geçici olarak bloklu."
+                        "Sunucu IP'si geçici olarak bloklu olabilir.",
+                        status=status,
                     )
                 complete = False  # bloklandı → kalan sayfalar eksik
                 break
@@ -324,15 +403,13 @@ async def _scrape_list(
                 complete = False
                 break
 
+            pages_fetched += 1
             page_films = _parse_page(resp.text)
             if not page_films:
                 if page == 1:
                     preview = resp.text[:300].replace("\n", " ")
                     log.warning("scraper: page 1 empty (status=%s). HTML preview: %s", status, preview)
-                    raise ScrapeError(
-                        "Letterboxd film listesi okunamadı — sunucu IP'si engellenmiş olabilir. "
-                        "Birkaç dakika sonra tekrar dene."
-                    )
+                    raise _empty_page_error(username, list_path, resp.text)
                 break  # boş sayfa = pagination doğal sonu
 
             new_count = 0
@@ -352,6 +429,14 @@ async def _scrape_list(
 
             await _human_pause(delay)
 
+    log.warning(
+        "scrape_metrics list=%s duration_ms=%d pages=%d films=%d complete=%s",
+        list_path,
+        round((time.perf_counter() - started) * 1000),
+        pages_fetched,
+        len(films),
+        complete,
+    )
     return films, complete
 
 
@@ -362,15 +447,20 @@ async def scrape_watchlist(
     max_pages: int = 40,
     film_limit: int | None = None,
     max_retries: int = 3,
-    scraperapi_key: str = "",
-    scraperapi_max_pages: int = 2,
 ) -> tuple[list[ScrapedFilm], bool]:
     """Kullanıcının izlemek istediği film listesini çeker. Döner: (films, complete)."""
-    return await _scrape_list(
-        username, "watchlist",
-        delay=delay, max_pages=max_pages, film_limit=film_limit,
-        max_retries=max_retries,
-        scraperapi_key=scraperapi_key, scraperapi_max_pages=scraperapi_max_pages,
+    normalized = username.strip().lstrip("@").lower()
+    key = (normalized, "watchlist", delay, max_pages, film_limit, max_retries)
+    return await _coalesce_scrape(
+        key,
+        lambda: _scrape_list(
+            normalized,
+            "watchlist",
+            delay=delay,
+            max_pages=max_pages,
+            film_limit=film_limit,
+            max_retries=max_retries,
+        ),
     )
 
 
@@ -380,15 +470,12 @@ async def scrape_diary(
     max_pages: int = 5,
     film_limit: int = 250,
     max_retries: int = 3,
-    scraperapi_key: str = "",
-    scraperapi_max_pages: int = 2,
 ) -> tuple[list[ScrapedFilm], bool]:
     """Diary HTML sayfalarından ek film listesi çeker. Döner: (films, complete)."""
     return await _scrape_list(
         username, "films/diary",
         delay=0.6, max_pages=max_pages, film_limit=film_limit,
         max_retries=max_retries,
-        scraperapi_key=scraperapi_key, scraperapi_max_pages=scraperapi_max_pages,
     )
 
 
@@ -436,8 +523,6 @@ async def scrape_watched(
     max_pages: int = 10,
     film_limit: int = 100,
     max_retries: int = 3,
-    scraperapi_key: str = "",
-    scraperapi_max_pages: int = 2,
 ) -> tuple[list[ScrapedFilm], bool]:
     """Kullanıcının en son izlediği filmleri çeker (zevk profili için).
 
@@ -450,32 +535,39 @@ async def scrape_watched(
     Döner: (films, complete) — complete, taramanın bir blokla yarıda kalıp kalmadığı.
     """
     diary_pages = max(1, -(-film_limit // 50))
+    rss_task = asyncio.create_task(_scrape_watched_rss(username))
     try:
         diary_films, complete = await scrape_diary(
             username,
             max_pages=diary_pages,
             film_limit=film_limit,
             max_retries=max_retries,
-            scraperapi_key=scraperapi_key,
-            scraperapi_max_pages=scraperapi_max_pages,
         )
     except ScrapeError:
         diary_films, complete = [], True  # diary boş/gizli olabilir, kritik değil
 
     seen: set[str] = {f.slug for f in diary_films if f.slug}
+    by_slug = {f.slug: f for f in diary_films if f.slug}
     combined = list(diary_films)
 
-    if len(combined) < film_limit:
-        rss_films = await _scrape_watched_rss(username)
-        for f in rss_films:
-            if f.slug and f.slug not in seen:
+    # RSS diary ile paralel çekilir ve liste dolmuş olsa bile rating'ler mevcut
+    # kayıtlara merge edilir; aksi halde kişisel puan sinyali kaybolur.
+    rss_films = await rss_task
+    for f in rss_films:
+        if f.slug:
+            if f.slug in by_slug:
+                if f.user_rating is not None:
+                    by_slug[f.slug].user_rating = f.user_rating
+                continue
+            if f.slug not in seen and len(combined) < film_limit:
                 seen.add(f.slug)
+                by_slug[f.slug] = f
                 combined.append(f)
-            elif not f.slug:
-                key = f"{f.title.lower()}:{f.year}"
-                if key not in seen:
-                    seen.add(key)
-                    combined.append(f)
+        elif len(combined) < film_limit:
+            key = f"{f.title.lower()}:{f.year}"
+            if key not in seen:
+                seen.add(key)
+                combined.append(f)
 
     if len(combined) < film_limit:
         try:
@@ -485,8 +577,6 @@ async def scrape_watched(
                 max_pages=max_pages,
                 film_limit=film_limit,
                 max_retries=max_retries,
-                scraperapi_key=scraperapi_key,
-                scraperapi_max_pages=scraperapi_max_pages,
             )
         except ScrapeError:
             html_films, html_complete = [], complete

@@ -3,7 +3,7 @@
 
 Render'ın datacenter IP'si Cloudflare tarafından bloklandığından, kullanıcı
 profillerini buradan (residential IP) çekip Supabase'e yazarız. Render sonra
-scrape yapmadan doğrudan cache'ten okur (cache HIT → ~5s, 0 ScraperAPI kredisi).
+scrape yapmadan doğrudan cache'ten okur (cache HIT → ~5s, dış scraping servisi yok).
 
 Kullanım:
     python -m scripts.warm_cache                      # varsayılan kullanıcı listesi
@@ -11,7 +11,7 @@ Kullanım:
 
 Notlar:
   • .env.local içindeki SUPABASE_URL/KEY ve TMDB_API_KEY kullanılır.
-  • ScraperAPI HER ZAMAN kapalı (lokal IP bloklu değil, gerek yok).
+  • Letterboxd doğrudan okunur; proxy veya ücretli scraping servisi kullanılmaz.
   • Her kullanıcı için watched + watchlist taze çekilip üzerine yazılır (force).
   • TTL 24 saat — günde bir kez çalıştırmak yeterli (cron'a bağlanabilir).
 """
@@ -38,16 +38,13 @@ DEFAULT_USERS = [
 
 async def warm_user(username: str, *, settings, enricher, pcache) -> None:
     """Bir kullanıcının watched + watchlist profilini çekip cache'e yazar."""
-    # ScraperAPI'yi açıkça kapat — lokalde gerek yok, kredi yakmasın.
     watched_kwargs = dict(
         delay=settings.scrape_delay, max_pages=settings.watched_max_pages,
         film_limit=settings.watched_film_limit, max_retries=settings.scrape_max_retries,
-        scraperapi_key="", scraperapi_max_pages=0,
     )
     watchlist_kwargs = dict(
         delay=settings.scrape_delay, max_pages=settings.scrape_max_pages,
         film_limit=settings.watchlist_film_limit, max_retries=settings.scrape_max_retries,
-        scraperapi_key="", scraperapi_max_pages=0,
     )
 
     t = time.perf_counter()

@@ -347,6 +347,10 @@ tailwind.config = {
         <span class="material-symbols-outlined text-[16px]">error</span>
         <span id="idle-error-text"></span>
       </div>
+      <div id="idle-notice" class="hidden glass-panel rounded-lg px-4 py-3 flex items-center gap-2 text-primary-container font-body-md text-body-md">
+        <span class="material-symbols-outlined text-[16px]">check_circle</span>
+        <span id="idle-notice-text"></span>
+      </div>
     </div>
 
     <!-- Status dots -->
@@ -587,6 +591,7 @@ tailwind.config = {
 
       <!-- Score label -->
       <div id="br-label" class="opacity-0 font-headline-md text-headline-md text-on-surface text-center"></div>
+      <div id="br-confidence" class="opacity-0 -mt-4 font-label-md text-label-md text-on-surface-variant text-center"></div>
 
       <!-- Stats row -->
       <div id="br-stats" class="opacity-0 flex flex-wrap items-center justify-center gap-gutter">
@@ -622,6 +627,11 @@ tailwind.config = {
     </div>
 
     <!-- Ortak watchlist filmleri -->
+    <div id="br-wishlist-loading" class="hidden glass-panel rounded-xl p-stack-lg text-center">
+      <span class="material-symbols-outlined text-[40px] text-secondary-container mb-stack-sm block animate-pulse">bookmark_add</span>
+      <p class="font-body-lg text-body-lg text-on-surface-variant">Ortak watchlist taranıyor…</p>
+    </div>
+
     <section id="br-wishlist-section" class="hidden flex flex-col gap-stack-md">
       <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
         <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">bookmark_add</span>
@@ -689,7 +699,7 @@ tailwind.config = {
   <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto">
     <div class="font-label-md text-label-md text-on-surface">© 2025 Movieboxd AI · Yapay Zeka Film Motoru</div>
     <div class="flex items-center gap-gutter font-label-md text-label-md">
-      <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Gizlilik</a>
+      <button id="btn-delete-data" class="text-on-surface-variant hover:text-error transition-colors cursor-pointer">Verimi Sil</button>
       <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Kullanım Koşulları</a>
       <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">API Durumu</a>
     </div>
@@ -798,6 +808,90 @@ function stopFactRotation() {
 // ── Helpers ────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
+  })[char]);
+}
+
+function safeImageURL(value) {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'https:' ? escapeHTML(url.href) : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+let _activeApiRequest = null;
+
+function beginApiRequest(timeoutMs) {
+  if (_activeApiRequest) {
+    _activeApiRequest.replaced = true;
+    _activeApiRequest.controller.abort();
+    clearTimeout(_activeApiRequest.timer);
+  }
+  const request = {
+    controller: new AbortController(),
+    replaced: false,
+    cancelled: false,
+    timedOut: false,
+    timer: null,
+  };
+  request.timer = setTimeout(() => {
+    request.timedOut = true;
+    request.controller.abort();
+  }, timeoutMs);
+  _activeApiRequest = request;
+  return request;
+}
+
+function finishApiRequest(request) {
+  if (!request) return;
+  clearTimeout(request.timer);
+  if (_activeApiRequest === request) _activeApiRequest = null;
+}
+
+function cancelActiveApiRequest() {
+  if (!_activeApiRequest) return;
+  _activeApiRequest.cancelled = true;
+  _activeApiRequest.controller.abort();
+  clearTimeout(_activeApiRequest.timer);
+  _activeApiRequest = null;
+}
+
+async function assertStreamResponse(response) {
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json()).detail || ''; } catch (_) {}
+    if (response.status === 429) {
+      const retry = Number(response.headers.get('Retry-After') || 0);
+      const suffix = retry > 0 ? ` Yaklaşık ${retry} saniye sonra tekrar dene.` : '';
+      throw new Error((detail || 'İstek sınırına ulaşıldı.') + suffix);
+    }
+    throw new Error(detail || `Sunucu HTTP ${response.status} hatası döndürdü.`);
+  }
+  if (!response.body) throw new Error('Yanıt akışı başlatılamadı.');
+}
+
+function streamErrorMessage(error, request, fallback) {
+  if (request?.timedOut) return 'İstek zaman aşımına uğradı. Lütfen tekrar deneyin.';
+  if (error?.name === 'AbortError') return null;
+  return error?.message || fallback;
+}
+
+function scrapeErrorMessage(event) {
+  const messages = {
+    profile_not_found: 'Letterboxd kullanıcısı bulunamadı. Kullanıcı adını kontrol edip tekrar dene.',
+    profile_or_list_private: 'Profil veya liste gizli. Movieboxd yalnızca herkese açık Letterboxd verilerini okuyabilir.',
+    list_empty: 'Bu kullanıcının ilgili film listesi boş. Dolu bir watchlist ile tekrar dene.',
+    letterboxd_blocked: 'Letterboxd erişimi geçici olarak sınırladı. Birkaç dakika sonra tekrar dene.',
+    markup_changed: 'Letterboxd sayfa yapısı değişmiş olabilir. Bu hata teknik inceleme için kaydedildi.',
+    network_error: 'Letterboxd ağına ulaşılamadı. Bağlantıyı kontrol edip tekrar dene.',
+  };
+  return messages[event?.code] || event?.detail || 'Film verileri alınamadı.';
+}
+
 const RANK_COLORS = [
   'text-primary-container',
   'text-secondary-container',
@@ -875,6 +969,17 @@ function setIdleError(msg) {
   }
 }
 
+function setIdleNotice(msg) {
+  if (msg) {
+    $('idle-notice-text').textContent = msg;
+    $('idle-notice').classList.remove('hidden');
+    $('idle-notice').classList.add('flex');
+  } else {
+    $('idle-notice').classList.add('hidden');
+    $('idle-notice').classList.remove('flex');
+  }
+}
+
 // ── Health check ───────────────────────────────────────────────────────────
 async function loadHealth() {
   try {
@@ -942,21 +1047,25 @@ function hideQueueInfo() {
 
 // ── Hero card builder ──────────────────────────────────────────────────────
 function buildHeroCard(film) {
+  const title = escapeHTML(film.title);
+  const director = escapeHTML(film.director);
+  const year = escapeHTML(film.year);
+  const posterURL = safeImageURL(film.poster_url);
   const genres = (film.genres || []).slice(0, 4).map(g =>
-    `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${g}</span>`
+    `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${escapeHTML(g)}</span>`
   ).join('');
 
-  const poster = film.poster_url
-    ? `<img alt="${film.title}" draggable="false"
+  const poster = posterURL
+    ? `<img alt="${title}" draggable="false"
           class="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
-          src="${film.poster_url}" loading="lazy"/>`
+          src="${posterURL}" loading="lazy"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[64px] text-on-surface-variant/20">movie</span>
        </div>`;
 
   const reason = film.reason
     ? `<div class="border-l-2 border-primary-container pl-stack-md py-unit bg-surface-variant/20 rounded-r-md">
-          <p class="font-body-lg text-body-lg text-on-surface-variant italic">"${film.reason}"</p>
+          <p class="font-body-lg text-body-lg text-on-surface-variant italic">"${escapeHTML(film.reason)}"</p>
        </div>`
     : '';
 
@@ -970,10 +1079,10 @@ function buildHeroCard(film) {
       <div class="p-stack-lg flex flex-col gap-stack-md flex-grow justify-center">
         <div>
           <h3 class="font-headline-lg text-headline-lg text-on-surface leading-tight">
-            ${film.title}
-            ${film.year ? `<span class="font-body-lg text-body-lg text-on-surface-variant/60 ml-2">${film.year}</span>` : ''}
+            ${title}
+            ${film.year ? `<span class="font-body-lg text-body-lg text-on-surface-variant/60 ml-2">${year}</span>` : ''}
           </h3>
-          ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${film.director}</div>` : ''}
+          ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${director}</div>` : ''}
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
         ${reason}
@@ -983,17 +1092,21 @@ function buildHeroCard(film) {
 
 // ── Alt card builder (portrait grid) ──────────────────────────────────────
 function buildAltCard(film, idx) {
+  const title = escapeHTML(film.title);
+  const director = escapeHTML(film.director);
+  const year = escapeHTML(film.year);
+  const posterURL = safeImageURL(film.poster_url);
   const accentColors = ['text-primary-container', 'text-secondary-container', 'text-tertiary-container', 'text-primary-container'];
   const ac = accentColors[idx % accentColors.length];
-  const poster = film.poster_url
-    ? `<img alt="${film.title}" draggable="false"
+  const poster = posterURL
+    ? `<img alt="${title}" draggable="false"
           class="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
-          src="${film.poster_url}" loading="lazy"/>`
+          src="${posterURL}" loading="lazy"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span>
        </div>`;
   const shortReason = film.reason
-    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 line-clamp-2 italic">${film.reason}</p>`
+    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 line-clamp-2 italic">${escapeHTML(film.reason)}</p>`
     : '';
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col">
@@ -1003,8 +1116,8 @@ function buildAltCard(film, idx) {
         <div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container/80 backdrop-blur-sm flex items-center justify-center font-bold text-xs ${ac}">#${idx + 2}</div>
       </div>
       <div class="p-stack-sm flex flex-col gap-unit flex-grow">
-        <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${film.title}${film.year ? ` <span class="text-on-surface-variant/60">(${film.year})</span>` : ''}</h4>
-        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${film.director}</span>` : ''}
+        <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
+        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
         ${shortReason}
       </div>
     </article>`;
@@ -1012,20 +1125,24 @@ function buildAltCard(film, idx) {
 
 // ── Random card builder ────────────────────────────────────────────────────
 function buildRandomCard(film) {
+  const title = escapeHTML(film.title);
+  const director = escapeHTML(film.director);
+  const year = escapeHTML(film.year);
+  const posterURL = safeImageURL(film.poster_url);
   const genres = (film.genres || []).slice(0, 4).map(g =>
-    `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${g}</span>`
+    `<span class="px-3 py-1 rounded-full bg-surface-variant text-on-surface-variant font-label-sm text-label-sm border border-outline-variant/20">${escapeHTML(g)}</span>`
   ).join('');
 
-  const poster = film.poster_url
-    ? `<img alt="${film.title}" draggable="false"
+  const poster = posterURL
+    ? `<img alt="${title}" draggable="false"
           class="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-[1.03]"
-          src="${film.poster_url}" loading="lazy"/>`
+          src="${posterURL}" loading="lazy"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[64px] text-on-surface-variant/20">movie</span>
        </div>`;
 
   const overview = film.overview
-    ? `<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed line-clamp-5">${film.overview}</p>`
+    ? `<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed line-clamp-5">${escapeHTML(film.overview)}</p>`
     : '';
 
   const rating = film.vote_average && film.vote_average > 0
@@ -1047,10 +1164,10 @@ function buildRandomCard(film) {
       <div class="p-stack-lg flex flex-col gap-stack-md flex-grow justify-center">
         <div>
           <h3 class="font-headline-lg text-headline-lg text-on-surface leading-tight">
-            ${film.title}
-            ${film.year ? `<span class="font-body-lg text-body-lg text-on-surface-variant/60 ml-2">${film.year}</span>` : ''}
+            ${title}
+            ${film.year ? `<span class="font-body-lg text-body-lg text-on-surface-variant/60 ml-2">${year}</span>` : ''}
           </h3>
-          ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${film.director}</div>` : ''}
+          ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${director}</div>` : ''}
           ${rating}
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
@@ -1144,10 +1261,14 @@ function animateScore(target, ringEl, numberEl, duration = 1400) {
 }
 
 function buildBlendFilmCard(film, idx) {
-  const poster = film.poster_url
-    ? `<img alt="${film.title}" draggable="false" loading="lazy"
+  const title = escapeHTML(film.title);
+  const director = escapeHTML(film.director);
+  const year = escapeHTML(film.year);
+  const posterURL = safeImageURL(film.poster_url);
+  const poster = posterURL
+    ? `<img alt="${title}" draggable="false" loading="lazy"
           class="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
-          src="${film.poster_url}"/>`
+          src="${posterURL}"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container"><span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span></div>`;
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col"
@@ -1157,8 +1278,8 @@ function buildBlendFilmCard(film, idx) {
         <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-surface-container-lowest/80 to-transparent pointer-events-none"></div>
       </div>
       <div class="p-stack-sm flex flex-col gap-unit flex-grow">
-        <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${film.title}${film.year ? ` <span class="text-on-surface-variant/60">(${film.year})</span>` : ''}</h4>
-        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${film.director}</span>` : ''}
+        <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
+        ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
       </div>
     </article>`;
 }
@@ -1167,7 +1288,8 @@ async function renderBlendResult(data) {
   const { username1, username2, score, watched_count1, watched_count2,
           common_count, top_director,
           top_director_count1, top_director_count2, films,
-          common_watchlist_films = [], watchlist_public = false } = data;
+          common_watchlist_films = [], watchlist_public = false, watchlist_pending = false,
+          confidence = { level: 'low', score: 0, sample_size: 0, rating_pairs: 0 } } = data;
 
   const info = getScoreInfo(score);
 
@@ -1208,15 +1330,13 @@ async function renderBlendResult(data) {
     $('br-no-common').classList.remove('hidden');
   }
 
-  // Ortak watchlist filmleri
-  if (common_watchlist_films && common_watchlist_films.length > 0) {
-    $('br-wishlist-grid').innerHTML = common_watchlist_films.map(buildBlendFilmCard).join('');
-    $('br-wishlist-section').classList.remove('hidden');
-    $('br-wishlist-section').classList.add('flex');
+  // Ortak watchlist ana skordan bağımsız yüklenir.
+  if (watchlist_pending) {
+    $('br-wishlist-loading').classList.remove('hidden');
+    $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.add('hidden');
   } else {
-    $('br-wishlist-section').classList.add('hidden');
-    $('br-no-wishlist').classList.remove('hidden');
+    renderBlendWatchlist({ common_watchlist_films, watchlist_public });
   }
 
   showView('blend-result');
@@ -1238,9 +1358,26 @@ async function renderBlendResult(data) {
   $('br-label').textContent = info.label;
   $('br-label').classList.remove('opacity-0');
   $('br-label').classList.add('blend-fade-up');
+  const confidenceLabels = { high: 'Yüksek', medium: 'Orta', low: 'Düşük' };
+  $('br-confidence').textContent = `${confidenceLabels[confidence.level] || 'Düşük'} veri güveni · %${confidence.score} · ${confidence.sample_size} film/kişi`;
+  $('br-confidence').classList.remove('opacity-0');
+  $('br-confidence').classList.add('blend-fade-up');
   await new Promise(r => setTimeout(r, 150));
   $('br-stats').classList.remove('opacity-0');
   $('br-stats').classList.add('blend-fade-up');
+}
+
+function renderBlendWatchlist({ common_watchlist_films = [], watchlist_public = false }) {
+  $('br-wishlist-loading').classList.add('hidden');
+  if (common_watchlist_films && common_watchlist_films.length > 0) {
+    $('br-wishlist-grid').innerHTML = common_watchlist_films.map(buildBlendFilmCard).join('');
+    $('br-wishlist-section').classList.remove('hidden');
+    $('br-wishlist-section').classList.add('flex');
+    $('br-no-wishlist').classList.add('hidden');
+  } else {
+    $('br-wishlist-section').classList.add('hidden');
+    $('br-no-wishlist').classList.remove('hidden');
+  }
 }
 
 // ── Blend SSE flow ──────────────────────────────────────────────────────────
@@ -1251,6 +1388,7 @@ async function blendFlow() {
   if (!u2) { $('username2-input').focus(); return; }
 
   setIdleError(null);
+  setIdleNotice(null);
   $('btn-recommend').disabled = true;
 
   // Set loading bubble initials
@@ -1267,6 +1405,7 @@ async function blendFlow() {
   $('br-user1').className = 'opacity-0 flex flex-col items-center gap-2 min-w-[80px] md:min-w-[110px]';
   $('br-user2').className = 'opacity-0 flex flex-col items-center gap-2 min-w-[80px] md:min-w-[110px]';
   $('br-label').className = 'opacity-0 font-headline-md text-headline-md text-on-surface text-center';
+  $('br-confidence').className = 'opacity-0 -mt-4 font-label-md text-label-md text-on-surface-variant text-center';
   $('br-stats').className = 'opacity-0 flex flex-wrap items-center justify-center gap-gutter';
   $('br-score').textContent = '0';
   $('br-ring').style.strokeDashoffset = '503';
@@ -1280,21 +1419,17 @@ async function blendFlow() {
     $('btn-recommend').disabled = false;
   };
 
-  const attemptBlend = async (isRetry) => {
-    if (isRetry) {
-      resetBlendSteps();
-      $('bfact-badge').textContent = '⏳ Bağlanıyor';
-      $('bfact-text').textContent = 'Sunucu uyandırılıyor, lütfen bekleyin...';
-      $('bfact-author').textContent = '';
-      await new Promise(r => setTimeout(r, 12000));
-      _startBlendFact();
-    }
+  const attemptBlend = async () => {
+    const apiRequest = beginApiRequest(240000);
+    let receivedTerminalEvent = false;
     try {
       const resp = await fetch(`${API_BASE}/api/blend`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username1: u1, username2: u2 }),
+        signal: apiRequest.controller.signal,
       });
+      await assertStreamResponse(resp);
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -1315,20 +1450,33 @@ async function blendFlow() {
           if (event.type === 'step') {
             onBlendStep(event.step);
           } else if (event.type === 'result') {
+            receivedTerminalEvent = true;
             finishBlendSteps();
             $('btn-recommend').disabled = false;
             await renderBlendResult(event);
+          } else if (event.type === 'watchlist_result') {
+            renderBlendWatchlist(event);
           } else if (event.type === 'error') {
-            done(event.detail);
+            receivedTerminalEvent = true;
+            done(scrapeErrorMessage(event));
           }
         }
       }
-    } catch (_e) {
-      if (!isRetry) { return attemptBlend(true); }
-      done('Sunucuya ulaşılamadı. Birkaç dakika sonra tekrar deneyin.');
+      if (!receivedTerminalEvent) {
+        done('Sunucu yanıtı tamamlanmadan bağlantı kapandı. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      if (apiRequest.replaced || apiRequest.cancelled) return;
+      const message = streamErrorMessage(
+        error, apiRequest, 'Sunucuya ulaşılamadı. Birkaç dakika sonra tekrar deneyin.'
+      );
+      if (!message) return;
+      done(message);
+    } finally {
+      finishApiRequest(apiRequest);
     }
   };
-  await attemptBlend(false);
+  await attemptBlend();
 }
 
 // ── Render random result ───────────────────────────────────────────────────
@@ -1362,6 +1510,7 @@ async function randomFlow() {
   if (!username) { $('username-input').focus(); return; }
 
   setIdleError(null);
+  setIdleNotice(null);
   $('btn-recommend').disabled = true;
   showView('loading');
   resetSteps();
@@ -1378,12 +1527,16 @@ async function randomFlow() {
     $('btn-recommend').disabled = false;
   };
 
+  const apiRequest = beginApiRequest(180000);
+  let receivedTerminalEvent = false;
   try {
     const resp = await fetch(`${API_BASE}/api/random`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username }),
+      signal: apiRequest.controller.signal,
     });
+    await assertStreamResponse(resp);
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -1406,6 +1559,7 @@ async function randomFlow() {
           hideQueueInfo();
           onStep(event.step);
         } else if (event.type === 'result') {
+          receivedTerminalEvent = true;
           finishSteps();
           stopFactRotation();
           _randomFilms = event.films || [];
@@ -1417,12 +1571,20 @@ async function randomFlow() {
             renderRandomResult();
           }
         } else if (event.type === 'error') {
-          done(event.detail);
+          receivedTerminalEvent = true;
+          done(scrapeErrorMessage(event));
         }
       }
     }
-  } catch (_e) {
-    done('Sunucuya ulaşılamadı.');
+    if (!receivedTerminalEvent) {
+      done('Sunucu yanıtı tamamlanmadan bağlantı kapandı. Lütfen tekrar deneyin.');
+    }
+  } catch (error) {
+    if (apiRequest.replaced || apiRequest.cancelled) return;
+    const message = streamErrorMessage(error, apiRequest, 'Sunucuya ulaşılamadı.');
+    if (message) done(message);
+  } finally {
+    finishApiRequest(apiRequest);
   }
 }
 
@@ -1432,6 +1594,7 @@ async function tasteFlow() {
   if (!username) { $('username-input').focus(); return; }
 
   setIdleError(null);
+  setIdleNotice(null);
   $('btn-recommend').disabled = true;
   showView('loading');
   resetSteps();
@@ -1448,12 +1611,16 @@ async function tasteFlow() {
     $('btn-recommend').disabled = false;
   };
 
+  const apiRequest = beginApiRequest(180000);
+  let receivedTerminalEvent = false;
   try {
     const resp = await fetch(`${API_BASE}/api/recommend`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username }),
+      signal: apiRequest.controller.signal,
     });
+    await assertStreamResponse(resp);
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -1478,17 +1645,26 @@ async function tasteFlow() {
           hideQueueInfo();
           onStep(event.step);
         } else if (event.type === 'result') {
+          receivedTerminalEvent = true;
           finishSteps();
           stopFactRotation();
           renderResults(event);
           $('btn-recommend').disabled = false;
         } else if (event.type === 'error') {
-          done(event.detail);
+          receivedTerminalEvent = true;
+          done(scrapeErrorMessage(event));
         }
       }
     }
-  } catch (e) {
-    done('Sunucuya ulaşılamadı.');
+    if (!receivedTerminalEvent) {
+      done('Sunucu yanıtı tamamlanmadan bağlantı kapandı. Lütfen tekrar deneyin.');
+    }
+  } catch (error) {
+    if (apiRequest.replaced || apiRequest.cancelled) return;
+    const message = streamErrorMessage(error, apiRequest, 'Sunucuya ulaşılamadı.');
+    if (message) done(message);
+  } finally {
+    finishApiRequest(apiRequest);
   }
 }
 
@@ -1499,8 +1675,51 @@ function recommend() {
   else tasteFlow();
 }
 
+async function deleteMyData() {
+  const username = $('username-input').value.trim();
+  showView('idle');
+  setIdleNotice(null);
+  setIdleError(null);
+  if (!username) {
+    setIdleError('Silmek istediğin Letterboxd kullanıcı adını önce yukarıya yaz.');
+    $('username-input').focus();
+    return;
+  }
+  const confirmed = window.confirm(
+    `@${username.replace(/^@/, '')} için saklanan profil ve öneri cache'i silinsin mi? ` +
+    'Yeni bir analiz başlatırsan public veriler tekrar oluşturulur.'
+  );
+  if (!confirmed) return;
+
+  cancelActiveApiRequest();
+  const button = $('btn-delete-data');
+  button.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/data`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username }),
+    });
+    let payload = {};
+    try { payload = await response.json(); } catch { /* empty error response */ }
+    if (!response.ok) {
+      const retryAfter = response.headers.get('Retry-After');
+      const suffix = retryAfter ? ` (${retryAfter} saniye sonra tekrar dene.)` : '';
+      throw new Error((payload.detail || 'Veri silinemedi.') + suffix);
+    }
+    $('username-input').value = '';
+    $('username2-input').value = '';
+    setIdleNotice(`@${payload.username} için saklanan veriler silindi.`);
+  } catch (error) {
+    setIdleError(error.message || 'Veri silinemedi. Lütfen tekrar dene.');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // ── Event listeners ────────────────────────────────────────────────────────
 $('btn-recommend').addEventListener('click', recommend);
+$('btn-delete-data').addEventListener('click', deleteMyData);
 $('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
 
 $('btn-mode-taste').addEventListener('click', () => setMode('taste'));
@@ -1509,16 +1728,22 @@ $('btn-mode-blend').addEventListener('click', () => setMode('blend'));
 $('username2-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
 
 $('btn-home').addEventListener('click', () => {
+  cancelActiveApiRequest();
   showView('idle');
   setIdleError(null);
+  setIdleNotice(null);
 });
 $('btn-new-search').addEventListener('click', () => {
+  cancelActiveApiRequest();
   showView('idle');
   setIdleError(null);
+  setIdleNotice(null);
 });
 $('btn-random-new-search').addEventListener('click', () => {
+  cancelActiveApiRequest();
   showView('idle');
   setIdleError(null);
+  setIdleNotice(null);
 });
 $('btn-try-again').addEventListener('click', () => {
   if (_randomAttempt < _randomFilms.length - 1) {
@@ -1531,8 +1756,10 @@ $('btn-switch-to-taste').addEventListener('click', () => {
   tasteFlow();
 });
 $('btn-blend-back').addEventListener('click', () => {
+  cancelActiveApiRequest();
   showView('idle');
   setIdleError(null);
+  setIdleNotice(null);
 });
 
 // ── Boot ───────────────────────────────────────────────────────────────────

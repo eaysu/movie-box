@@ -28,7 +28,28 @@ def _film_label(f: EnrichedFilm) -> str:
         label += f" ({f.year})"
     if f.director:
         label += f", yön. {f.director}"
+    if f.user_rating is not None:
+        label += f", kullanıcı puanı {float(f.user_rating):g}/5"
     return label
+
+
+def _taste_references(watched: list[EnrichedFilm], limit: int = 40) -> tuple[list[EnrichedFilm], str]:
+    """Prefer explicit positive ratings; never describe low-rated films as taste."""
+    liked = [
+        (index, film)
+        for index, film in enumerate(watched)
+        if film.user_rating is not None and float(film.user_rating) >= 3.5
+    ]
+    if liked:
+        liked.sort(key=lambda item: (-float(item[1].user_rating), item[0]))
+        return [film for _, film in liked[:limit]], "rated_likes"
+
+    if any(film.user_rating is not None for film in watched):
+        return [], "no_positive_ratings"
+
+    # Profiles without rating coverage still need a bounded implicit signal. The
+    # prompt names this honestly as viewing history, not as a list of favourites.
+    return watched[: min(limit, 20)], "unrated_history"
 
 
 def _build_prompt(
@@ -36,7 +57,15 @@ def _build_prompt(
     candidates: list[EnrichedFilm],
     n: int,
 ) -> str:
-    watched_block = "; ".join(_film_label(f) for f in watched[:40])  # prompt limiti
+    references, reference_mode = _taste_references(watched)
+    watched_block = "; ".join(_film_label(f) for f in references)
+    if reference_mode == "rated_likes":
+        reference_heading = "Kullanıcının yüksek puan verdiği filmler"
+    elif reference_mode == "unrated_history":
+        reference_heading = "Puan verisi olmadığı için yakın dönem izleme geçmişi"
+    else:
+        reference_heading = "Yeterli pozitif puan sinyali bulunamadı"
+        watched_block = "(pozitif referans yok)"
 
     lines = []
     for i, c in enumerate(candidates, start=1):
@@ -51,7 +80,7 @@ def _build_prompt(
 
     return (
         "Sen deneyimli bir film öneri uzmanısın.\n\n"
-        f"Kullanıcının daha önce izlediği filmler (zevk profili):\n{watched_block}\n\n"
+        f"{reference_heading}:\n{watched_block}\n\n"
         "Aşağıdaki filmler kullanıcının watchlist'inden seçilmiş adaylardır "
         "(izleme geçmişine benzerliğe göre ön filtrelendi):\n"
         f"{candidate_block}\n\n"
