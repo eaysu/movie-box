@@ -48,6 +48,7 @@ from .llm import rank_candidates
 from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
+    AccessBlockedError,
     ScrapeError,
     scrape_diary,
     scrape_profile,
@@ -310,6 +311,19 @@ def _raise_feedback_http(exc: RecommendationFeedbackError) -> None:
     }
     status_code, detail = errors.get(str(exc), (400, "Geri bildirim işlenemedi."))
     raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+def _raise_scrape_http(exc: ScrapeError) -> None:
+    if isinstance(exc, AccessBlockedError):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Letterboxd erişimi geçici olarak sınırladı. Otomatik yeniden "
+                "denemeler tamamlandı; lütfen yaklaşık bir dakika sonra tekrar dene."
+            ),
+            headers={"Retry-After": "60"},
+        ) from exc
+    raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
 
 
 def _sse(data: dict) -> str:
@@ -937,7 +951,7 @@ async def register_start(req: RegisterStartRequest, request: Request) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ScrapeError as exc:
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
     except AuthError as exc:
         _raise_auth_http(exc)
     return {
@@ -963,7 +977,7 @@ async def register_verify(req: OwnershipVerifyRequest, request: Request) -> dict
             ip_hash=_ip_hash(request),
         )
     except ScrapeError as exc:
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
     except AuthError as exc:
         _raise_auth_http(exc)
     return {"ok": True, "account": account.__dict__}
@@ -1061,7 +1075,7 @@ async def password_reset_finish(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ScrapeError as exc:
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
     except AuthError as exc:
         _raise_auth_http(exc)
     return {"ok": True}
@@ -1199,7 +1213,7 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
     except ScrapeError as exc:
         with contextlib.suppress(Exception):
             await asyncio.to_thread(service.mark_sync_status, account.id, "failed")
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
     except Exception as exc:
         log.warning("profile sync failed username=%s: %s", account.username, exc)
         with contextlib.suppress(Exception):
@@ -1455,7 +1469,7 @@ async def decide_blend_invite(
     except BlendServiceError as exc:
         _raise_blend_http(exc)
     except ScrapeError as exc:
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
 
 
 @app.post("/api/blends/requests/{request_id}/result")
@@ -1473,7 +1487,7 @@ async def retry_blend_result(request_id: str, request: Request) -> dict:
     except BlendServiceError as exc:
         _raise_blend_http(exc)
     except ScrapeError as exc:
-        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+        _raise_scrape_http(exc)
 
 
 @app.delete("/api/data")

@@ -51,10 +51,9 @@ async def _coalesce_scrape(key: tuple, factory):
 # curl-cffi `impersonate` ile Chrome/Safari TLS + HTTP/2 parmak izini taklit eder.
 # Her retry'da havuzdan farklı bir parmak izi seçilir — tek bir parmak izine
 # kilitli kalmak yerine, bloklandığında başka bir "tarayıcı" gibi görünürüz.
-_DEFAULT_IMPERSONATE = "chrome124"
+_DEFAULT_IMPERSONATE = "chrome"
 _IMPERSONATE_POOL = [
-    "chrome124", "chrome123", "chrome120",
-    "chrome131", "edge101", "safari17_0",
+    "chrome", "safari", "chrome124", "safari17_0",
 ]
 
 # Gerçek tarayıcı navigasyon başlıkları — TLS parmak izini davranışsal olarak tamamlar.
@@ -145,6 +144,66 @@ async def _fetch_with_retry(
             await asyncio.sleep(backoff)
 
     return resp, last_status
+
+
+async def _fetch_profile_with_fresh_sessions(
+    username: str, *, max_retries: int = 3
+):
+    """Fetch a profile while replacing cookies/connections after a block.
+
+    Reusing a session after Cloudflare marks it as suspicious makes a TLS
+    fingerprint rotation mostly ineffective. Profile reads are infrequent and
+    security-sensitive, so each blocked attempt gets a fresh browser session.
+    """
+    profile_url = f"{BASE_URL}/{username}/"
+    response = None
+    last_status = 0
+    attempts = max(1, max_retries)
+    for attempt in range(attempts):
+        impersonate = _IMPERSONATE_POOL[attempt % len(_IMPERSONATE_POOL)]
+        try:
+            async with AsyncSession(impersonate=impersonate) as session:
+                with_home_headers = {**_NAV_HEADERS, "Sec-Fetch-Site": "none"}
+                await session.get(
+                    f"{BASE_URL}/",
+                    headers=with_home_headers,
+                    timeout=10,
+                    impersonate=impersonate,
+                )
+                await _human_pause(0.35)
+                response = await session.get(
+                    profile_url,
+                    headers={**_NAV_HEADERS, "Referer": f"{BASE_URL}/"},
+                    timeout=14,
+                    impersonate=impersonate,
+                )
+                last_status = response.status_code
+        except Exception as exc:
+            last_status = -1
+            log.warning(
+                "profile scraper: network error attempt=%d fingerprint=%s: %s",
+                attempt + 1,
+                impersonate,
+                exc,
+            )
+            if attempt == attempts - 1:
+                return None, last_status
+        else:
+            if last_status not in (403, 429):
+                return response, last_status
+
+        if attempt < attempts - 1:
+            backoff = (attempt + 1) * 2.0 + random.uniform(0.4, 1.2)
+            log.warning(
+                "profile scraper: HTTP %s fingerprint=%s retry=%d/%d after %.1fs",
+                last_status,
+                impersonate,
+                attempt + 2,
+                attempts,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+    return response, last_status
 
 
 class ScrapeError(Exception):
@@ -369,17 +428,9 @@ def _parse_profile_page(username: str, html: str) -> ScrapedProfile:
 
 async def _scrape_profile(username: str, *, max_retries: int) -> ScrapedProfile:
     started = time.perf_counter()
-    async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
-        try:
-            await session.get(f"{BASE_URL}/", headers=_NAV_HEADERS, timeout=10)
-        except Exception:
-            pass
-        response, status = await _fetch_with_retry(
-            session,
-            f"{BASE_URL}/{username}/",
-            f"{BASE_URL}/",
-            max_retries=max_retries,
-        )
+    response, status = await _fetch_profile_with_fresh_sessions(
+        username, max_retries=max_retries
+    )
 
     if response is None:
         raise ScrapeNetworkError(

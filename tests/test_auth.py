@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.auth import Account, AuthService, AuthSession, validate_password
 from app.enrich import EnrichedFilm
+from app.scraper import AccessBlockedError
 
 
 def _settings(**overrides):
@@ -211,6 +212,30 @@ def test_register_password_mismatch_stops_before_scraping():
 
     assert response.status_code == 422
     scrape.assert_not_awaited()
+
+
+def test_registration_maps_letterboxd_block_to_retryable_service_error():
+    scrape = AsyncMock(
+        side_effect=AccessBlockedError("Letterboxd HTTP 403", status=403)
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings(scrape_max_retries=3)),
+        patch("app.main._enforce_auth_rate_limit", new=AsyncMock()),
+        patch("app.main.scrape_profile", new=scrape),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/auth/register/start",
+            json={
+                "username": "film_fan",
+                "password": "long-enough-password",
+                "password_confirm": "long-enough-password",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "60"
+    assert "geçici olarak sınırladı" in response.json()["detail"]
 
 
 def test_authenticated_user_can_create_consent_based_blend_request():

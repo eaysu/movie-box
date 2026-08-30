@@ -379,15 +379,24 @@ tailwind.config = {
 
     <form id="login-form" class="flex flex-col gap-3">
       <input id="login-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
-      <input id="login-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parola" type="password" autocomplete="current-password" required/>
+      <div class="relative">
+        <input id="login-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parola" type="password" autocomplete="current-password" required/>
+        <button type="button" data-password-toggle="login-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+      </div>
       <button id="btn-login" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Giriş yap</button>
       <button id="btn-show-reset" type="button" class="text-on-surface-variant hover:text-primary text-sm py-1">Parolamı unuttum</button>
     </form>
 
     <form id="register-form" class="hidden flex-col gap-3">
       <input id="register-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
-      <input id="register-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10" required/>
-      <input id="register-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10" required/>
+      <div class="relative">
+        <input id="register-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10" required/>
+        <button type="button" data-password-toggle="register-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+      </div>
+      <div class="relative">
+        <input id="register-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10" required/>
+        <button type="button" data-password-toggle="register-password-confirm" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+      </div>
       <button id="btn-register" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Hesabı oluştur</button>
     </form>
 
@@ -404,8 +413,14 @@ tailwind.config = {
       <button id="btn-reset-start" class="w-full bg-surface-variant text-on-surface py-3 rounded-lg border border-outline-variant/30 font-label-md text-label-md uppercase">Kod oluştur</button>
       <div id="reset-finish-fields" class="hidden flex-col gap-3">
         <button id="reset-code-display" type="button" class="w-full p-3 rounded-lg bg-surface-container text-primary-container font-mono tracking-wider border border-primary-container/30"></button>
-        <input id="reset-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Yeni parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10"/>
-        <input id="reset-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Yeni parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10"/>
+        <div class="relative">
+          <input id="reset-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Yeni parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10"/>
+          <button type="button" data-password-toggle="reset-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+        </div>
+        <div class="relative">
+          <input id="reset-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Yeni parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10"/>
+          <button type="button" data-password-toggle="reset-password-confirm" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility</span></button>
+        </div>
         <button id="btn-reset-finish" class="w-full bg-primary-container text-black py-3 rounded-lg font-label-md text-label-md uppercase">Parolayı değiştir</button>
       </div>
       <button id="btn-reset-back" class="text-on-surface-variant hover:text-primary text-sm py-1">Girişe dön</button>
@@ -1359,7 +1374,25 @@ function setAuthMessage(message, isError = false) {
   el.className = `mt-4 rounded-lg px-4 py-3 font-body-md text-body-md ${isError ? 'bg-error-container/30 text-error' : 'bg-primary-container/10 text-primary-container'}`;
 }
 
+function setPasswordVisibility(button, visible) {
+  const input = $(button.dataset.passwordToggle);
+  if (!input) return;
+  input.type = visible ? 'text' : 'password';
+  button.setAttribute('aria-pressed', String(visible));
+  button.setAttribute('aria-label', visible ? 'Şifreyi gizle' : 'Şifreyi göster');
+  button.querySelector('.material-symbols-outlined').textContent = visible
+    ? 'visibility_off'
+    : 'visibility';
+}
+
+function resetPasswordVisibility() {
+  document.querySelectorAll('[data-password-toggle]').forEach(button => {
+    setPasswordVisibility(button, false);
+  });
+}
+
 function setAuthMode(mode) {
+  resetPasswordVisibility();
   const login = mode === 'login';
   $('login-form').classList.toggle('hidden', !login);
   $('register-form').classList.toggle('hidden', login);
@@ -2709,6 +2742,11 @@ $('btn-reset-back').addEventListener('click', () => setAuthMode('login'));
 $('btn-reset-start').addEventListener('click', startPasswordReset);
 $('btn-reset-finish').addEventListener('click', finishPasswordReset);
 $('btn-logout').addEventListener('click', logoutAccount);
+document.querySelectorAll('[data-password-toggle]').forEach(button => {
+  button.addEventListener('click', () => {
+    setPasswordVisibility(button, button.getAttribute('aria-pressed') !== 'true');
+  });
+});
 $('header-how-it-works').addEventListener('click', () => openInfoDialog('dialog-how-it-works'));
 $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-privacy'));
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
