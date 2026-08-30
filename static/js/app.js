@@ -1043,12 +1043,22 @@ function openProfile() {
   else loadProfile();
 }
 
-function enterApp(account) {
+function _onboardKey(account) {
+  return 'mb_onboarded:' + (account?.username || account?.id || '');
+}
+
+function enterApp(account, opts = {}) {
   applyAccount(account);
   loadBlendInbox(false);
-  // First run after registration: play the onboarding reveal while the full
-  // history sweep warms up in the background.
-  if (account.profile_sync_status === 'pending' && !sessionStorage.getItem('mb_onboarded')) {
+  // Onboarding always plays right after a fresh registration. Otherwise it
+  // plays only while the first sync is still pending and it hasn't already
+  // been shown for this account in this tab.
+  const key = _onboardKey(account);
+  if (opts.fromRegistration) sessionStorage.removeItem(key);
+  if (
+    opts.fromRegistration ||
+    (account.profile_sync_status === 'pending' && !sessionStorage.getItem(key))
+  ) {
     startOnboarding();
     return;
   }
@@ -1119,7 +1129,7 @@ function _obWait(ms) {
 function finishOnboarding() {
   _obToken += 1;
   _obClearTimers();
-  sessionStorage.setItem('mb_onboarded', '1');
+  if (_account) sessionStorage.setItem(_onboardKey(_account), '1');
   $('ob-skip').classList.add('hidden');
   showView('profile');
   openProfilePanel('watch');
@@ -2138,7 +2148,7 @@ async function verifyRegistration() {
         });
         _pendingRegPassword = null;
         setAuthMessage(null);
-        enterApp(data.account);
+        enterApp(data.account, { fromRegistration: true });
         return;
       } catch (_) {
         // Otomatik giriş tutmadıysa elle girişe düş.
