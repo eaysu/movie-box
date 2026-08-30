@@ -317,6 +317,22 @@ def _parse_year_from_name(name: str) -> tuple[str, Optional[int]]:
     return name.strip(), None
 
 
+def _extract_rating(el) -> Optional[float]:
+    """Member rating from a `/films/` grid item's `rating rated-N` class (N = stars×2)."""
+    scopes = [el]
+    if el.parent is not None:
+        scopes.append(el.parent)
+    for scope in scopes:
+        ratings = scope.select("span.rating, .rating")
+        if len(ratings) != 1:
+            continue  # a multi-poster scope would give the wrong film's rating
+        classes = " ".join(ratings[0].get("class", []))
+        m = re.search(r"rated-(?:large-)?(\d{1,2})", classes)
+        if m and 1 <= int(m.group(1)) <= 10:
+            return int(m.group(1)) / 2.0
+    return None
+
+
 def _parse_page(html: str) -> list[ScrapedFilm]:
     soup = BeautifulSoup(html, "lxml")
     films: list[ScrapedFilm] = []
@@ -363,7 +379,13 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
                 poster_url = src
         if not title:
             title = _slug_to_title(slug)
-        return ScrapedFilm(title=title, year=year, slug=slug, poster_url=poster_url)
+        return ScrapedFilm(
+            title=title,
+            year=year,
+            slug=slug,
+            poster_url=poster_url,
+            user_rating=_extract_rating(el),
+        )
 
     # 2024+ LazyPoster: data-item-slug
     candidates = soup.select("div[data-item-slug]")
@@ -680,18 +702,43 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     return films
 
 
+async def scrape_films(
+    username: str,
+    *,
+    start_page: int = 1,
+    max_pages: int = 10,
+    film_limit: int = 5000,
+    max_retries: int = 3,
+) -> tuple[list[ScrapedFilm], bool]:
+    """Tüm izlenen filmler grid'i (`/films/`, 'eklenme' sırası, en yeni önce).
+
+    Diary yalnızca tarihli loglanan filmleri kapsar; `/films/` kullanıcının
+    izledim işaretlediği her filmi verir ve grid item'larda puanları taşır.
+    Döner: (films, complete).
+    """
+    return await _scrape_list(
+        username,
+        "films",
+        delay=0.6,
+        max_pages=max_pages,
+        start_page=start_page,
+        film_limit=film_limit,
+        max_retries=max_retries,
+    )
+
+
 async def scrape_recent_watched(
     username: str, *, max_retries: int = 3
 ) -> list[ScrapedFilm]:
-    """Sadece en son ~50 diary kaydı + RSS ratings — ucuz artımlı diff için.
+    """En son eklenen ~72 film (`/films/` sayfa 1) + RSS ratings — ucuz artımlı diff.
 
-    Diary sayfa 1 kronolojik sırayı, RSS ise kişisel puanları verir. İkisi
-    birleştirilip en yeni önce döndürülür. Blokluysa/boşsa boş liste döner.
+    `/films/` sayfa 1 tarihsiz loglanan filmleri de yakalar ve grid'de puan
+    taşır; RSS son ~50 diary puanını tamamlar. Blokluysa/boşsa boş liste döner.
     """
     rss_task = asyncio.create_task(_scrape_watched_rss(username))
     try:
-        diary_films, _complete = await scrape_diary(
-            username, start_page=1, max_pages=1, film_limit=60, max_retries=max_retries
+        diary_films, _complete = await scrape_films(
+            username, start_page=1, max_pages=1, film_limit=72, max_retries=max_retries
         )
     except ScrapeError:
         diary_films = []

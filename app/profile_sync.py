@@ -19,8 +19,8 @@ from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger("uvicorn.error")
 
-# Diary pages fetched per crawl step (~50 logged entries per page).
-DIARY_WINDOW_PAGES = 4
+# `/films/` grid pages fetched per crawl step (~72 posters per page).
+WATCHED_WINDOW_PAGES = 4
 # Hard ceiling on films analysed in one full sweep.
 FULL_MAX_FILMS = 10_000
 # Director/keyword detail calls per checkpointed batch.
@@ -199,15 +199,17 @@ async def _crawl(pipeline, service, account) -> None:
 
     known: set[str] = set(await asyncio.to_thread(service.get_watched_slugs, uid))
 
-    # ── Phase 1 · walk the diary, search-enrich + persist each window ──────
+    # ── Phase 1 · walk the /films/ grid, search-enrich + persist each window ──
     while phase == "diary":
-        window = await pipeline.scrape_diary_window(account.username, cursor)
+        window = await pipeline.scrape_watched_window(account.username, cursor)
         fresh: list[dict] = []
-        for offset, film in enumerate(window):
+        for film in window:
             slug = (film.get("slug") or "").strip()
             if not slug or slug in known:
                 continue
-            film["watched_rank"] = (cursor - 1) * 50 + offset
+            # watched_rank is a running position: page order is "recently added"
+            # first, so lower rank == more recent.
+            film["watched_rank"] = processed + len(fresh)
             fresh.append(film)
             known.add(slug)
         if not fresh:
@@ -216,7 +218,7 @@ async def _crawl(pipeline, service, account) -> None:
         enriched = await pipeline.enrich_search(fresh)
         await asyncio.to_thread(service.save_watched_films, uid, enriched)
         processed += len(fresh)
-        cursor += DIARY_WINDOW_PAGES
+        cursor += WATCHED_WINDOW_PAGES
         await asyncio.to_thread(
             service.touch_sync_job,
             uid,

@@ -51,6 +51,7 @@ from .scraper import (
     AccessBlockedError,
     ScrapeError,
     scrape_diary,
+    scrape_films,
     scrape_profile,
     scrape_recent_watched,
     scrape_watchlist,
@@ -1258,7 +1259,7 @@ async def _provisional_profile_sync(
 class _SyncPipeline:
     """Glue the background runner (app.profile_sync) calls for the full sweep."""
 
-    window_pages = profile_sync.DIARY_WINDOW_PAGES
+    window_pages = profile_sync.WATCHED_WINDOW_PAGES
 
     def __init__(self, settings):
         self.settings = settings
@@ -1273,12 +1274,12 @@ class _SyncPipeline:
                 self._enricher_obj = Enricher(self.settings.tmdb_api_key, cache)
         return self._enricher_obj
 
-    async def scrape_diary_window(self, username: str, start_page: int) -> list[dict]:
-        films, _complete = await scrape_diary(
+    async def scrape_watched_window(self, username: str, start_page: int) -> list[dict]:
+        films, _complete = await scrape_films(
             username,
             start_page=start_page,
             max_pages=self.window_pages,
-            film_limit=self.window_pages * 60,
+            film_limit=self.window_pages * 80,
             max_retries=self.settings.scrape_max_retries,
         )
         return [
@@ -1342,6 +1343,7 @@ class _SyncPipeline:
                     "release_year": ef.year or src.get("year"),
                     "tmdb_id": ef.tmdb_id,
                     "genres": ef.genres or [],
+                    "poster_url": ef.poster_url or "",
                     "user_rating": src.get("user_rating"),
                     "watched_rank": src.get("watched_rank"),
                     "details_loaded": False,

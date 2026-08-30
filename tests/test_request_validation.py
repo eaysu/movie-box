@@ -69,6 +69,21 @@ class ScraperParserTests(unittest.TestCase):
             ("In the Mood for Love", 2000),
         )
 
+    def test_films_grid_rating_is_parsed_from_rated_class(self):
+        html = """
+        <li class="poster-container">
+          <div data-film-slug="stalker" data-film-name="Stalker"
+               data-film-release-year="1979"></div>
+          <p class="poster-viewingdata"><span class="rating rated-9">★★★★½</span></p>
+        </li>
+        <li class="poster-container">
+          <div data-film-slug="solaris" data-film-name="Solaris"></div>
+        </li>
+        """
+        films = {f.slug: f for f in _parse_page(html)}
+        self.assertEqual(films["stalker"].user_rating, 4.5)
+        self.assertIsNone(films["solaris"].user_rating)
+
     def test_empty_page_failures_are_classified(self):
         cases = (
             ("<main>This member's profile is private</main>", PrivateListError),

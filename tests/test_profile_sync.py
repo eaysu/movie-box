@@ -145,7 +145,7 @@ class FakePipeline:
         self.window_calls = []
         self.rebuilt_with = None
 
-    async def scrape_diary_window(self, username, start_page):
+    async def scrape_watched_window(self, username, start_page):
         self.window_calls.append(start_page)
         return [dict(f) for f in self.pages.get(start_page, [])]
 
@@ -210,10 +210,10 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
                 {"slug": "b", "title": "B", "year": 2019, "user_rating": None},
                 {"slug": "c", "title": "C", "year": 2018, "user_rating": 3.0},
             ],
-            1 + profile_sync.DIARY_WINDOW_PAGES: [
+            1 + profile_sync.WATCHED_WINDOW_PAGES: [
                 {"slug": "d", "title": "D", "year": 2001, "user_rating": 5.0}
             ],
-            1 + 2 * profile_sync.DIARY_WINDOW_PAGES: [],
+            1 + 2 * profile_sync.WATCHED_WINDOW_PAGES: [],
         }
         pipeline = FakePipeline(service, pages)
 
@@ -223,10 +223,10 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.job["phase"], "done")
         self.assertEqual(service.job["films_total"], 4)
         self.assertEqual(set(service.films), {"a", "b", "c", "d"})
-        # watched_rank is a chronological proxy: window 1 → 0..2, window 2 → +200.
+        # watched_rank is a running position across windows: 0,1,2 then 3.
         self.assertEqual(service.films["a"]["watched_rank"], 0)
         self.assertEqual(service.films["c"]["watched_rank"], 2)
-        self.assertEqual(service.films["d"]["watched_rank"], 200)
+        self.assertEqual(service.films["d"]["watched_rank"], 3)
         # Details were filled in for every row.
         self.assertTrue(all(row["details_loaded"] for row in service.films.values()))
         self.assertEqual(service.films["b"]["director"], "Some Director")
@@ -239,7 +239,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
             "b": {"film_slug": "b", "tmdb_id": 2, "details_loaded": True, "watched_rank": 1},
             "c": {"film_slug": "c", "tmdb_id": 3, "details_loaded": True, "watched_rank": 2},
         }
-        resume_cursor = 1 + profile_sync.DIARY_WINDOW_PAGES
+        resume_cursor = 1 + profile_sync.WATCHED_WINDOW_PAGES
         service.job = {
             "user_id": 7,
             "state": "running",
@@ -253,7 +253,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         }
         pages = {
             resume_cursor: [{"slug": "d", "title": "D", "year": 2001, "user_rating": 5.0}],
-            resume_cursor + profile_sync.DIARY_WINDOW_PAGES: [],
+            resume_cursor + profile_sync.WATCHED_WINDOW_PAGES: [],
         }
         pipeline = FakePipeline(service, pages)
 
@@ -313,7 +313,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         }
 
         class Boom(FakePipeline):
-            async def scrape_diary_window(self, username, start_page):
+            async def scrape_watched_window(self, username, start_page):
                 raise RuntimeError("letterboxd blocked")
 
         await profile_sync.run_job(Boom(service, {}), service, _account())
