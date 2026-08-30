@@ -87,6 +87,12 @@ onayı gelmeden uygulanmaz.
   proxy timeout'una bağlı bırakma.
 - [x] Profil yenileme, kullanıcı verisi silme ve logout akışını erişilebilir profil
   menüsünde birleştir.
+- [x] Öneri geri bildirimini hesap bazında kalıcılaştır: “İzleyeceğim” ve “Bunu
+  önerme” geri alınana kadar, “Şimdilik geç” 7 gün boyunca Taste/Random
+  adaylarından çıkarılır.
+- [x] Hızlı aday filtresi için güncel tercih tablosu, ürün analizi ve geri alma
+  geçmişi için append-only olay tablosu ekle.
+- [x] Profil menüsüne öneri geçmişi ve geri alma ekranı ekle.
 
 ### P1 — Onaylı Blend ve inbox
 
@@ -222,9 +228,9 @@ onayı gelmeden uygulanmaz.
   - [x] Frontend'de her kod için ayrı çözüm metni göster; HTTP `429` için
     `Retry-After` süresini kullanıcıya aktar.
 - [ ] “Bu akşam” filtreleri: maksimum süre, mood, tür, dönem, dil ve izleme grubu.
-- [ ] Birincil CTA ekle: “Bunu izleyeceğim”, “Şimdilik geç”, “Bunu önerme”.
+- [x] Birincil CTA ekle: “Bunu izleyeceğim”, “Şimdilik geç”, “Bunu önerme”.
 - [ ] Önerinin hangi sevilen filmlerle eşleştiğini açıkça göster.
-- [ ] Öneri ve seçim geçmişi; aynı filmi tekrar önermeme.
+- [x] Öneri ve seçim geçmişi; aynı filmi tekrar önermeme.
 - [ ] Bölgesel streaming availability.
 - [x] Veri saklama ve silme akışı.
   - [x] Otomatik süre sonu uygulanmaması; yalnızca “Verimi sil” akışı sunulması
@@ -239,7 +245,7 @@ onayı gelmeden uygulanmaz.
 - [ ] Letterboxd hesabı olmayan kullanıcı için 10 filmlik swipe onboarding.
 - [ ] Blend davet linki ve grup film gecesi modu.
 - [ ] Paylaşılabilir taste özeti ve öneri kartı.
-- [ ] Random modunda oturumlar arası tekrar engelleme ve filtre desteği.
+- [x] Random modunda oturumlar arası tekrar engelleme ve tercih filtresi desteği.
 
 ## Teknik borç ve teslim kalitesi
 

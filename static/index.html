@@ -283,6 +283,7 @@ tailwind.config = {
       </button>
       <div id="account-menu" class="hidden absolute top-11 right-0 w-52 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1">
         <button id="menu-profile-sync" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">sync</span>Profili yenile</button>
+        <button id="menu-feedback-history" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">history</span>Öneri geçmişi</button>
         <button id="menu-delete-data" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
         <button id="btn-logout" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
       </div>
@@ -781,6 +782,32 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ═══════════════════════════  VIEW: RECOMMENDATION HISTORY  ═══════════════════════════ -->
+<div id="view-feedback-history" class="hidden flex-grow pt-20">
+  <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
+    <div class="flex items-center justify-between mt-stack-md">
+      <button id="btn-feedback-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
+      </button>
+      <button id="btn-feedback-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile" aria-label="Öneri geçmişini yenile"><span class="material-symbols-outlined">refresh</span></button>
+    </div>
+    <div>
+      <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Kişisel tercihler</span>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Öneri Geçmişi</h1>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-1">“Şimdilik geç” 7 gün, diğer tercihler geri alınana kadar önerilerini etkiler.</p>
+    </div>
+    <div id="feedback-history-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Aktif tercihler</h2>
+      <div id="feedback-current" class="flex flex-col gap-3"></div>
+    </section>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">İşlem geçmişi</h2>
+      <div id="feedback-events" class="flex flex-col gap-2"></div>
+    </section>
+  </div>
+</div>
+
 <!-- ═══════════════════════════  VIEW: BLEND INBOX  ═══════════════════════════ -->
 <div id="view-inbox" class="hidden flex-grow pt-20">
   <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
@@ -1024,6 +1051,7 @@ const RANK_COLORS = [
 let currentMode = 'taste';
 let _randomFilms = [];
 let _randomAttempt = 0;
+const _feedbackFilms = new Map();
 
 const _MODE_BTN_BASE = 'flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg font-label-md text-label-md uppercase tracking-wider transition-all duration-200 border';
 const _MODE_BTN_OFF  = `${_MODE_BTN_BASE} border-outline-variant/30 bg-surface-variant text-on-surface-variant`;
@@ -1076,7 +1104,7 @@ function setMode(mode) {
 }
 
 function showView(name) {
-  ['auth', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox'].forEach(v => {
+  ['auth', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'loading', 'blend-loading'].includes(name));
@@ -1141,6 +1169,110 @@ async function apiJSON(path, options = {}) {
   try { payload = await response.json(); } catch (_) {}
   if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
   return payload;
+}
+
+const FEEDBACK_LABELS = {
+  watch: 'İzleyeceğim',
+  skip: 'Şimdilik geçtim',
+  block: 'Bir daha önerme',
+  undo: 'Geri alındı',
+};
+
+function formatFeedbackDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('tr-TR', {
+    dateStyle: 'medium', timeStyle: 'short',
+  }).format(date);
+}
+
+async function saveRecommendationFeedback(button) {
+  const slug = button.dataset.filmSlug;
+  const action = button.dataset.feedbackAction;
+  const film = _feedbackFilms.get(slug);
+  const controls = button.closest('[data-feedback-controls]');
+  if (!film || !controls) return;
+  controls.querySelectorAll('button').forEach(item => { item.disabled = true; });
+  try {
+    await apiJSON('/api/recommendations/feedback', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        slug: film.slug,
+        title: film.title,
+        tmdb_id: film.tmdb_id || null,
+        poster_url: film.poster_url || null,
+        action,
+      }),
+    });
+    controls.innerHTML = `<span class="font-label-sm text-label-sm text-primary-container">${escapeHTML(FEEDBACK_LABELS[action])} · Yeni aramalarda gizlenecek.</span>`;
+  } catch (error) {
+    controls.querySelectorAll('button').forEach(item => { item.disabled = false; });
+    const status = controls.querySelector('[data-feedback-status]');
+    status.textContent = error.message || 'Tercih kaydedilemedi.';
+    status.classList.remove('hidden');
+  }
+}
+
+function renderFeedbackHistory(data) {
+  const now = Date.now();
+  const current = (data.current || []).filter(item => {
+    if (item.action !== 'skip') return true;
+    const expires = new Date(item.suppress_until).getTime();
+    return Number.isFinite(expires) && expires > now;
+  });
+  $('feedback-current').innerHTML = current.length ? current.map(item => {
+    const poster = safeImageURL(item.poster_url);
+    const expiry = item.action === 'skip' && item.suppress_until
+      ? `${formatFeedbackDate(item.suppress_until)} tarihine kadar gizli`
+      : 'Geri alınana kadar gizli';
+    return `
+      <article class="glass-panel rounded-xl p-3 flex items-center gap-3">
+        ${poster ? `<img src="${poster}" alt="" class="w-12 h-16 rounded-md object-cover shrink-0" loading="lazy"/>` : '<div class="w-12 h-16 rounded-md bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30">movie</span></div>'}
+        <div class="min-w-0 flex-grow">
+          <h3 class="font-label-md text-label-md text-on-surface truncate">${escapeHTML(item.title)}</h3>
+          <p class="font-label-sm text-label-sm text-primary-container">${escapeHTML(FEEDBACK_LABELS[item.action] || item.action)}</p>
+          <p class="font-label-sm text-label-sm text-on-surface-variant/60">${escapeHTML(expiry)}</p>
+        </div>
+        <button type="button" data-feedback-undo="${escapeHTML(item.film_slug)}" class="shrink-0 px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs">Geri al</button>
+      </article>`;
+  }).join('') : '<div class="glass-panel rounded-xl p-5 text-on-surface-variant">Aktif öneri tercihin yok.</div>';
+
+  const events = data.events || [];
+  $('feedback-events').innerHTML = events.length ? events.map(item => `
+    <div class="px-3 py-2 rounded-lg bg-surface-container flex items-center justify-between gap-3">
+      <span class="font-body-md text-body-md text-on-surface-variant truncate"><span class="text-on-surface">${escapeHTML(item.title)}</span> · ${escapeHTML(FEEDBACK_LABELS[item.action] || item.action)}</span>
+      <time class="font-label-sm text-label-sm text-on-surface-variant/50 shrink-0">${escapeHTML(formatFeedbackDate(item.created_at))}</time>
+    </div>`).join('') : '<div class="text-on-surface-variant">Henüz işlem yok.</div>';
+}
+
+async function loadFeedbackHistory() {
+  showView('feedback-history');
+  $('feedback-history-error').classList.add('hidden');
+  $('feedback-current').innerHTML = '<div class="glass-panel rounded-xl p-5 text-on-surface-variant animate-pulse">Tercihler yükleniyor…</div>';
+  $('feedback-events').innerHTML = '';
+  try {
+    renderFeedbackHistory(await apiJSON('/api/recommendations/history'));
+  } catch (error) {
+    $('feedback-current').innerHTML = '';
+    $('feedback-history-error').textContent = error.message || 'Öneri geçmişi yüklenemedi.';
+    $('feedback-history-error').classList.remove('hidden');
+  }
+}
+
+async function undoRecommendationFeedback(button) {
+  const slug = button.dataset.feedbackUndo;
+  button.disabled = true;
+  try {
+    await apiJSON(`/api/recommendations/feedback/${encodeURIComponent(slug)}`, {
+      method: 'DELETE', headers: csrfHeaders(),
+    });
+    await loadFeedbackHistory();
+  } catch (error) {
+    button.disabled = false;
+    $('feedback-history-error').textContent = error.message || 'Tercih geri alınamadı.';
+    $('feedback-history-error').classList.remove('hidden');
+  }
 }
 
 function setAuthMessage(message, isError = false) {
@@ -1553,6 +1685,26 @@ function hideQueueInfo() {
 }
 
 // ── Hero card builder ──────────────────────────────────────────────────────
+function rememberFeedbackFilm(film) {
+  if (film?.slug) _feedbackFilms.set(String(film.slug), film);
+}
+
+function buildFeedbackActions(film, compact = false) {
+  if (!_authEnabled || !film?.slug) return '';
+  rememberFeedbackFilm(film);
+  const slug = escapeHTML(film.slug);
+  const base = compact
+    ? 'px-2 py-1.5 text-[10px]'
+    : 'px-3 py-2 text-xs';
+  return `
+    <div class="flex flex-wrap gap-2 mt-2" data-feedback-controls="${slug}">
+      <button type="button" data-feedback-action="watch" data-film-slug="${slug}" class="${base} rounded-lg border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 transition-colors">Bunu izleyeceğim</button>
+      <button type="button" data-feedback-action="skip" data-film-slug="${slug}" class="${base} rounded-lg border border-tertiary-container/30 bg-tertiary-container/10 text-tertiary-container hover:bg-tertiary-container/20 transition-colors">Şimdilik geç</button>
+      <button type="button" data-feedback-action="block" data-film-slug="${slug}" class="${base} rounded-lg border border-outline-variant/30 bg-surface-variant text-on-surface-variant hover:text-error transition-colors">Bunu önerme</button>
+      <span class="hidden w-full font-label-sm text-label-sm text-error" data-feedback-status></span>
+    </div>`;
+}
+
 function buildHeroCard(film) {
   const title = escapeHTML(film.title);
   const director = escapeHTML(film.director);
@@ -1593,6 +1745,7 @@ function buildHeroCard(film) {
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
         ${reason}
+        ${buildFeedbackActions(film)}
       </div>
     </article>`;
 }
@@ -1626,6 +1779,7 @@ function buildAltCard(film, idx) {
         <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
         ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
         ${shortReason}
+        ${buildFeedbackActions(film, true)}
       </div>
     </article>`;
 }
@@ -1679,6 +1833,7 @@ function buildRandomCard(film) {
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
         ${overview}
+        ${buildFeedbackActions(film)}
       </div>
     </article>`;
 }
@@ -2413,6 +2568,7 @@ async function logoutAccount() {
     await apiJSON('/api/auth/logout', { method: 'POST', headers: csrfHeaders() });
   } catch (_) {}
   _account = null;
+  _feedbackFilms.clear();
   $('header-account').classList.add('hidden');
   $('header-account').classList.remove('flex');
   $('profile-card').classList.add('hidden');
@@ -2438,6 +2594,16 @@ function copyCode(element) {
   if (!code) return;
   navigator.clipboard?.writeText(code);
   setAuthMessage('Kod panoya kopyalandı.');
+}
+
+function handleRecommendationFeedbackClick(event) {
+  const button = event.target.closest('[data-feedback-action]');
+  if (button) saveRecommendationFeedback(button);
+}
+
+function handleFeedbackHistoryClick(event) {
+  const button = event.target.closest('[data-feedback-undo]');
+  if (button) undoRecommendationFeedback(button);
 }
 
 // ── Event listeners ────────────────────────────────────────────────────────
@@ -2471,6 +2637,10 @@ $('menu-profile-sync').addEventListener('click', () => {
   showView('idle');
   syncProfile(true);
 });
+$('menu-feedback-history').addEventListener('click', () => {
+  toggleAccountMenu(false);
+  loadFeedbackHistory();
+});
 $('menu-delete-data').addEventListener('click', () => {
   toggleAccountMenu(false);
   deleteMyData();
@@ -2480,7 +2650,12 @@ $('btn-profile-sync').addEventListener('click', () => syncProfile(true));
 $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView('idle'));
+$('btn-feedback-back').addEventListener('click', () => showView('idle'));
+$('btn-feedback-refresh').addEventListener('click', loadFeedbackHistory);
 $('view-inbox').addEventListener('click', handleBlendInboxAction);
+$('view-results').addEventListener('click', handleRecommendationFeedbackClick);
+$('view-random-result').addEventListener('click', handleRecommendationFeedbackClick);
+$('view-feedback-history').addEventListener('click', handleFeedbackHistoryClick);
 $('btn-recommend').addEventListener('click', recommend);
 $('btn-delete-data').addEventListener('click', deleteMyData);
 $('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });

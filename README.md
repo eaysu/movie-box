@@ -54,6 +54,9 @@ Open http://localhost:8000
 | `POST /api/auth/login` | Opens an HttpOnly cookie session |
 | `GET /api/profile/me` | Returns the stored profile and taste snapshot |
 | `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
+| `POST /api/recommendations/feedback` | Saves watch/skip/block feedback for a recommendation |
+| `GET /api/recommendations/history` | Lists active recommendation preferences and event history |
+| `DELETE /api/recommendations/feedback/{slug}` | Undoes a saved recommendation preference |
 | `GET /api/users/search?q=` | Finds active registered Movieboxd users |
 | `POST/DELETE /api/users/{username}/block` | Blocks/unblocks a user and cancels pending requests |
 | `POST /api/users/{username}/report` | Stores a rate-limited safety report |
