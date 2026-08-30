@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260831.6"/>
+<link rel="stylesheet" href="/static/app.css?v=20260831.7"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -441,7 +441,15 @@
   </div>
 
   <div class="relative z-10 mt-8 w-full max-w-[560px] flex flex-col items-center gap-3">
-    <div id="ob-dots" class="flex items-center gap-1.5"></div>
+    <div class="flex items-center gap-4">
+      <button id="ob-prev" type="button" class="hidden w-9 h-9 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors flex items-center justify-center" aria-label="Önceki">
+        <span class="material-symbols-outlined text-[20px]">chevron_left</span>
+      </button>
+      <div id="ob-dots" class="flex items-center gap-1.5"></div>
+      <button id="ob-next" type="button" class="hidden w-9 h-9 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-colors flex items-center justify-center" aria-label="Sonraki">
+        <span class="material-symbols-outlined text-[20px]">chevron_right</span>
+      </button>
+    </div>
     <button id="ob-skip" type="button" class="hidden w-full max-w-[320px] bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
       <span class="material-symbols-outlined text-[18px]">arrow_forward</span><span id="ob-skip-label">Uygulamaya geç</span>
     </button>
@@ -916,6 +924,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260831.6"></script>
+<script type="module" src="/static/js/app.js?v=20260831.7"></script>
 </body>
 </html>

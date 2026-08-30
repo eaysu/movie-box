@@ -1068,19 +1068,18 @@ function enterApp(account, opts = {}) {
 }
 
 // ── Onboarding reveal ──────────────────────────────────────────────────
-// Akış veriye bağlı: her aşama ilgili veri hazır olduğunda görünür. Tam
-// izleme geçmişi taranmadan "Sinematik kişiliğin"/"Favori yönetmenin"
-// slaytları gösterilmez; bu sırada film bilgileri akan bir bekleme ekranı
-// çalışır. "Uygulamaya geç" butonu yalnızca en sonda (S8) belirir.
+// Tüm izleme geçmişi taraması bitene kadar tek bir bekleme ekranı çalışır
+// (akan sinema bilgileri + ilerleme). Tarama biter bitmez slaytlar sırayla
+// sunulur; kullanıcı ok tuşları / ileri-geri düğmeleriyle gezinebilir.
 let _obToken = 0;             // her yeni çalışma bu sayacı artırır — async iptal kontrolü
-let _obSlideTimer = null;     // aşamalar arası bekleme
-let _obFactTimer = null;      // bilgi kartı rotasyonu (4 sn)
+let _obSlideTimer = null;     // slayt otomatik ilerleme
+let _obFactTimer = null;      // bilgi kartı rotasyonu
 let _obPollTimer = null;      // tam tarama job yoklaması
-const OB_SLIDE_MS = 5000;
-const OB_FACT_MS = 4000;
+let _obReveal = null;         // { slides:[fn], index, token } — tarama sonrası sunum
+const OB_SLIDE_MS = 15000;
+const OB_FACT_MS = 7000;
 const OB_POLL_MS = 5000;
 const OB_MAX_WAIT_MS = 5 * 60 * 1000;   // "derin analiz" beklemesi için üst sınır
-const OB_STEPS = 6;                      // ilerleme noktası sayısı
 
 const OB_BUCKETS = [
   { max: 250,      text: 'Kısa ve tatlı bir geçmişin var. Analizin birazdan hazır, daha esnemeye fırsat bulamadan döneriz.' },
@@ -1110,6 +1109,7 @@ function _obClearTimers() {
   if (_obSlideTimer) { clearTimeout(_obSlideTimer); _obSlideTimer = null; }
   if (_obFactTimer)  { clearInterval(_obFactTimer); _obFactTimer = null; }
   if (_obPollTimer)  { clearInterval(_obPollTimer); _obPollTimer = null; }
+  _obReveal = null;
 }
 
 // Bu onboarding çalışması hâlâ geçerli mi? Değilse timer'ları da temizler.
@@ -1119,18 +1119,13 @@ function _obLive(token) {
   return ok;
 }
 
-function _obWait(ms) {
-  return new Promise(resolve => {
-    if (_obSlideTimer) clearTimeout(_obSlideTimer);
-    _obSlideTimer = setTimeout(() => { _obSlideTimer = null; resolve(); }, ms);
-  });
-}
-
 function finishOnboarding() {
   _obToken += 1;
   _obClearTimers();
   if (_account) sessionStorage.setItem(_onboardKey(_account), '1');
   $('ob-skip').classList.add('hidden');
+  $('ob-prev').classList.add('hidden');
+  $('ob-next').classList.add('hidden');
   showView('profile');
   openProfilePanel('watch');
   if (_persistedProfile) renderPersistedProfile(_persistedProfile);
@@ -1141,8 +1136,8 @@ function _obStage(html) {
   $('ob-stage').innerHTML = `<div class="ob-in">${html}</div>`;
 }
 
-function _obDots(active) {
-  $('ob-dots').innerHTML = Array.from({ length: OB_STEPS }, (_, i) =>
+function _obDots(active, total) {
+  $('ob-dots').innerHTML = Array.from({ length: total }, (_, i) =>
     `<i class="${i === active ? 'on' : ''}"></i>`).join('');
 }
 
@@ -1256,6 +1251,47 @@ function _obRenderDirector(d) {
     </div>`);
 }
 
+function _obRenderPersonality(text) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
+    <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
+  streamText($('ob-personality'), text);
+}
+
+function _obRenderOutro(full) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
+    <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevk profilin hazır</h2>
+    <p class="mt-3 font-body-md text-body-md text-on-surface-variant/80">${full
+      ? 'Tüm izleme geçmişin tarandı. İçeri girip bu geceye bir film seçelim.'
+      : 'Analizin derinleşmeye devam ediyor, birazdan profilinde güncellenecek. Sen içeri geçebilirsin.'}</p>`);
+}
+
+// Tarama sonrası sunum: slaytları sırayla gösterir, OB_SLIDE_MS'de bir
+// otomatik ilerler; kullanıcı ileri/geri gezinebilir (timer sıfırlanır).
+function _obShowRevealSlide(i) {
+  const r = _obReveal;
+  if (!r || r.token !== _obToken) return;
+  r.index = Math.max(0, Math.min(i, r.slides.length - 1));
+  const last = r.index === r.slides.length - 1;
+  _obDots(r.index, r.slides.length);
+  r.slides[r.index]();
+  $('ob-prev').classList.toggle('hidden', r.index === 0);
+  $('ob-next').classList.toggle('hidden', last);
+  $('ob-skip').classList.toggle('hidden', !last);
+  $('ob-bg-note').textContent = last
+    ? 'Hazır olduğunda uygulamaya geçebilirsin.'
+    : 'İleri / geri gezinebilirsin.';
+  if (_obSlideTimer) { clearTimeout(_obSlideTimer); _obSlideTimer = null; }
+  if (!last) {
+    _obSlideTimer = setTimeout(() => _obShowRevealSlide(r.index + 1), OB_SLIDE_MS);
+  }
+}
+
+function _obRevealNav(delta) {
+  if (_obReveal) _obShowRevealSlide(_obReveal.index + delta);
+}
+
 // Tam izleme geçmişi taraması bitene (ya da OB_MAX_WAIT_MS dolana) kadar bekler.
 // Döner: taze profil (job 'done') | null (süre doldu / iptal edildi).
 function _obAwaitFullSweep(token, provisional) {
@@ -1312,6 +1348,8 @@ async function startOnboarding() {
   _obClearTimers();
   showView('onboarding');
   $('ob-skip').classList.add('hidden');
+  $('ob-prev').classList.add('hidden');
+  $('ob-next').classList.add('hidden');
   $('ob-skip-label').textContent = 'Uygulamaya geç';
   $('ob-bg-note').textContent = 'Zevk analizin arka planda hazırlanıyor…';
   $('ob-dots').innerHTML = '';
@@ -1337,7 +1375,7 @@ async function startOnboarding() {
   if (!_obLive(token)) return;
   _obStopFacts();
 
-  // ── Tarama bitti — sırayla sun ──
+  // ── Tarama bitti — slaytları sırayla sun (ileri/geri gezinilebilir) ──
   const profile = full || _persistedProfile || data;
   const taste = profile.taste || data.taste || {};
   const stats = data.letterboxd_stats || {};
@@ -1348,63 +1386,24 @@ async function startOnboarding() {
     (profile.sync_job && profile.sync_job.total)
       || (data.sync_job && data.sync_job.total) || 0,
   );
-
-  // S1 — Merhaba
-  _obDots(0);
-  _obRenderWelcome();
-  await _obWait(3200);
-  if (!_obLive(token)) return;
-
-  // S2 — rakamlar
   const numbers = [
     { label: 'İzlediğin filmler', value: total },
     { label: 'Puanladıkların', value: taste.rated_count || 0 },
     { label: 'Bu yıl', value: stats.this_year || 0 },
   ].filter(x => x.value > 0);
-  if (numbers.length) {
-    _obDots(1);
-    _obRenderNumbers(numbers);
-    await _obWait(OB_SLIDE_MS);
-    if (!_obLive(token)) return;
-  }
+  const personality = (taste.personality || '').trim();
 
-  // S3 — favori dörtlü
-  if (favs.length) {
-    _obDots(2);
-    _obRenderFavs(favs);
-    await _obWait(OB_SLIDE_MS);
-    if (!_obLive(token)) return;
-  }
+  const slides = [
+    () => _obRenderWelcome(),
+    numbers.length ? () => _obRenderNumbers(numbers) : null,
+    favs.length ? () => _obRenderFavs(favs) : null,
+    personality ? () => _obRenderPersonality(personality) : null,
+    (dir && dir.name) ? () => _obRenderDirector(dir) : null,
+    () => _obRenderOutro(full),
+  ].filter(Boolean);
 
-  // S4 — sinematik kişilik (gerçek LLM metni)
-  if ((taste.personality || '').trim()) {
-    _obDots(3);
-    _obStage(`
-      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
-      <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
-    streamText($('ob-personality'), taste.personality.trim());
-    await _obWait(Math.max(OB_SLIDE_MS, 6500));
-    if (!_obLive(token)) return;
-  }
-
-  // S5 — favori yönetmen (tüm geçmişten)
-  if (dir && dir.name) {
-    _obDots(4);
-    _obRenderDirector(dir);
-    await _obWait(OB_SLIDE_MS);
-    if (!_obLive(token)) return;
-  }
-
-  // S6 — bitiş: "Uygulamaya geç" butonu ilk kez burada belirir
-  _obDots(5);
-  _obStage(`
-    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
-    <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevk profilin hazır</h2>
-    <p class="mt-3 font-body-md text-body-md text-on-surface-variant/80">${full
-      ? 'Tüm izleme geçmişin tarandı. İçeri girip bu geceye bir film seçelim.'
-      : 'Analizin derinleşmeye devam ediyor, birazdan profilinde güncellenecek. Sen içeri geçebilirsin.'}</p>`);
-  $('ob-skip').classList.remove('hidden');
-  $('ob-bg-note').textContent = 'Hazır olduğunda uygulamaya geçebilirsin.';
+  _obReveal = { slides, index: 0, token };
+  _obShowRevealSlide(0);
 }
 
 async function boot() {
@@ -2297,6 +2296,14 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('ob-skip').addEventListener('click', finishOnboarding);
+$('ob-prev').addEventListener('click', () => _obRevealNav(-1));
+$('ob-next').addEventListener('click', () => _obRevealNav(1));
+document.addEventListener('keydown', event => {
+  if (_obReveal && !$('view-onboarding').classList.contains('hidden')) {
+    if (event.key === 'ArrowLeft') _obRevealNav(-1);
+    else if (event.key === 'ArrowRight') _obRevealNav(1);
+  }
+});
 $('btn-account-menu').addEventListener('click', event => {
   event.stopPropagation();
   toggleAccountMenu();
