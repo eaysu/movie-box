@@ -271,16 +271,21 @@ tailwind.config = {
     <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
     </button>
     <div class="font-headline-md text-headline-md tracking-tighter text-gradient-green">MOVIEBOXD · AI</div>
-    <div id="header-account" class="hidden items-center gap-2">
-      <img id="header-avatar" class="hidden w-8 h-8 rounded-full object-cover border border-outline-variant/40" alt=""/>
-      <span id="header-username" class="hidden sm:inline font-label-md text-label-md text-on-surface-variant"></span>
+    <div id="header-account" class="hidden relative items-center gap-2">
+      <button id="btn-account-menu" class="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors" aria-label="Profil menüsü" aria-expanded="false">
+        <img id="header-avatar" class="hidden w-8 h-8 rounded-full object-cover border border-outline-variant/40" alt=""/>
+        <span id="header-username" class="hidden sm:inline font-label-md text-label-md"></span>
+        <span class="material-symbols-outlined text-[16px]">expand_more</span>
+      </button>
       <button id="btn-inbox" class="relative text-on-surface-variant hover:text-primary transition-colors" aria-label="Blend inbox" title="Blend inbox">
         <span class="material-symbols-outlined text-[20px]">inbox</span>
         <span id="inbox-badge" class="hidden absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-secondary-container text-on-secondary-container text-[9px] font-bold items-center justify-center"></span>
       </button>
-      <button id="btn-logout" class="text-on-surface-variant hover:text-error transition-colors" aria-label="Çıkış yap" title="Çıkış yap">
-        <span class="material-symbols-outlined text-[19px]">logout</span>
-      </button>
+      <div id="account-menu" class="hidden absolute top-11 right-0 w-52 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1">
+        <button id="menu-profile-sync" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">sync</span>Profili yenile</button>
+        <button id="menu-delete-data" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
+        <button id="btn-logout" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
+      </div>
     </div>
   </div>
 </header>
@@ -1188,6 +1193,7 @@ function applyAccount(account) {
   setImage($('profile-avatar'), $('profile-avatar-fallback'), account.avatar_url, account.display_name);
   $('profile-card').classList.remove('hidden');
   $('profile-card').classList.add('flex');
+  $('btn-delete-data').classList.add('hidden');
   $('btn-mode-blend').disabled = false;
   $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
   $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
@@ -2415,8 +2421,16 @@ async function logoutAccount() {
   $('username-input').value = '';
   $('inbox-badge').classList.add('hidden');
   $('inbox-badge').classList.remove('flex');
+  $('account-menu').classList.add('hidden');
   setAuthMode('login');
   showView('auth');
+}
+
+function toggleAccountMenu(force) {
+  const menu = $('account-menu');
+  const shouldOpen = typeof force === 'boolean' ? force : menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !shouldOpen);
+  $('btn-account-menu').setAttribute('aria-expanded', String(shouldOpen));
 }
 
 function copyCode(element) {
@@ -2447,6 +2461,21 @@ $('btn-reset-back').addEventListener('click', () => setAuthMode('login'));
 $('btn-reset-start').addEventListener('click', startPasswordReset);
 $('btn-reset-finish').addEventListener('click', finishPasswordReset);
 $('btn-logout').addEventListener('click', logoutAccount);
+$('btn-account-menu').addEventListener('click', event => {
+  event.stopPropagation();
+  toggleAccountMenu();
+});
+$('account-menu').addEventListener('click', event => event.stopPropagation());
+$('menu-profile-sync').addEventListener('click', () => {
+  toggleAccountMenu(false);
+  showView('idle');
+  syncProfile(true);
+});
+$('menu-delete-data').addEventListener('click', () => {
+  toggleAccountMenu(false);
+  deleteMyData();
+});
+document.addEventListener('click', () => toggleAccountMenu(false));
 $('btn-profile-sync').addEventListener('click', () => syncProfile(true));
 $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));

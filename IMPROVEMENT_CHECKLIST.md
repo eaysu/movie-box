@@ -85,7 +85,8 @@ onayı gelmeden uygulanmaz.
 - [x] “Profili yenile” aksiyonu ekle; rate limit ve fingerprint short-circuit uygula.
 - [x] İlk senkron uzun sürerse progress durumu göster; account creation request'ini
   proxy timeout'una bağlı bırakma.
-- [ ] Kullanıcı verisi silme ve logout akışını profil menüsüne taşı.
+- [x] Profil yenileme, kullanıcı verisi silme ve logout akışını erişilebilir profil
+  menüsünde birleştir.
 
 ### P1 — Onaylı Blend ve inbox
 
@@ -160,10 +161,11 @@ onayı gelmeden uygulanmaz.
     cache'li `/api/readiness` endpoint'i ekle.
 - [x] Başarılı eski sonucu koruyan stale-if-error davranışı ekle; başarısız veya
   eksik crawl hiçbir zaman sağlam cache'in üzerine yazmasın.
-- [ ] DOM değişikliklerini erken yakalayan günlük canary/health kontrolü ekle.
+- [x] DOM değişikliklerini erken yakalayan günlük canary/health kontrolü ekle.
   - [x] Ücretsiz/doğrudan `python -m scripts.check_scraper <username>` canary komutu
     ekle ve güncel DOM üzerinde doğrula.
-  - [ ] Düşük frekanslı (günde bir) çalıştırmayı CI/cron'a bağla.
+  - [x] Günde bir çalışan, tek public watchlist sayfasıyla sınırlı GitHub Actions
+    canary'sine bağla; manuel tetiklemeyi de açık tut.
 - [x] Gerçek Letterboxd HTML örneklerinden anonimleştirilmiş parser fixture seti kur.
 - [x] Sayfa/list fingerprint'i ile değişmeyen profillerde gereksiz tam crawl ve
   TMDb enrichment işini atla.
