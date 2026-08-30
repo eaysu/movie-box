@@ -81,7 +81,26 @@ class TasteProfileTests(unittest.TestCase):
 
         self.assertEqual(profile.top_directors, ["First", "Second", "Third"])
         self.assertEqual(profile.favorite_director, "First")
-        self.assertEqual(profile.algorithm_version, "taste-v2")
+        self.assertEqual(profile.algorithm_version, "taste-v3")
+
+    def test_recency_decay_favours_recently_watched_over_equal_older_cluster(self):
+        from app.taste_profile import _recency_weight
+
+        self.assertEqual(_recency_weight(0), 1.0)
+        self.assertAlmostEqual(_recency_weight(400), 0.5, places=6)
+        self.assertLess(_recency_weight(1200), _recency_weight(400))
+
+        # Equal-sized clusters for "New" and "Old", but "Old" sits ~800 films
+        # deeper in the history. Exponential decay must crown "New".
+        watched = (
+            [EnrichedFilm(title=f"new-{i}", director="New", user_rating=4.0) for i in range(40)]
+            + [EnrichedFilm(title=f"mid-{i}", director=f"Mid{i}", user_rating=4.0) for i in range(800)]
+            + [EnrichedFilm(title=f"old-{i}", director="Old", user_rating=4.0) for i in range(40)]
+        )
+
+        profile = build_taste_profile(watched)
+
+        self.assertEqual(profile.favorite_director, "New")
 
     def test_source_fingerprint_changes_with_rating(self):
         profile = ScrapedProfile(

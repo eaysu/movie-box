@@ -277,7 +277,7 @@ BEGIN
     COALESCE((p_taste->>'metadata_coverage')::INTEGER, 0),
     COALESCE(p_taste->>'confidence_level', 'low'),
     COALESCE((p_taste->>'confidence_score')::INTEGER, 0),
-    COALESCE(p_taste->>'algorithm_version', 'taste-v2'),
+    COALESCE(p_taste->>'algorithm_version', 'taste-v3'),
     COALESCE(p_taste->>'source_fingerprint', ''),
     now(),
     now()

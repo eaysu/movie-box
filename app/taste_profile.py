@@ -12,7 +12,13 @@ from dataclasses import asdict, dataclass, field
 
 from .enrich import EnrichedFilm
 
-TASTE_PROFILE_VERSION = "taste-v2"
+TASTE_PROFILE_VERSION = "taste-v3"
+
+# Recency half-life in "films watched ago". With the full watched history now
+# feeding the profile, a flat linear taper is meaningless across thousands of
+# entries — an exponential decay keeps the profile anchored on what the user
+# has been watching lately while still letting the back catalogue contribute.
+RECENCY_HALFLIFE_FILMS = 400.0
 
 
 @dataclass
@@ -34,9 +40,14 @@ class TasteProfileSnapshot:
         return asdict(self)
 
 
+def _recency_weight(index: int) -> float:
+    """Exponential decay by position in the recency-ordered watch list."""
+    return 0.5 ** (index / RECENCY_HALFLIFE_FILMS)
+
+
 def _positive_weight(film: EnrichedFilm, index: int, total: int) -> float:
     """Weight explicit likes strongly and unrated watches as a weaker signal."""
-    recency = 1.0 if total <= 1 else 1.0 - (0.25 * index / (total - 1))
+    recency = _recency_weight(index)
     if film.user_rating is None:
         return 0.35 * recency
     rating = float(film.user_rating)
@@ -91,8 +102,7 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
     if not director_scores:
         for index, film in enumerate(watched):
             if film.director:
-                recency = 1.0 if len(watched) <= 1 else 1.0 - (0.25 * index / (len(watched) - 1))
-                director_scores[film.director] += recency
+                director_scores[film.director] += _recency_weight(index)
 
     top_directors = _top_weighted(director_scores, 3)
     top_genres = _top_weighted(genre_scores, 3)
