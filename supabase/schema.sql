@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.taste_profiles (
   user_id             BIGINT PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   summary             TEXT NOT NULL DEFAULT '',
   favorite_director   TEXT NOT NULL DEFAULT '',
+  top_directors       JSONB NOT NULL DEFAULT '[]'::jsonb,
   top_genres          JSONB NOT NULL DEFAULT '[]'::jsonb,
   top_keywords        JSONB NOT NULL DEFAULT '[]'::jsonb,
   sample_size         INTEGER NOT NULL DEFAULT 0,
@@ -57,6 +58,8 @@ CREATE TABLE IF NOT EXISTS public.taste_profiles (
 
 ALTER TABLE public.taste_profiles
   ADD COLUMN IF NOT EXISTS source_fingerprint TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.taste_profiles
+  ADD COLUMN IF NOT EXISTS top_directors JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS public.profile_favorites (
   user_id       BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -210,13 +213,14 @@ BEGIN
   END IF;
 
   INSERT INTO public.taste_profiles (
-    user_id, summary, favorite_director, top_genres, top_keywords,
+    user_id, summary, favorite_director, top_directors, top_genres, top_keywords,
     sample_size, rated_count, metadata_coverage, confidence_level,
     confidence_score, algorithm_version, source_fingerprint, generated_at, updated_at
   ) VALUES (
     p_user_id,
     COALESCE(p_taste->>'summary', ''),
     COALESCE(p_taste->>'favorite_director', ''),
+    COALESCE(p_taste->'top_directors', '[]'::jsonb),
     COALESCE(p_taste->'top_genres', '[]'::jsonb),
     COALESCE(p_taste->'top_keywords', '[]'::jsonb),
     COALESCE((p_taste->>'sample_size')::INTEGER, 0),
@@ -224,7 +228,7 @@ BEGIN
     COALESCE((p_taste->>'metadata_coverage')::INTEGER, 0),
     COALESCE(p_taste->>'confidence_level', 'low'),
     COALESCE((p_taste->>'confidence_score')::INTEGER, 0),
-    COALESCE(p_taste->>'algorithm_version', 'taste-v1'),
+    COALESCE(p_taste->>'algorithm_version', 'taste-v2'),
     COALESCE(p_taste->>'source_fingerprint', ''),
     now(),
     now()
@@ -232,6 +236,7 @@ BEGIN
   ON CONFLICT (user_id) DO UPDATE SET
     summary = EXCLUDED.summary,
     favorite_director = EXCLUDED.favorite_director,
+    top_directors = EXCLUDED.top_directors,
     top_genres = EXCLUDED.top_genres,
     top_keywords = EXCLUDED.top_keywords,
     sample_size = EXCLUDED.sample_size,

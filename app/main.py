@@ -55,7 +55,11 @@ from .scraper import (
     scrape_watchlist,
     scrape_watched,
 )
-from .taste_profile import build_taste_profile, taste_source_fingerprint
+from .taste_profile import (
+    TASTE_PROFILE_VERSION,
+    build_taste_profile,
+    taste_source_fingerprint,
+)
 
 
 @contextlib.asynccontextmanager
@@ -1084,7 +1088,12 @@ async def password_reset_finish(
 @app.get("/api/profile/me")
 async def profile_me(request: Request) -> dict:
     account = await _require_account(request)
-    return await asyncio.to_thread(_auth_service().get_profile, account)
+    profile = await asyncio.to_thread(_auth_service().get_profile, account)
+    profile["needs_refresh"] = bool(
+        not profile.get("taste")
+        or profile["taste"].get("algorithm_version") != TASTE_PROFILE_VERSION
+    )
+    return profile
 
 
 @app.post("/api/recommendations/feedback")
@@ -1146,6 +1155,13 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
     account = await _require_account(request)
     settings = get_settings()
     service = _auth_service()
+    try:
+        await asyncio.to_thread(service.check_schema)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Profil veri şeması güncelleniyor. Lütfen biraz sonra tekrar dene.",
+        ) from exc
     await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
     try:
         profile = await scrape_profile(
@@ -1173,6 +1189,7 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
         if (
             stored.get("taste")
             and stored["taste"].get("source_fingerprint") == source_fingerprint
+            and stored["taste"].get("algorithm_version") == TASTE_PROFILE_VERSION
         ):
             await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
             account.profile_sync_status = "ready"

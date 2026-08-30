@@ -76,9 +76,12 @@ onayı gelmeden uygulanmaz.
 
 ### P1 — Kalıcı profil deneyimi
 
-- [x] Giriş sonrası dashboard header'ında profil fotoğrafını solda; güncel zevk
-  analizini hemen sağında göster.
-- [x] Aynı profil kartında favori yönetmen, veri güveni ve Fav 4 posterlerini göster.
+- [x] Dashboard'daki sıkışık profil kartı yerine profil menüsünden açılan bağımsız,
+  responsive ve tam genişlikte profil sayfası oluştur.
+- [x] Profil sayfasında büyük avatarın sağında ayrıntılı zevk analizi, veri güveni,
+  türler, örneklem ve metadata kapsamını göster.
+- [x] Alt bölümde rating-aware ilk üç yönetmeni sıralı; sağında büyük Fav 4
+  posterlerini göster.
 - [x] Profil kartına son başarılı güncelleme zamanını ekle.
 - [x] Taste, Random ve Blend modlarını profil dashboard'ının altında mevcut tasarım
   diliyle koru; username'i tekrar isteme.

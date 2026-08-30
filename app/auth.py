@@ -121,7 +121,7 @@ class AuthService:
         service = self._service_client()
         required = {
             "users": "id,auth_user_id,account_status",
-            "taste_profiles": "user_id,source_fingerprint",
+            "taste_profiles": "user_id,source_fingerprint,top_directors",
             "profile_favorites": "user_id,position",
             "blend_requests": "id,status",
             "blend_results": "id,request_id",

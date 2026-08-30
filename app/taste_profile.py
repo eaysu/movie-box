@@ -12,11 +12,14 @@ from dataclasses import asdict, dataclass, field
 
 from .enrich import EnrichedFilm
 
+TASTE_PROFILE_VERSION = "taste-v2"
+
 
 @dataclass
 class TasteProfileSnapshot:
     summary: str
     favorite_director: str = ""
+    top_directors: list[str] = field(default_factory=list)
     top_genres: list[str] = field(default_factory=list)
     top_keywords: list[str] = field(default_factory=list)
     sample_size: int = 0
@@ -24,7 +27,7 @@ class TasteProfileSnapshot:
     metadata_coverage: int = 0
     confidence_level: str = "low"
     confidence_score: int = 0
-    algorithm_version: str = "taste-v1"
+    algorithm_version: str = TASTE_PROFILE_VERSION
     source_fingerprint: str = ""
 
     def to_dict(self) -> dict:
@@ -91,7 +94,7 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
                 recency = 1.0 if len(watched) <= 1 else 1.0 - (0.25 * index / (len(watched) - 1))
                 director_scores[film.director] += recency
 
-    favorite_director = _top_weighted(director_scores, 1)
+    top_directors = _top_weighted(director_scores, 3)
     top_genres = _top_weighted(genre_scores, 3)
     top_keywords = _top_weighted(keyword_scores, 5)
     metadata_coverage = round(metadata_points / len(watched) * 100)
@@ -107,7 +110,7 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
     )
 
     genre_phrase = ", ".join(top_genres[:2])
-    director = favorite_director[0] if favorite_director else ""
+    director = top_directors[0] if top_directors else ""
     if genre_phrase and director:
         summary = (
             f"{genre_phrase} ağırlıklı; {director} filmlerine belirgin yakınlık "
@@ -126,6 +129,7 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
     return TasteProfileSnapshot(
         summary=summary,
         favorite_director=director,
+        top_directors=top_directors,
         top_genres=top_genres,
         top_keywords=top_keywords,
         sample_size=len(watched),

@@ -44,6 +44,7 @@ class TasteProfileTests(unittest.TestCase):
         profile = build_taste_profile(watched)
 
         self.assertEqual(profile.favorite_director, "Loved Director")
+        self.assertEqual(profile.top_directors, ["Loved Director"])
         self.assertEqual(profile.top_genres[0], "Drama")
         self.assertIn("Loved Director", profile.summary)
         self.assertEqual(profile.rated_count, 5)
@@ -57,6 +58,7 @@ class TasteProfileTests(unittest.TestCase):
         profile = build_taste_profile(watched)
 
         self.assertEqual(profile.favorite_director, "Same Director")
+        self.assertEqual(profile.top_directors, ["Same Director"])
         self.assertEqual(profile.confidence_level, "low")
         self.assertEqual(profile.sample_size, 3)
 
@@ -65,6 +67,21 @@ class TasteProfileTests(unittest.TestCase):
 
         self.assertEqual(profile.sample_size, 0)
         self.assertEqual(profile.confidence_score, 0)
+
+    def test_top_three_directors_keep_rating_aware_order(self):
+        watched = [
+            EnrichedFilm(title="A1", director="First", user_rating=5.0),
+            EnrichedFilm(title="A2", director="First", user_rating=4.5),
+            EnrichedFilm(title="B", director="Second", user_rating=5.0),
+            EnrichedFilm(title="C", director="Third", user_rating=4.0),
+            EnrichedFilm(title="D", director="Fourth", user_rating=3.0),
+        ]
+
+        profile = build_taste_profile(watched)
+
+        self.assertEqual(profile.top_directors, ["First", "Second", "Third"])
+        self.assertEqual(profile.favorite_director, "First")
+        self.assertEqual(profile.algorithm_version, "taste-v2")
 
     def test_source_fingerprint_changes_with_rating(self):
         profile = ScrapedProfile(
