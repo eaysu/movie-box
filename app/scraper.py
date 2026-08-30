@@ -6,6 +6,7 @@ The CSS selectors are best-effort; Letterboxd can change its markup at any time.
 
 import asyncio
 import html as _html
+import json
 import logging
 import random
 import re
@@ -22,6 +23,81 @@ BASE_URL = "https://letterboxd.com"
 
 _scrape_flights: dict[tuple, asyncio.Task] = {}
 _scrape_flight_lock = asyncio.Lock()
+
+
+class _LetterboxdRequestBudget:
+    """Process-wide adaptive budget for every request to Letterboxd.
+
+    Normal traffic may use up to three concurrent sockets. A 403/429 immediately
+    serializes traffic and opens a short circuit; sustained successful responses
+    cautiously restore capacity. This protects profile syncs and recommendations
+    from independently overwhelming the same upstream host.
+    """
+
+    def __init__(self, max_concurrency: int = 3, min_interval: float = 0.18):
+        self.max_concurrency = max_concurrency
+        self.current_limit = max_concurrency
+        self.min_interval = min_interval
+        self._active = 0
+        self._next_allowed = 0.0
+        self._blocked_until = 0.0
+        self._penalties = 0
+        self._success_streak = 0
+        self._condition = asyncio.Condition()
+
+    async def request(self, factory):
+        while True:
+            delay = 0.0
+            async with self._condition:
+                now = time.monotonic()
+                delay = max(self._blocked_until - now, self._next_allowed - now, 0.0)
+                if delay <= 0 and self._active < self.current_limit:
+                    self._active += 1
+                    self._next_allowed = now + self.min_interval
+                    break
+                if delay <= 0:
+                    await self._condition.wait()
+                    continue
+            await asyncio.sleep(min(delay, 60.0))
+
+        response = None
+        try:
+            response = await factory()
+            return response
+        finally:
+            status = getattr(response, "status_code", None)
+            async with self._condition:
+                self._active = max(0, self._active - 1)
+                if status in (403, 429):
+                    self._penalties = min(self._penalties + 1, 5)
+                    self._success_streak = 0
+                    self.current_limit = 1
+                    cooldown = min(60.0, 3.0 * (2 ** (self._penalties - 1)))
+                    self._blocked_until = max(
+                        self._blocked_until, time.monotonic() + cooldown
+                    )
+                    log.warning(
+                        "letterboxd circuit OPEN status=%s cooldown=%.1fs limit=1",
+                        status,
+                        cooldown,
+                    )
+                elif status is not None and status < 400:
+                    self._success_streak += 1
+                    if self._success_streak >= 20 and self.current_limit < self.max_concurrency:
+                        self.current_limit += 1
+                        self._success_streak = 0
+                        self._penalties = max(0, self._penalties - 1)
+                        log.warning(
+                            "letterboxd circuit RECOVER limit=%d", self.current_limit
+                        )
+                self._condition.notify_all()
+
+
+_letterboxd_budget = _LetterboxdRequestBudget()
+
+
+async def _budgeted_get(session, url: str, **kwargs):
+    return await _letterboxd_budget.request(lambda: session.get(url, **kwargs))
 
 
 async def _coalesce_scrape(key: tuple, factory):
@@ -95,7 +171,9 @@ async def _warmup(session, username: str) -> int | None:
     profile_status: int | None = None
     for index, url in enumerate((f"{BASE_URL}/", f"{BASE_URL}/{username}/")):
         try:
-            response = await session.get(url, headers=_NAV_HEADERS, timeout=10)
+            response = await _budgeted_get(
+                session, url, headers=_NAV_HEADERS, timeout=10
+            )
             if index == 1:
                 profile_status = response.status_code
             await _human_pause(0.5)
@@ -121,7 +199,8 @@ async def _fetch_with_retry(
     for attempt in range(max_retries):
         impersonate = _IMPERSONATE_POOL[attempt % len(_IMPERSONATE_POOL)]
         try:
-            resp = await session.get(
+            resp = await _budgeted_get(
+                session,
                 url, headers=headers, timeout=timeout, impersonate=impersonate
             )
         except Exception as exc:
@@ -164,14 +243,16 @@ async def _fetch_profile_with_fresh_sessions(
         try:
             async with AsyncSession(impersonate=impersonate) as session:
                 with_home_headers = {**_NAV_HEADERS, "Sec-Fetch-Site": "none"}
-                await session.get(
+                await _budgeted_get(
+                    session,
                     f"{BASE_URL}/",
                     headers=with_home_headers,
                     timeout=10,
                     impersonate=impersonate,
                 )
                 await _human_pause(0.35)
-                response = await session.get(
+                response = await _budgeted_get(
+                    session,
                     profile_url,
                     headers={**_NAV_HEADERS, "Referer": f"{BASE_URL}/"},
                     timeout=14,
@@ -283,6 +364,9 @@ class ScrapedFilm:
     slug: str
     poster_url: Optional[str] = None
     user_rating: Optional[float] = None  # Letterboxd 0.5-5.0 arası
+    # Public Letterboxd lazy-poster endpoint. It is called only after the shared
+    # asset catalog and TMDb both fail to provide a poster.
+    poster_resolver_url: Optional[str] = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -379,13 +463,34 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
                 poster_url = src
         if not title:
             title = _slug_to_title(slug)
-        return ScrapedFilm(
+        film = ScrapedFilm(
             title=title,
             year=year,
             slug=slug,
             poster_url=poster_url,
             user_rating=_extract_rating(el),
         )
+        if not poster_url:
+            # Current Letterboxd grids render an empty placeholder server-side
+            # and expose their own poster resolver recipe as JSON. Keep it as a
+            # private parser attribute so only actual misses trigger a request.
+            raw_resolver = el.get("data-resolvable-poster-path", "")
+            try:
+                resolver = json.loads(raw_resolver) if raw_resolver else {}
+            except (TypeError, ValueError):
+                resolver = {}
+            base_link = str(resolver.get("posteredBaseLink") or "")
+            cache_key = str(resolver.get("cacheBustingKey") or "")
+            if (
+                base_link.startswith("/film/")
+                and base_link.endswith("/")
+                and resolver.get("hasDefaultPoster")
+            ):
+                path = f"{base_link}poster/std/230/"
+                if re.fullmatch(r"[A-Za-z0-9_-]+", cache_key):
+                    path += f"?k={cache_key}"
+                film.poster_resolver_url = f"{BASE_URL}{path}"
+        return film
 
     # 2024+ LazyPoster: data-item-slug
     candidates = soup.select("div[data-item-slug]")
@@ -410,6 +515,57 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
             films.append(film)
 
     return films
+
+
+async def _resolve_missing_posters(session, films: list) -> int:
+    """Use Letterboxd's own public lazy-poster resolver for true HTML misses."""
+    targets = [
+        film for film in films
+        if not (film.get("poster_url") if isinstance(film, dict) else film.poster_url)
+        and (
+            film.get("poster_resolver_url", "")
+            if isinstance(film, dict)
+            else film.poster_resolver_url
+        )
+    ]
+    if not targets:
+        return 0
+    resolved = 0
+
+    async def worker(film: ScrapedFilm) -> None:
+        nonlocal resolved
+        try:
+            response = await _budgeted_get(
+                session,
+                (
+                    film.get("poster_resolver_url", "")
+                    if isinstance(film, dict)
+                    else film.poster_resolver_url
+                ),
+                headers={**_NAV_HEADERS, "Accept": "application/json"},
+                timeout=12,
+            )
+            if response.status_code != 200:
+                return
+            payload = response.json()
+            poster_url = payload.get("url2x") or payload.get("url") or ""
+            if isinstance(poster_url, str) and poster_url.startswith("https://"):
+                if isinstance(film, dict):
+                    film["poster_url"] = poster_url
+                else:
+                    film.poster_url = poster_url
+                resolved += 1
+        except Exception:
+            return
+
+    await asyncio.gather(*(worker(film) for film in targets))
+    return resolved
+
+
+async def resolve_missing_posters(films: list) -> int:
+    """Resolve only the final poster misses, in one shared-budgeted session."""
+    async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+        return await _resolve_missing_posters(session, films)
 
 
 def _parse_profile_page(username: str, html: str) -> ScrapedProfile:
@@ -473,11 +629,16 @@ async def _scrape_profile(username: str, *, max_retries: int) -> ScrapedProfile:
         )
 
     profile = _parse_profile_page(username, response.text)
+    async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as poster_session:
+        poster_count = await _resolve_missing_posters(
+            poster_session, profile.favorite_films
+        )
     log.warning(
-        "scrape_metrics list=profile duration_ms=%d favorites=%d avatar=%s",
+        "scrape_metrics list=profile duration_ms=%d favorites=%d avatar=%s poster_resolved=%d",
         round((time.perf_counter() - started) * 1000),
         len(profile.favorite_films),
         bool(profile.avatar_url),
+        poster_count,
     )
     return profile
 
@@ -674,7 +835,9 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     url = f"{BASE_URL}/{username}/rss/"
     try:
         async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
-            resp = await session.get(url, headers=_NAV_HEADERS, timeout=20)
+            resp = await _budgeted_get(
+                session, url, headers=_NAV_HEADERS, timeout=20
+            )
         if resp.status_code != 200:
             return []
     except Exception:

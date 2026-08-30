@@ -17,6 +17,7 @@ from .cache import Cache
 TMDB_BASE = "https://api.themoviedb.org/3"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
 SEARCH_TTL = 60 * 60 * 24 * 30  # 30 days
+NEGATIVE_LOOKUP_TTL = 60 * 60 * 24  # retry genuine "not found" results daily
 log = logging.getLogger("moviebox")
 
 _tmdb_client: Optional[httpx.AsyncClient] = None
@@ -83,9 +84,10 @@ class EnrichedFilm:
 class Enricher:
     """Wraps the TMDb API with caching and best-match selection."""
 
-    def __init__(self, api_key: str, cache: Cache):
+    def __init__(self, api_key: str, cache: Cache, asset_store=None):
         self.api_key = api_key
         self.cache = cache
+        self.asset_store = asset_store
         self._genre_map: dict[int, str] = {}
         self._genre_lock = asyncio.Lock()
         self._cache_hits = 0
@@ -93,15 +95,52 @@ class Enricher:
         self._rate_limits = 0
         self._l2_hydrated = 0
         self._l2_flushed = 0
+        self._asset_hits = 0
+        self._asset_writes = 0
+
+    async def _film_assets(self, slugs: list[str]) -> dict[str, dict]:
+        getter = getattr(self.asset_store, "get_film_assets", None)
+        if not getter or not slugs:
+            return {}
+        try:
+            assets = await asyncio.to_thread(getter, slugs)
+            self._asset_hits += len(assets)
+            return assets
+        except Exception:
+            return {}
+
+    async def save_film_assets(self, films: list[EnrichedFilm]) -> None:
+        saver = getattr(self.asset_store, "save_film_posters", None)
+        rows = [
+            {
+                "slug": film.slug,
+                "poster_url": film.poster_url,
+                "tmdb_id": film.tmdb_id,
+                "title": film.title,
+                "release_year": film.year,
+            }
+            for film in films
+            if film.slug and film.poster_url
+        ]
+        if not saver or not rows:
+            return
+        try:
+            self._asset_writes += await asyncio.to_thread(saver, rows)
+        except Exception:
+            pass
 
     async def _prefetch_cache(
-        self, keys: list[str], ttl: Optional[float] = None
+        self,
+        keys: list[str],
+        ttl: Optional[float] = None,
+        *,
+        namespace: str = "tmdb",
     ) -> None:
         """Batch-hydrate the local cache when the backend supports an L2."""
         prefetch = getattr(self.cache, "prefetch", None)
         if prefetch and keys:
             self._l2_hydrated += await asyncio.to_thread(
-                prefetch, "tmdb", keys, ttl
+                prefetch, namespace, keys, ttl
             )
 
     async def _flush_cache(self) -> None:
@@ -183,10 +222,23 @@ class Enricher:
         film.keywords = [
             k["name"] for k in details.get("keywords", {}).get("keywords", [])
         ][:12]
+        film.overview = details.get("overview", "") or film.overview
+        film.vote_average = float(details.get("vote_average", 0.0) or film.vote_average)
+        film.genres = [
+            genre.get("name", "")
+            for genre in details.get("genres", [])
+            if genre.get("name")
+        ] or film.genres
+        release_date = details.get("release_date", "") or ""
+        if not film.year and release_date[:4].isdigit():
+            film.year = int(release_date[:4])
         for crew in details.get("credits", {}).get("crew", []):
             if crew.get("job") == "Director":
                 film.director = crew.get("name", "")
                 break
+        poster_path = details.get("poster_path") or ""
+        if not film.poster_url and poster_path:
+            film.poster_url = f"{TMDB_IMAGE_BASE}{poster_path}"
         film.details_loaded = True
         await asyncio.to_thread(self.cache.set, "tmdb", cache_key, film.to_dict())
         return film
@@ -199,12 +251,15 @@ class Enricher:
         slug: str,
         *,
         include_details: bool,
+        asset: Optional[dict] = None,
     ) -> EnrichedFilm:
         cache_key = slug or f"{title}:{year}"
-        cached = await asyncio.to_thread(
-            self.cache.get, "tmdb", cache_key, ttl=SEARCH_TTL
-        )
-        if cached:
+        # Successful metadata is durable. TMDb poster/credit data changes rarely,
+        # and re-fetching a known film defeats the shared-cache speedup.
+        cached = await asyncio.to_thread(self.cache.get, "tmdb", cache_key)
+        if cached and (
+            cached.get("matched") or cached.get("tmdb_id") or cached.get("poster_url")
+        ):
             cached.pop("text_blob", None)
             cached.pop("similarity", None)
             cached.pop("reason", None)
@@ -218,15 +273,41 @@ class Enricher:
                 return await self._load_details(client, film, cache_key)
             return film
 
+        # The shared asset catalog is also an identity cache. A known TMDb id
+        # lets us avoid the ambiguous /search/movie call entirely. Detail-less
+        # sweeps need no TMDb request; detailed paths make one direct id lookup.
+        if asset and asset.get("poster_url") and asset.get("tmdb_id"):
+            film = EnrichedFilm(
+                title=title,
+                year=year or asset.get("release_year"),
+                slug=slug,
+                tmdb_id=int(asset["tmdb_id"]),
+                poster_url=asset["poster_url"],
+                matched=True,
+            )
+            self._asset_hits += 1
+            if include_details:
+                return await self._load_details(client, film, cache_key)
+            return film
+
+        negative = await asyncio.to_thread(
+            self.cache.get, "tmdb_negative", cache_key, ttl=NEGATIVE_LOOKUP_TTL
+        )
+        if negative:
+            return EnrichedFilm(title=title, year=year, slug=slug)
+
         film = EnrichedFilm(title=title, year=year, slug=slug)
 
         try:
+            await self._load_genre_map(client)
             search = await self._get(
                 client, "/search/movie", query=title, **({"year": year} if year else {})
             )
             results = search.get("results", [])
             if not results:
-                await asyncio.to_thread(self.cache.set, "tmdb", cache_key, film.to_dict())
+                await asyncio.to_thread(
+                    self.cache.set, "tmdb_negative", cache_key, {"not_found": True}
+                )
                 return film
 
             best = max(results, key=lambda r: self._score_match(r, title, year))
@@ -270,8 +351,16 @@ class Enricher:
             for f in films
         ]
         await self._prefetch_cache(["genre_map"])
-        await self._prefetch_cache(cache_keys, SEARCH_TTL)
-        await self._load_genre_map(client)
+        await self._prefetch_cache(cache_keys)
+        await self._prefetch_cache(
+            cache_keys, NEGATIVE_LOOKUP_TTL, namespace="tmdb_negative"
+        )
+        assets = await self._film_assets(
+            [
+                (f.get("slug", "") if isinstance(f, dict) else f.slug) or ""
+                for f in films
+            ]
+        )
 
         async def worker(f) -> EnrichedFilm:
             title = f["title"] if isinstance(f, dict) else f.title
@@ -283,9 +372,19 @@ class Enricher:
             user_rating = (
                 f.get("user_rating") if isinstance(f, dict) else getattr(f, "user_rating", None)
             )
+            asset = assets.get(slug) or {}
             enriched = await self._enrich_one(
-                client, title, year, slug, include_details=include_details
+                client,
+                title,
+                year,
+                slug,
+                include_details=include_details,
+                asset=asset,
             )
+            if not enriched.tmdb_id and asset.get("tmdb_id"):
+                enriched.tmdb_id = int(asset["tmdb_id"])
+            if not enriched.poster_url and asset.get("poster_url"):
+                enriched.poster_url = asset["poster_url"]
             if not enriched.poster_url and scraped_poster:
                 enriched.poster_url = scraped_poster
             # user_rating TMDb cache'ine girmemeli (kişiye özel).
@@ -296,9 +395,10 @@ class Enricher:
             result = await asyncio.gather(*(worker(f) for f in films))
         finally:
             await self._flush_cache()
+        await self.save_film_assets(result)
         log.warning(
             "tmdb enrich films=%d details=%s cache_hits=%d api_calls=%d "
-            "rate_limits=%d l2_hydrated=%d l2_flushed=%d",
+            "rate_limits=%d l2_hydrated=%d l2_flushed=%d asset_hits=%d asset_writes=%d",
             len(films),
             include_details,
             self._cache_hits,
@@ -306,6 +406,8 @@ class Enricher:
             self._rate_limits,
             self._l2_hydrated,
             self._l2_flushed,
+            self._asset_hits,
+            self._asset_writes,
         )
         return result
 
@@ -319,14 +421,14 @@ class Enricher:
             for film in films
             if film.tmdb_id and not film.details_loaded
         ]
-        await self._prefetch_cache(cache_keys, SEARCH_TTL)
+        await self._prefetch_cache(cache_keys)
 
         async def worker(film: EnrichedFilm) -> EnrichedFilm:
             if film.details_loaded or not film.tmdb_id:
                 return film
             cache_key = film.slug or f"{film.title}:{film.year}"
             cached = await asyncio.to_thread(
-                self.cache.get, "tmdb", cache_key, ttl=SEARCH_TTL
+                self.cache.get, "tmdb", cache_key
             )
             if cached and cached.get("details_loaded"):
                 film.director = cached.get("director", "")
@@ -341,6 +443,7 @@ class Enricher:
             result = await asyncio.gather(*(worker(film) for film in films))
         finally:
             await self._flush_cache()
+        await self.save_film_assets(result)
         log.warning(
             "tmdb details films=%d api_calls=%d",
             len(films),
@@ -355,16 +458,23 @@ class Enricher:
             return {}
         client = await _get_tmdb_client()
         keys = [f"poster_id:{i}" for i in ids]
-        await self._prefetch_cache(keys, SEARCH_TTL)
+        await self._prefetch_cache(keys)
         out: dict[int, str] = {}
+        asset_getter = getattr(self.asset_store, "get_film_posters_by_tmdb_ids", None)
+        if asset_getter:
+            try:
+                out.update(await asyncio.to_thread(asset_getter, ids))
+                self._asset_hits += len(out)
+            except Exception:
+                pass
+        missing_ids = [tmdb_id for tmdb_id in ids if tmdb_id not in out]
 
         async def worker(tmdb_id: int) -> None:
             key = f"poster_id:{tmdb_id}"
-            cached = await asyncio.to_thread(self.cache.get, "tmdb", key, ttl=SEARCH_TTL)
-            if cached is not None:
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key)
+            if cached and cached.get("poster_url"):
                 self._cache_hits += 1
-                if cached.get("poster_url"):
-                    out[tmdb_id] = cached["poster_url"]
+                out[tmdb_id] = cached["poster_url"]
                 return
             url = ""
             try:
@@ -381,7 +491,7 @@ class Enricher:
                 out[tmdb_id] = url
 
         try:
-            await asyncio.gather(*(worker(i) for i in ids))
+            await asyncio.gather(*(worker(i) for i in missing_ids))
         finally:
             await self._flush_cache()
         return out
@@ -393,16 +503,31 @@ class Enricher:
             return {}
         client = await _get_tmdb_client()
         keys = [f"person:{n.lower()}" for n in wanted]
-        await self._prefetch_cache(keys, SEARCH_TTL)
+        await self._prefetch_cache(keys)
         out: dict[str, str] = {}
+        image_getter = getattr(self.asset_store, "get_director_images", None)
+        if image_getter:
+            try:
+                out.update(await asyncio.to_thread(image_getter, wanted))
+                self._asset_hits += len(out)
+            except Exception:
+                pass
+        missing_names = [name for name in wanted if name not in out]
+        resolved_rows: list[dict] = []
 
         async def worker(name: str) -> None:
             key = f"person:{name.lower()}"
-            cached = await asyncio.to_thread(self.cache.get, "tmdb", key, ttl=SEARCH_TTL)
-            if cached is not None:
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key)
+            if cached and cached.get("photo_url"):
                 self._cache_hits += 1
-                if cached.get("photo_url"):
-                    out[name] = cached["photo_url"]
+                out[name] = cached["photo_url"]
+                resolved_rows.append(
+                    {
+                        "name": name,
+                        "photo_url": cached["photo_url"],
+                        "tmdb_person_id": cached.get("tmdb_person_id"),
+                    }
+                )
                 return
             photo = ""
             try:
@@ -418,16 +543,150 @@ class Enricher:
                 )
                 if best and best.get("profile_path"):
                     photo = f"https://image.tmdb.org/t/p/w185{best['profile_path']}"
+                    resolved_rows.append(
+                        {
+                            "name": name,
+                            "photo_url": photo,
+                            "tmdb_person_id": best.get("id"),
+                        }
+                    )
             except httpx.HTTPError:
                 return  # transient — don't cache, retry next time
             await asyncio.to_thread(
-                self.cache.set, "tmdb", key, {"photo_url": photo}
+                self.cache.set,
+                "tmdb",
+                key,
+                {
+                    "photo_url": photo,
+                    "tmdb_person_id": best.get("id") if best else None,
+                },
             )
             if photo:
                 out[name] = photo
 
         try:
-            await asyncio.gather(*(worker(n) for n in wanted))
+            await asyncio.gather(*(worker(n) for n in missing_names))
         finally:
             await self._flush_cache()
+        image_saver = getattr(self.asset_store, "save_director_images", None)
+        if image_saver and resolved_rows:
+            try:
+                self._asset_writes += await asyncio.to_thread(image_saver, resolved_rows)
+            except Exception:
+                pass
+        return out
+
+    async def director_movie_ids(self, names: list[str]) -> dict[str, set[int]]:
+        """Resolve each favorite director's filmography with at most two cold calls.
+
+        This avoids fetching credits for every watchlist candidate. Person ids and
+        filmographies live in the durable TMDb cache, while portrait-bearing person
+        records are also promoted to the shared director image table.
+        """
+        wanted = list(dict.fromkeys(n.strip() for n in names if n and n.strip()))
+        if not wanted:
+            return {}
+        client = await _get_tmdb_client()
+        person_keys = [f"person:{name.lower()}" for name in wanted]
+        await self._prefetch_cache(person_keys)
+
+        shared_assets: dict[str, dict] = {}
+        asset_getter = getattr(self.asset_store, "get_director_assets", None)
+        if asset_getter:
+            try:
+                shared_assets = await asyncio.to_thread(asset_getter, wanted)
+            except Exception:
+                shared_assets = {}
+
+        identities: dict[str, dict] = {}
+
+        async def resolve_person(name: str) -> None:
+            key = f"person:{name.lower()}"
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key)
+            shared = shared_assets.get(name) or {}
+            person_id = shared.get("tmdb_person_id") or (cached or {}).get(
+                "tmdb_person_id"
+            )
+            photo_url = shared.get("photo_url") or (cached or {}).get("photo_url") or ""
+            if not person_id:
+                try:
+                    data = await self._get(client, "/search/person", query=name)
+                except httpx.HTTPError:
+                    return
+                best = max(
+                    data.get("results", []) or [],
+                    key=lambda row: (
+                        1000.0
+                        if row.get("name", "").lower() == name.lower()
+                        else 0.0
+                    )
+                    + float(row.get("popularity", 0.0) or 0.0),
+                    default=None,
+                )
+                if not best:
+                    return
+                person_id = best.get("id")
+                if best.get("profile_path"):
+                    photo_url = f"https://image.tmdb.org/t/p/w185{best['profile_path']}"
+            if not person_id:
+                return
+            identity = {
+                "tmdb_person_id": int(person_id),
+                "photo_url": photo_url,
+            }
+            identities[name] = identity
+            await asyncio.to_thread(self.cache.set, "tmdb", key, identity)
+
+        await asyncio.gather(*(resolve_person(name) for name in wanted))
+        movie_keys = [
+            f"director_movies:{identity['tmdb_person_id']}"
+            for identity in identities.values()
+        ]
+        await self._prefetch_cache(movie_keys)
+        out: dict[str, set[int]] = {}
+
+        async def resolve_movies(name: str, identity: dict) -> None:
+            person_id = identity["tmdb_person_id"]
+            key = f"director_movies:{person_id}"
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key)
+            if cached and isinstance(cached.get("movie_ids"), list):
+                self._cache_hits += 1
+                out[name] = {int(value) for value in cached["movie_ids"] if value}
+                return
+            try:
+                data = await self._get(client, f"/person/{person_id}/movie_credits")
+            except httpx.HTTPError:
+                return
+            movie_ids = {
+                int(row["id"])
+                for row in data.get("crew", []) or []
+                if row.get("id") and row.get("job") == "Director"
+            }
+            out[name] = movie_ids
+            await asyncio.to_thread(
+                self.cache.set, "tmdb", key, {"movie_ids": sorted(movie_ids)}
+            )
+
+        try:
+            await asyncio.gather(
+                *(resolve_movies(name, identity) for name, identity in identities.items())
+            )
+        finally:
+            await self._flush_cache()
+
+        image_saver = getattr(self.asset_store, "save_director_images", None)
+        rows = [
+            {
+                "name": name,
+                "photo_url": identity.get("photo_url"),
+                "tmdb_person_id": identity.get("tmdb_person_id"),
+            }
+            for name, identity in identities.items()
+            if identity.get("photo_url")
+        ]
+        if image_saver and rows:
+            try:
+                self._asset_writes += await asyncio.to_thread(image_saver, rows)
+            except Exception:
+                pass
         return out

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger("uvicorn.error")
@@ -28,14 +29,15 @@ ENRICH_BATCH = 150
 # A running job whose heartbeat is older than this is treated as abandoned.
 HEARTBEAT_STALE_SECONDS = 180
 # Process-wide cap on concurrent full crawls (the free tier is a single, small box).
-MAX_CONCURRENT_JOBS = 2
+MAX_CONCURRENT_JOBS = 1
+LEASE_SECONDS = 360
 # Cooldown after a hard failure before the job is retried.
 FAILURE_BACKOFF = timedelta(minutes=30)
 # Minimum gap between opportunistic incremental refreshes of a completed sweep.
 INCREMENTAL_MIN_INTERVAL = timedelta(hours=6)
 
 _job_sem = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
-_running: set[int] = set()
+_tasks: dict[int, asyncio.Task] = {}
 
 
 def _now() -> datetime:
@@ -54,7 +56,8 @@ def _parse_ts(value) -> datetime | None:
 
 
 def is_running(user_id: int) -> bool:
-    return user_id in _running
+    task = _tasks.get(user_id)
+    return bool(task and not task.done())
 
 
 def job_needs_full_sweep(job: dict | None) -> bool:
@@ -76,6 +79,9 @@ def job_is_resumable(job: dict | None, *, now: datetime | None = None) -> bool:
     now = now or _now()
     backoff = _parse_ts(job.get("backoff_until"))
     if backoff and backoff > now:
+        return False
+    lease_expires = _parse_ts(job.get("lease_expires_at"))
+    if lease_expires and lease_expires > now:
         return False
     if state in ("queued", "failed"):
         # `failed` only reaches here once its 30-minute cooldown has elapsed.
@@ -138,6 +144,7 @@ async def ensure_started(
         return job  # a full sweep already finished
 
     if force or job is None or job.get("state") == "done":
+        sync_run_id = str(uuid.uuid4()) if scope == "full" else None
         job = await asyncio.to_thread(
             service.upsert_sync_job,
             account.id,
@@ -150,6 +157,9 @@ async def ensure_started(
             attempts=0,
             last_error="",
             backoff_until=None,
+            sync_run_id=sync_run_id,
+            lease_token=None,
+            lease_expires_at=None,
         )
     elif job.get("state") == "failed":
         # Resume from the checkpoint rather than recrawling from page 1.
@@ -169,17 +179,30 @@ async def ensure_started(
 def start(pipeline, service, account) -> None:
     if is_running(account.id):
         return
-    asyncio.create_task(run_job(pipeline, service, account))
+    task = asyncio.create_task(run_job(pipeline, service, account))
+    _tasks[account.id] = task
+
+    def _clear(done_task, user_id=account.id):
+        if _tasks.get(user_id) is done_task:
+            _tasks.pop(user_id, None)
+        with contextlib.suppress(asyncio.CancelledError):
+            done_task.exception()
+
+    task.add_done_callback(_clear)
 
 
 async def run_job(pipeline, service, account) -> None:
     uid = account.id
-    if uid in _running:
+    lease_token = str(uuid.uuid4())
+    claimed = await asyncio.to_thread(
+        service.claim_sync_job, uid, lease_token, LEASE_SECONDS
+    )
+    if not claimed:
+        log.warning("profile_sync lease BUSY user=%s", uid)
         return
-    _running.add(uid)
     try:
         async with _job_sem:
-            await _crawl(pipeline, service, account)
+            await _crawl(pipeline, service, account, lease_token=lease_token)
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # keep the last good snapshot; retry after a cooldown
@@ -188,56 +211,117 @@ async def run_job(pipeline, service, account) -> None:
             await asyncio.to_thread(
                 service.touch_sync_job,
                 uid,
+                owned_by=lease_token,
                 state="failed",
                 last_error=str(exc)[:400],
                 backoff_until=(_now() + FAILURE_BACKOFF).isoformat(),
+                lease_token=None,
+                lease_expires_at=None,
             )
-    finally:
-        _running.discard(uid)
 
 
-async def _crawl(pipeline, service, account) -> None:
+async def _touch(service, user_id: int, owner_token: str | None, **fields) -> None:
+    release_lease = bool(fields.pop("_release_lease", False))
+    if release_lease:
+        lease_expires_at = None
+    elif owner_token:
+        lease_expires_at = (_now() + timedelta(seconds=LEASE_SECONDS)).isoformat()
+    else:
+        lease_expires_at = fields.pop("lease_expires_at", None)
+    ok = await asyncio.to_thread(
+        service.touch_sync_job,
+        user_id,
+        owned_by=owner_token,
+        lease_expires_at=lease_expires_at,
+        **fields,
+    )
+    if ok is False:
+        raise RuntimeError("profile sync lease lost")
+
+
+async def _crawl(pipeline, service, account, *, lease_token: str | None = None) -> None:
     uid = account.id
     job = await asyncio.to_thread(service.get_sync_job, uid) or {}
     if job.get("scope") == "incremental":
-        await _incremental(pipeline, service, account)
+        await _incremental(pipeline, service, account, lease_token=lease_token)
         return
     phase = job.get("phase") or "diary"
     cursor = int(job.get("cursor_page") or 1)
     processed = int(job.get("films_processed") or 0)
     attempts = int(job.get("attempts") or 0) + 1
-    await asyncio.to_thread(
-        service.touch_sync_job, uid, state="running", attempts=attempts, last_error=""
+    existing_run_id = job.get("sync_run_id")
+    if not existing_run_id and phase == "diary" and cursor > 1:
+        # One-time migration safety: old checkpoints did not mark rows with a
+        # run id, so resuming them could falsely deactivate earlier pages.
+        cursor = 1
+        processed = 0
+    sync_run_id = existing_run_id or str(uuid.uuid4())
+    authoritative_run = bool(existing_run_id or (phase == "diary" and cursor == 1))
+    await _touch(
+        service,
+        uid,
+        lease_token,
+        state="running",
+        attempts=attempts,
+        last_error="",
+        sync_run_id=sync_run_id,
     )
 
     known: set[str] = set(await asyncio.to_thread(service.get_watched_slugs, uid))
+    natural_end = phase != "diary"
 
     # ── Phase 1 · walk the /films/ grid, search-enrich + persist each window ──
     while phase == "diary":
         window = await pipeline.scrape_watched_window(account.username, cursor)
+        if not window:
+            phase = "enrich"
+            natural_end = True
+            break
         fresh: list[dict] = []
-        for film in window:
+        known_updates: list[dict] = []
+        for index, film in enumerate(window):
             slug = (film.get("slug") or "").strip()
-            if not slug or slug in known:
+            if not slug:
+                continue
+            observed = {
+                **film,
+                "watched_rank": processed + index,
+                "rating_observed": True,
+                "last_seen_run_id": sync_run_id,
+                "is_active": True,
+            }
+            if slug in known:
+                known_updates.append(observed)
                 continue
             # watched_rank is a running position: page order is "recently added"
             # first, so lower rank == more recent.
-            film["watched_rank"] = processed + len(fresh)
-            fresh.append(film)
+            fresh.append(observed)
             known.add(slug)
-        if not fresh:
-            phase = "enrich"
-            break
-        enriched = await pipeline.enrich_search(fresh)
-        await asyncio.to_thread(service.save_watched_films, uid, enriched)
-        processed += len(fresh)
+        if known_updates:
+            await asyncio.to_thread(service.save_watched_films, uid, known_updates)
+        if fresh:
+            enriched = await pipeline.enrich_search(fresh)
+            source_by_slug = {film["slug"]: film for film in fresh}
+            for row in enriched:
+                source = source_by_slug.get(row.get("slug"), {})
+                row.update(
+                    {
+                        "rating_observed": True,
+                        "last_seen_run_id": sync_run_id,
+                        "is_active": True,
+                        "watched_rank": source.get("watched_rank"),
+                    }
+                )
+            await asyncio.to_thread(service.save_watched_films, uid, enriched)
+        processed += len(window)
         cursor += WATCHED_WINDOW_PAGES
-        await asyncio.to_thread(
-            service.touch_sync_job,
+        await _touch(
+            service,
             uid,
+            lease_token,
             cursor_page=cursor,
             films_processed=processed,
-            films_total=processed,
+            films_total=0,
         )
         if processed >= FULL_MAX_FILMS:
             phase = "enrich"
@@ -246,18 +330,19 @@ async def _crawl(pipeline, service, account) -> None:
     # as the crawl is done, without waiting on (or depending on) the detail pass.
     if phase == "enrich":
         with contextlib.suppress(Exception):
-            await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
+            await _touch(service, uid, lease_token, phase="aggregate")
             interim_total = await pipeline.rebuild_snapshot(account, use_llm=False)
-            await asyncio.to_thread(
-                service.touch_sync_job,
+            await _touch(
+                service,
                 uid,
+                lease_token,
                 phase="enrich",
                 films_total=interim_total,
                 films_processed=interim_total,
             )
 
     # ── Phase 2 · director/keyword details for rows still missing them ─────
-    await asyncio.to_thread(service.touch_sync_job, uid, phase="enrich")
+    await _touch(service, uid, lease_token, phase="enrich")
     rows = await asyncio.to_thread(service.get_watched_films, uid)
     pending = [r for r in rows if r.get("tmdb_id") and not r.get("details_loaded")]
     for offset in range(0, len(pending), ENRICH_BATCH):
@@ -265,25 +350,32 @@ async def _crawl(pipeline, service, account) -> None:
         detailed = await pipeline.enrich_details(batch)
         if detailed:
             await asyncio.to_thread(service.save_watched_films, uid, detailed)
-        await asyncio.to_thread(service.touch_sync_job, uid, films_processed=processed)
+        await _touch(service, uid, lease_token, films_processed=offset + len(batch))
 
     # ── Phase 3 · aggregate the full history into the snapshot ────────────
-    await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
+    await _touch(service, uid, lease_token, phase="aggregate")
+    if natural_end and authoritative_run:
+        await asyncio.to_thread(service.finalize_sync_run, uid, sync_run_id)
     total = await pipeline.rebuild_snapshot(account)
-    await asyncio.to_thread(
-        service.touch_sync_job,
+    await _touch(
+        service,
         uid,
+        lease_token,
         state="done",
         phase="done",
         scope="full",
         films_total=total,
         films_processed=total,
         last_error="",
+        lease_token=None,
+        _release_lease=True,
     )
     log.warning("profile_sync job DONE user=%s films=%d", uid, total)
 
 
-async def _incremental(pipeline, service, account) -> None:
+async def _incremental(
+    pipeline, service, account, *, lease_token: str | None = None
+) -> None:
     """Cheap refresh of a completed sweep: only the last ~50 diary entries.
 
     New films are enriched and prepended (negative watched_rank keeps them
@@ -291,8 +383,8 @@ async def _incremental(pipeline, service, account) -> None:
     snapshot is re-aggregated every run (LLM prose only when something changed).
     """
     uid = account.id
-    await asyncio.to_thread(
-        service.touch_sync_job, uid, state="running", phase="diary", last_error=""
+    await _touch(
+        service, uid, lease_token, state="running", phase="diary", last_error=""
     )
     known: set[str] = set(await asyncio.to_thread(service.get_watched_slugs, uid))
     existing = {
@@ -303,16 +395,20 @@ async def _incremental(pipeline, service, account) -> None:
 
     new_films = [f for f in recent if f.get("slug") and f["slug"] not in known]
     rating_updates = [
-        {"slug": f["slug"], "user_rating": f["user_rating"]}
+        {
+            "slug": f["slug"],
+            "user_rating": f.get("user_rating"),
+            "rating_observed": True,
+        }
         for f in recent
         if f.get("slug") in existing
-        and f.get("user_rating") is not None
         and existing[f["slug"]].get("user_rating") != f["user_rating"]
     ]
 
     if new_films:
         for offset, film in enumerate(new_films):
             film["watched_rank"] = -(len(new_films) - offset)
+            film["rating_observed"] = True
         enriched = await pipeline.enrich_search(new_films)
         await asyncio.to_thread(service.save_watched_films, uid, enriched)
         detailed = await pipeline.enrich_details(enriched)
@@ -323,18 +419,23 @@ async def _incremental(pipeline, service, account) -> None:
 
     # Always re-aggregate so the snapshot can never drift behind
     # user_watched_films; only spend an LLM call when something changed.
-    await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
-    total = await pipeline.rebuild_snapshot(account, use_llm=bool(new_films))
+    await _touch(service, uid, lease_token, phase="aggregate")
+    total = await pipeline.rebuild_snapshot(
+        account, use_llm=bool(new_films or rating_updates)
+    )
 
-    await asyncio.to_thread(
-        service.touch_sync_job,
+    await _touch(
+        service,
         uid,
+        lease_token,
         state="done",
         phase="done",
         scope="full",
         films_total=total,
         films_processed=total,
         last_error="",
+        lease_token=None,
+        _release_lease=True,
     )
     log.warning(
         "profile_sync incremental user=%s new=%d rating_changes=%d",

@@ -117,12 +117,23 @@ class FakeService:
         return dict(base)
 
     def touch_sync_job(self, uid, **fields):
+        fields.pop("owned_by", None)
         base = dict(self.job) if self.job else {"user_id": uid, "state": "running"}
         base.update(fields)
         now = datetime.now(timezone.utc).isoformat()
         base["heartbeat_at"] = now
         base["updated_at"] = now
         self.job = base
+        return True
+
+    def claim_sync_job(self, uid, lease_token, lease_seconds):
+        self.touch_sync_job(uid, lease_token=lease_token)
+        return True
+
+    def finalize_sync_run(self, uid, sync_run_id):
+        for row in self.films.values():
+            row["is_active"] = row.get("last_seen_run_id") == sync_run_id
+        return len(self.films)
 
     def get_watched_slugs(self, uid):
         return set(self.films)
@@ -206,7 +217,9 @@ def _account(uid=7, username="film_fan"):
 
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        profile_sync._running.discard(7)
+        task = profile_sync._tasks.pop(7, None)
+        if task and not task.done():
+            task.cancel()
 
     async def test_full_sweep_walks_windows_then_enriches_and_aggregates(self):
         service = FakeService()
@@ -249,9 +262,9 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
     async def test_resume_starts_from_checkpoint_without_refetching_page_one(self):
         service = FakeService()
         service.films = {
-            "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "watched_rank": 0},
-            "b": {"film_slug": "b", "tmdb_id": 2, "details_loaded": True, "watched_rank": 1},
-            "c": {"film_slug": "c", "tmdb_id": 3, "details_loaded": True, "watched_rank": 2},
+            "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "watched_rank": 0, "last_seen_run_id": "run-1"},
+            "b": {"film_slug": "b", "tmdb_id": 2, "details_loaded": True, "watched_rank": 1, "last_seen_run_id": "run-1"},
+            "c": {"film_slug": "c", "tmdb_id": 3, "details_loaded": True, "watched_rank": 2, "last_seen_run_id": "run-1"},
         }
         resume_cursor = 1 + profile_sync.WATCHED_WINDOW_PAGES
         service.job = {
@@ -261,6 +274,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
             "scope": "full",
             "cursor_page": resume_cursor,
             "films_processed": 3,
+            "sync_run_id": "run-1",
             "heartbeat_at": (
                 datetime.now(timezone.utc) - timedelta(minutes=20)
             ).isoformat(),
@@ -319,6 +333,70 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.job["state"], "done")
         self.assertEqual(service.job["scope"], "full")
 
+    async def test_incremental_can_clear_a_removed_rating(self):
+        service = FakeService()
+        service.films = {
+            "a": {
+                "film_slug": "a",
+                "tmdb_id": 1,
+                "details_loaded": True,
+                "user_rating": 4.5,
+            },
+        }
+        service.job = {
+            "user_id": 7,
+            "state": "done",
+            "phase": "done",
+            "scope": "incremental",
+        }
+        pipeline = FakePipeline(service, {})
+        pipeline.recent = [
+            {"slug": "a", "title": "A", "year": 2020, "user_rating": None}
+        ]
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertIsNone(service.films["a"]["user_rating"])
+        self.assertTrue(pipeline.rebuilt_llm)
+
+    async def test_full_refresh_does_not_stop_on_an_all_known_window(self):
+        service = FakeService()
+        service.films = {
+            "known": {
+                "film_slug": "known",
+                "tmdb_id": 1,
+                "details_loaded": True,
+                "watched_rank": 0,
+            }
+        }
+        service.job = {
+            "user_id": 7,
+            "state": "queued",
+            "phase": "diary",
+            "scope": "full",
+            "cursor_page": 1,
+            "films_processed": 0,
+            "sync_run_id": "force-run",
+        }
+        pipeline = FakePipeline(
+            service,
+            {
+                1: [{"slug": "known", "title": "Known", "year": 2020}],
+                1 + profile_sync.WATCHED_WINDOW_PAGES: [
+                    {"slug": "older", "title": "Older", "year": 1990}
+                ],
+                1 + 2 * profile_sync.WATCHED_WINDOW_PAGES: [],
+            },
+        )
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertEqual(
+            pipeline.window_calls,
+            [1, 1 + profile_sync.WATCHED_WINDOW_PAGES, 1 + 2 * profile_sync.WATCHED_WINDOW_PAGES],
+        )
+        self.assertIn("older", service.films)
+
     async def test_hard_failure_sets_failed_state_with_backoff(self):
         service = FakeService()
         service.job = {
@@ -338,7 +416,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.job["state"], "failed")
         self.assertIn("blocked", service.job["last_error"])
         self.assertTrue(service.job["backoff_until"])
-        self.assertNotIn(7, profile_sync._running)
+        self.assertFalse(profile_sync.is_running(7))
 
 
 if __name__ == "__main__":

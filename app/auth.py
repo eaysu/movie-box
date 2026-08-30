@@ -145,7 +145,10 @@ class AuthService:
             "user_id,film_slug,details_loaded,watched_rank"
         ).limit(0).execute()
         service.table("profile_sync_jobs").select(
-            "user_id,state,phase,cursor_page,scope"
+            "user_id,state,phase,cursor_page,scope,sync_run_id,lease_token,lease_expires_at"
+        ).limit(0).execute()
+        service.table("director_images").select(
+            "normalized_name,photo_url,tmdb_person_id"
         ).limit(0).execute()
         return True
 
@@ -553,16 +556,45 @@ class AuthService:
         row = self._first(
             self._service_client()
             .table("profile_sync_jobs")
-            .upsert(payload)
+            .upsert(payload, on_conflict="user_id")
             .execute()
         )
         return row or payload
 
-    def touch_sync_job(self, user_id: int, **fields) -> None:
+    def touch_sync_job(
+        self, user_id: int, *, owned_by: str | None = None, **fields
+    ) -> bool:
         now = datetime.now(timezone.utc).isoformat()
-        self._service_client().table("profile_sync_jobs").update(
+        query = self._service_client().table("profile_sync_jobs").update(
             {"heartbeat_at": now, "updated_at": now, **fields}
-        ).eq("user_id", user_id).execute()
+        ).eq("user_id", user_id)
+        if owned_by:
+            query = query.eq("lease_token", owned_by)
+        result = query.execute()
+        return bool(result.data)
+
+    def claim_sync_job(
+        self, user_id: int, lease_token: str, lease_seconds: int = 360
+    ) -> bool:
+        result = self._service_client().rpc(
+            "claim_profile_sync_job",
+            {
+                "p_user_id": user_id,
+                "p_lease_token": lease_token,
+                "p_lease_seconds": lease_seconds,
+            },
+        ).execute()
+        return bool(self._rpc_value(result))
+
+    def finalize_sync_run(self, user_id: int, sync_run_id: str) -> int:
+        result = self._service_client().rpc(
+            "finalize_profile_sync_run",
+            {"p_user_id": user_id, "p_sync_run_id": sync_run_id},
+        ).execute()
+        try:
+            return int(self._rpc_value(result) or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def save_watched_films(self, user_id: int, films: list[dict]) -> int:
         """Atomic batch upsert into user_watched_films via the SQL guard."""
@@ -572,6 +604,23 @@ class AuthService:
             "upsert_watched_films",
             {"p_user_id": user_id, "p_films": films},
         ).execute()
+        # Every successful poster observation—scraper or TMDb—feeds the shared
+        # cross-user catalog. Keeping this at the persistence boundary prevents
+        # a new call path from accidentally bypassing asset promotion.
+        self.save_film_posters(
+            [
+                {
+                    "slug": row.get("slug") or row.get("film_slug"),
+                    "poster_url": row.get("poster_url"),
+                    "tmdb_id": row.get("tmdb_id"),
+                    "title": row.get("title") or "",
+                    "release_year": row.get("release_year") or row.get("year"),
+                }
+                for row in films
+                if (row.get("slug") or row.get("film_slug"))
+                and row.get("poster_url")
+            ]
+        )
         try:
             return int(result.data)
         except (TypeError, ValueError):
@@ -593,17 +642,46 @@ class AuthService:
             offset += page
 
     def get_watched_films(self, user_id: int) -> list[dict]:
-        return self._paginate(
-            "user_watched_films",
-            "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
-            "user_rating,poster_url,watched_rank,details_loaded",
-            user_id,
-            order="watched_rank",
-        )
+        service = self._service_client()
+        page = 1000
+        offset = 0
+        out: list[dict] = []
+        while True:
+            rows = (
+                service.table("user_watched_films")
+                .select(
+                    "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
+                    "user_rating,poster_url,watched_rank,details_loaded"
+                )
+                .eq("user_id", user_id)
+                .eq("is_active", True)
+                .order("watched_rank")
+                .range(offset, offset + page - 1)
+                .execute()
+            ).data or []
+            out.extend(rows)
+            if len(rows) < page:
+                return out
+            offset += page
 
     def get_watched_slugs(self, user_id: int) -> set[str]:
-        rows = self._paginate("user_watched_films", "film_slug", user_id)
-        return {row["film_slug"] for row in rows if row.get("film_slug")}
+        service = self._service_client()
+        page = 1000
+        offset = 0
+        slugs: set[str] = set()
+        while True:
+            rows = (
+                service.table("user_watched_films")
+                .select("film_slug")
+                .eq("user_id", user_id)
+                .eq("is_active", True)
+                .range(offset, offset + page - 1)
+                .execute()
+            ).data or []
+            slugs.update(row["film_slug"] for row in rows if row.get("film_slug"))
+            if len(rows) < page:
+                return slugs
+            offset += page
 
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
@@ -639,6 +717,102 @@ class AuthService:
                 if row.get("poster_url"):
                     out[row["film_slug"]] = row["poster_url"]
         return out
+
+    def get_film_assets(self, slugs) -> dict[str, dict]:
+        wanted = [s for s in dict.fromkeys(slugs) if s]
+        if not wanted:
+            return {}
+        service = self._service_client()
+        out: dict[str, dict] = {}
+        for i in range(0, len(wanted), 200):
+            rows = (
+                service.table("film_posters")
+                .select("film_slug,poster_url,tmdb_id,title,release_year")
+                .in_("film_slug", wanted[i : i + 200])
+                .execute()
+            ).data or []
+            out.update({row["film_slug"]: row for row in rows if row.get("film_slug")})
+        return out
+
+    def get_film_posters_by_tmdb_ids(self, tmdb_ids) -> dict[int, str]:
+        wanted = [int(value) for value in dict.fromkeys(tmdb_ids) if value]
+        if not wanted:
+            return {}
+        out: dict[int, str] = {}
+        service = self._service_client()
+        for i in range(0, len(wanted), 200):
+            rows = (
+                service.table("film_posters")
+                .select("tmdb_id,poster_url")
+                .in_("tmdb_id", wanted[i : i + 200])
+                .execute()
+            ).data or []
+            for row in rows:
+                if row.get("tmdb_id") and row.get("poster_url"):
+                    out[int(row["tmdb_id"])] = row["poster_url"]
+        return out
+
+    def get_director_images(self, names) -> dict[str, str]:
+        assets = self.get_director_assets(names)
+        return {
+            name: row["photo_url"]
+            for name, row in assets.items()
+            if row.get("photo_url")
+        }
+
+    def get_director_assets(self, names) -> dict[str, dict]:
+        requested = [str(name).strip() for name in dict.fromkeys(names) if str(name).strip()]
+        normalized = [name.lower() for name in requested]
+        if not normalized:
+            return {}
+        rows = (
+            self._service_client()
+            .table("director_images")
+            .select("normalized_name,display_name,photo_url,tmdb_person_id")
+            .in_("normalized_name", normalized)
+            .execute()
+        ).data or []
+        by_normalized = {
+            row["normalized_name"]: row
+            for row in rows
+            if row.get("normalized_name")
+        }
+        return {
+            name: by_normalized[name.lower()]
+            for name in requested
+            if name.lower() in by_normalized
+        }
+
+    def save_director_images(self, directors: list[dict]) -> int:
+        rows = [
+            row for row in directors
+            if row.get("name") and row.get("photo_url")
+        ]
+        if not rows:
+            return 0
+        result = self._service_client().rpc(
+            "upsert_director_images", {"p_directors": rows}
+        ).execute()
+        try:
+            return int(self._rpc_value(result) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def list_director_films(
+        self, user_id: int, director: str, *, limit: int = 60, offset: int = 0
+    ) -> list[dict]:
+        return (
+            self._service_client()
+            .table("user_watched_films")
+            .select("film_slug,title,release_year,poster_url,user_rating,watched_rank")
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .eq("director", director)
+            .order("user_rating", desc=True, nullsfirst=False)
+            .order("watched_rank")
+            .range(offset, offset + limit - 1)
+            .execute()
+        ).data or []
 
     def search_accounts(self, account: Account, query: str, limit: int = 8) -> list[dict]:
         service = self._service_client()

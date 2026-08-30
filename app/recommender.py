@@ -59,6 +59,8 @@ def rank_watchlist(
     watched: list[EnrichedFilm],
     watchlist: list[EnrichedFilm],
     n: int = 8,
+    favorite_directors: list[str] | None = None,
+    director_boost: float = 0.08,
 ) -> list[EnrichedFilm]:
     """Watchlist filmlerini izleme geçmişine benzerliğe göre sırala.
 
@@ -124,6 +126,18 @@ def rank_watchlist(
             / negative_weights.sum()
         )
         scores -= 0.6 * cosine_similarity(negative_taste, watchlist_matrix)[0]
+
+    # Favorite-director affinity is deliberately a bounded secondary signal.
+    # It can break close calls, but cannot dominate a poor content match.
+    favorite_rank = {
+        name.strip().casefold(): rank
+        for rank, name in enumerate((favorite_directors or [])[:3])
+        if name and name.strip()
+    }
+    for index, film in enumerate(watchlist):
+        rank = favorite_rank.get((film.director or "").strip().casefold())
+        if rank is not None:
+            scores[index] += max(0.0, float(director_boost)) * (1.0 - rank * 0.3)
 
     ranked_idx = _mmr_indices(scores, watchlist_matrix, n)
 

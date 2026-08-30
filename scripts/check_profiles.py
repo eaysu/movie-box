@@ -72,6 +72,11 @@ async def _check_user(username: str, *, settings, enricher, cache) -> dict:
         if enricher is not None:
             await enricher.ensure_details(candidates)
         taste = build_taste_profile(watched)
+        director_photos = (
+            await enricher.person_photos(taste.top_directors[:3])
+            if enricher is not None
+            else {}
+        )
     except ScrapeError as exc:
         return {
             "ok": False,
@@ -90,7 +95,21 @@ async def _check_user(username: str, *, settings, enricher, cache) -> dict:
         "display_name": profile.display_name,
         "avatar_found": bool(profile.avatar_url),
         "favorite_four": [film.slug for film in profile.favorite_films],
+        "favorite_poster_count": sum(
+            bool(film.poster_url) for film in profile.favorite_films
+        ),
+        "watched_poster_coverage": round(
+            sum(bool(film.poster_url) for film in watched) / max(1, len(watched)) * 100, 1
+        ),
+        "watchlist_poster_coverage": round(
+            sum(bool(film.poster_url) for film in watchlist) / max(1, len(watchlist)) * 100, 1
+        ),
+        "missing_watched_posters": [film.slug for film in watched if not film.poster_url],
+        "missing_watchlist_posters": [
+            film.slug for film in watchlist if not film.poster_url
+        ],
         "favorite_director": taste.favorite_director,
+        "top_director_photo_count": len(director_photos),
         "taste_confidence": taste.confidence_level,
         "recommendations": [film.slug or film.title for film in candidates[:5]],
         "tmdb_api_calls": getattr(enricher, "_api_calls", 0) - before_api,

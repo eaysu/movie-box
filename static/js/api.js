@@ -1,0 +1,78 @@
+export const API_BASE = window.__API_BASE__ || '';
+
+let activeRequest = null;
+
+export async function apiJSON(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, options);
+  let payload = {};
+  try { payload = await response.json(); } catch (_) {}
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  return payload;
+}
+
+export function beginApiRequest(timeoutMs) {
+  if (activeRequest) {
+    activeRequest.replaced = true;
+    activeRequest.controller.abort();
+    clearTimeout(activeRequest.timer);
+  }
+  const request = {
+    controller: new AbortController(),
+    replaced: false,
+    cancelled: false,
+    timedOut: false,
+    timer: null,
+  };
+  request.timer = setTimeout(() => {
+    request.timedOut = true;
+    request.controller.abort();
+  }, timeoutMs);
+  activeRequest = request;
+  return request;
+}
+
+export function finishApiRequest(request) {
+  if (!request) return;
+  clearTimeout(request.timer);
+  if (activeRequest === request) activeRequest = null;
+}
+
+export function cancelActiveApiRequest() {
+  if (!activeRequest) return;
+  activeRequest.cancelled = true;
+  activeRequest.controller.abort();
+  clearTimeout(activeRequest.timer);
+  activeRequest = null;
+}
+
+export async function assertStreamResponse(response) {
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json()).detail || ''; } catch (_) {}
+    if (response.status === 429) {
+      const retry = Number(response.headers.get('Retry-After') || 0);
+      const suffix = retry > 0 ? ` Yaklaşık ${retry} saniye sonra tekrar dene.` : '';
+      throw new Error((detail || 'İstek sınırına ulaşıldı.') + suffix);
+    }
+    throw new Error(detail || `Sunucu HTTP ${response.status} hatası döndürdü.`);
+  }
+  if (!response.body) throw new Error('Yanıt akışı başlatılamadı.');
+}
+
+export function streamErrorMessage(error, request, fallback) {
+  if (request?.timedOut) return 'İstek zaman aşımına uğradı. Lütfen tekrar deneyin.';
+  if (error?.name === 'AbortError') return null;
+  return error?.message || fallback;
+}
+
+export function scrapeErrorMessage(event) {
+  const messages = {
+    profile_not_found: 'Letterboxd kullanıcısı bulunamadı. Kullanıcı adını kontrol edip tekrar dene.',
+    profile_or_list_private: 'Profil veya liste gizli. Movieboxd yalnızca herkese açık Letterboxd verilerini okuyabilir.',
+    list_empty: 'Bu kullanıcının ilgili film listesi boş. Dolu bir watchlist ile tekrar dene.',
+    letterboxd_blocked: 'Letterboxd erişimi geçici olarak sınırladı. Birkaç dakika sonra tekrar dene.',
+    markup_changed: 'Letterboxd sayfa yapısı değişmiş olabilir. Bu hata teknik inceleme için kaydedildi.',
+    network_error: 'Letterboxd ağına ulaşılamadı. Bağlantıyı kontrol edip tekrar dene.',
+  };
+  return messages[event?.code] || event?.detail || 'Film verileri alınamadı.';
+}

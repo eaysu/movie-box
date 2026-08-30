@@ -53,6 +53,7 @@ Open http://localhost:8000
 | `POST /api/auth/register/verify` | Verifies Letterboxd ownership |
 | `POST /api/auth/login` | Opens an HttpOnly cookie session |
 | `GET /api/profile/me` | Returns the stored profile and taste snapshot |
+| `GET /api/profile/directors/{rank}/films` | Lazy-loads one ranked director's watched films |
 | `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
 | `POST /api/recommendations/feedback` | Saves watch/skip/block feedback for a recommendation |
 | `GET /api/recommendations/history` | Lists active recommendation preferences and event history |
@@ -97,6 +98,13 @@ Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 - Identical concurrent scrapes are coalesced and TMDb uses a shared bounded pool.
 - TMDb metadata uses a local SQLite L1 and a batched Supabase L2, so deploys can
   reuse enrichment results without turning every film into a separate DB request.
+- Resolved posters and director portraits are promoted to shared Supabase asset
+  tables. A known film slug/TMDb id skips movie search, and only unresolved assets
+  call TMDb. Successful director filmographies are also cached across users.
+- All Letterboxd HTML requests share one adaptive process-wide budget. A 403/429
+  serializes traffic and opens a cooldown circuit; sustained success recovers
+  concurrency gradually. Full profile crawls additionally use a Supabase lease so
+  two Render processes cannot own the same user's job.
 - When auth is configured, Taste and Random require the signed-in username plus
   a double-submit CSRF token. Blend searches only registered accounts, creates a
   pending inbox request, and computes/persists compatibility only after recipient
@@ -104,9 +112,12 @@ Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 - “Verimi Sil” removes the signed-in Supabase Auth identity, profile/taste/Fav 4
   rows and username-scoped caches. Shared TMDb metadata is non-personal and remains.
 - Blend returns a calibrated 0–100 similarity score plus an independent low,
-  medium or high data-confidence indicator. The score is shown before the two
+  medium or high data-coverage indicator. The score is shown before the two
   watchlists finish loading; common watchlist titles arrive lazily.
-- Recommendation ranking uses rating-aware negative signals and MMR diversity.
+- Recommendation ranking uses the latest 100 watched films, rating-aware negative
+  signals and MMR diversity. The top three favorite directors receive a bounded
+  secondary boost; cached TMDb filmographies identify matching watchlist titles
+  before shortlist pruning.
   LLM context includes explicit 3.5+ ratings (with their scores); unrated history
   is used only when the profile has no rating data.
 - Without Supabase, caches live in `data/cache.sqlite3` and are ephemeral on hosts
@@ -131,7 +142,10 @@ letterboxd-recommender/
 │   ├── check_profiles.py isolated real-profile pipeline check
 │   └── warm_cache.py    profile cache warmer
 ├── static/
-│   └── index.html       frontend
+│   ├── index.html       semantic frontend shell
+│   ├── app.css          generated production Tailwind CSS
+│   └── js/              auth/api/profile/recommendation/blend modules
+├── package.json         frontend CSS build and JS syntax checks
 ├── requirements.txt
 └── .env.example
 ```
@@ -150,3 +164,7 @@ letterboxd-recommender/
 Never rotate `AUTH_IDENTITY_SECRET` without an identity migration: synthetic
 Supabase email mappings are derived from it. Never expose `SUPABASE_KEY` to the
 browser; only the backend uses it.
+
+When frontend classes or custom styles change, regenerate the committed CSS with
+`npm install && npm run build:css`. Render serves the generated file and does not
+need Node at runtime.

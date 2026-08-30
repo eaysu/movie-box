@@ -107,6 +107,13 @@ def test_full_history_sync_schema_is_service_role_only():
         "REVOKE ALL ON TABLE public.film_posters FROM anon, authenticated;",
         "GRANT ALL ON TABLE public.film_posters TO service_role;",
         "GRANT EXECUTE ON FUNCTION public.upsert_film_posters(JSONB) TO service_role;",
+        "CREATE TABLE IF NOT EXISTS public.director_images (",
+        "CREATE OR REPLACE FUNCTION public.upsert_director_images(",
+        "ALTER TABLE public.director_images ENABLE ROW LEVEL SECURITY;",
+        "CREATE OR REPLACE FUNCTION public.claim_profile_sync_job(",
+        "CREATE OR REPLACE FUNCTION public.finalize_profile_sync_run(",
+        "COALESCE(last_seen_run_id = p_sync_run_id, FALSE)",
+        "CREATE INDEX IF NOT EXISTS idx_film_posters_tmdb_id",
     ):
         assert line in schema
 
@@ -140,7 +147,7 @@ def test_check_sync_schema_probes_only_the_new_tables_with_zero_rows():
     service = AuthService(_settings(), client_factory=lambda *_args: client)
     assert service.check_sync_schema() is True
     probed = {name for name, _cols in client.calls}
-    assert probed == {"user_watched_films", "profile_sync_jobs"}
+    assert probed == {"user_watched_films", "profile_sync_jobs", "director_images"}
 
 
 def test_login_sets_http_only_session_and_readable_csrf_cookies():

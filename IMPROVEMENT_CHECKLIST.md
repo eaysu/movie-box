@@ -78,7 +78,7 @@ onayı gelmeden uygulanmaz.
 
 - [x] Dashboard'daki sıkışık profil kartı yerine profil menüsünden açılan bağımsız,
   responsive ve tam genişlikte profil sayfası oluştur.
-- [x] Profil sayfasında büyük avatarın sağında ayrıntılı zevk analizi, veri güveni,
+- [x] Profil sayfasında büyük avatarın sağında ayrıntılı zevk analizi, veri kapsamı,
   türler, örneklem ve metadata kapsamını göster.
 - [x] Alt bölümde rating-aware ilk üç yönetmeni sıralı; sağında büyük Fav 4
   posterlerini göster.
@@ -125,7 +125,7 @@ onayı gelmeden uygulanmaz.
 - [ ] Gerçek Supabase üzerinde bio sahiplik/parola kurtarma entegrasyon testi.
 - [x] Gerçek profil HTML'inden anonimleştirilmiş avatar/Fav 4 fixture testleri.
 - [x] Taste profil hesaplama golden testleri: rating-aware favori yönetmen, Fav 4 ve
-  düşük veri güveni senaryoları.
+  düşük veri kapsamı senaryoları.
 - [x] Blend request API izin sınırı, kabul/ret, persisted result, single-flight ve SQL
   consent guard contract testleri.
 - [ ] Gerçek Supabase üzerinde iki kullanıcılı RLS/state-machine entegrasyon testi.
@@ -181,6 +181,18 @@ onayı gelmeden uygulanmaz.
 
 ## P1 — En büyük hız ve maliyet kazanımları
 
+- [x] Başarılı film posterlerini ortak `film_posters`, yönetmen portrelerini ortak
+  `director_images` tablosunda sakla; başka kullanıcılarda doğrudan yeniden kullan.
+- [x] Film slug + TMDb kimliği ortak DB'de bulunduğunda `/search/movie` çağrısını
+  atla; yalnız gerçek cache-miss için görsel/kimlik çözümlemesi yap.
+- [x] Favori yönetmen filmografisini kişi başına tek `/movie_credits` isteğiyle
+  çözümleyip kalıcı cache'e al; watchlist shortlist'inden önce sınırlı ağırlık uygula.
+- [x] Letterboxd'a giden tüm HTML istekleri için tek process-wide bütçe ekle;
+  `403/429` halinde concurrency=1 ve artan cooldown, başarı halinde kademeli toparlanma.
+- [x] Full-sync concurrency'sini 1'e indir; process içi sahiplik yerine atomik
+  Supabase lease/claim kullan.
+- [x] Full crawl satırlarına `last_seen_run_id` ekle; artık Letterboxd'da olmayanları
+  silmeden `is_active=false` yap ve tüm okumalarda filtrele.
 - [x] TMDb metadata cache'ini ephemeral SQLite yerine kalıcı ortak depoya taşı:
   SQLite L1 + toplu prefetch/flush yapan Supabase L2.
 - [x] Supabase'in senkron ağ çağrılarını event loop dışında çalıştır veya async
@@ -217,8 +229,12 @@ onayı gelmeden uygulanmaz.
     güncel düşük gecikmeli modellere karşı kalite/maliyet A/B testi yapılacak.
 - [x] Backend recommendation sayısı ile frontend'de gösterilen kart sayısını 5
   film olarak eşitle.
+- [x] Öneri profilini en son 100 izlenen filmle sınırla; ilk üç favori yönetmene
+  içerik benzerliğini domine etmeyen en fazla `0.08` ikincil ağırlık ver.
 - [x] Blend skorundaki yapay 70 tabanını kaldır; 0–100 doğrudan benzerlik skoru ve
-  örneklem/metadata/rating kapsamından düşük–orta–yüksek veri güveni sun.
+  örneklem/metadata/rating kapsamından düşük–orta–yüksek veri kapsamı sun.
+- [x] Heuristik profile confidence etiketini tahmin doğruluğu iddiası taşımayan
+  “Veri kapsamı” olarak göster; gerçek öneri güveni feedback eval'i sonrasına kalsın.
 
 ## P1 — Ürün/aktivasyon (username-first)
 
@@ -264,10 +280,13 @@ onayı gelmeden uygulanmaz.
   crawl, rating merge, TMDb ve MMR başarılı; 13.8–24.6 sn, TMDb `429` yok.
 - [ ] Browser integration test: yarıda kesilen gerçek stream ve kullanıcı iptali.
 - [ ] Recommendation eval'lerini CI'a ekle.
-- [ ] Tailwind Play CDN yerine build-time statik CSS üret.
+- [x] Tailwind Play CDN yerine build-time statik CSS üret.
 - [ ] Netlify deployment yolunu düzelt veya artık kullanılmıyorsa kaldır.
 - [x] README, `.env.example` ve gerçek endpoint/model mimarisini eşitle.
-- [ ] Frontend'i tek HTML dosyasından modüler asset'lere ayır.
+- [x] Frontend'i tek HTML dosyasından `api.js`, `auth.js`, `profile.js`,
+  `recommendations.js`, `blend.js` ve DOM yardımcı modüllerine ayır.
+- [x] Profil snapshot'ında yönetmen başına yalnızca 6 film tut; accordion açılınca
+  ayrı authenticated endpoint'ten sayfalı/lazy-load et.
 
 ## Hedef metrikler
 

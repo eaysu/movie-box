@@ -30,6 +30,8 @@ class Settings(BaseSettings):
 
     # --- Recommender tuning ---
     num_recommendations: int = 5
+    recommendation_history_limit: int = 100
+    favorite_director_boost: float = 0.08
 
     # --- Scraper ---
     # Letterboxd sayfaları doğrudan, curl-cffi ile okunur. Ücretli veya harici

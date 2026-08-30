@@ -58,6 +58,38 @@ class RatingAwareRankingTests(unittest.TestCase):
         self.assertEqual(len(ranked), 2)
         self.assertIn("courtroom", {film.slug for film in ranked})
 
+    def test_favorite_director_is_a_bounded_tiebreaker(self):
+        watched = [
+            EnrichedFilm(title="Quiet Drama", genres=["Drama"], keywords=["family"])
+        ]
+        watchlist = [
+            EnrichedFilm(
+                title="Close Match",
+                slug="close",
+                genres=["Drama"],
+                keywords=["family"],
+                director="Other Director",
+            ),
+            EnrichedFilm(
+                title="Auteur Match",
+                slug="auteur",
+                genres=["Drama"],
+                keywords=["family"],
+                director="Favorite Director",
+            ),
+        ]
+
+        ranked = rank_watchlist(
+            watched,
+            watchlist,
+            n=2,
+            favorite_directors=["Favorite Director"],
+            director_boost=0.08,
+        )
+
+        self.assertEqual(ranked[0].slug, "auteur")
+        self.assertLess(ranked[0].similarity - ranked[1].similarity, 0.1)
+
 
 if __name__ == "__main__":
     unittest.main()

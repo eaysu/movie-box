@@ -37,5 +37,8 @@ data/*.sqlite3
 # Netlify CLI state
 .netlify/
 
+# Frontend build dependencies
+node_modules/
+
 # Logs
 *.log

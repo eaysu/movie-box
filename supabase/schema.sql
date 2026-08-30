@@ -94,9 +94,12 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
   genres         JSONB NOT NULL DEFAULT '[]'::jsonb,
   keywords       JSONB NOT NULL DEFAULT '[]'::jsonb,
   user_rating    REAL,
+  rating_observed BOOLEAN NOT NULL DEFAULT FALSE,
   poster_url     TEXT,
   watched_rank   INTEGER,          -- diary position; 0 = most recent (chronological proxy)
   details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
+  last_seen_run_id UUID,
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
   first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, film_slug)
@@ -104,6 +107,12 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
 
 ALTER TABLE public.user_watched_films
   ADD COLUMN IF NOT EXISTS poster_url TEXT;
+ALTER TABLE public.user_watched_films
+  ADD COLUMN IF NOT EXISTS rating_observed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.user_watched_films
+  ADD COLUMN IF NOT EXISTS last_seen_run_id UUID;
+ALTER TABLE public.user_watched_films
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
   ON public.user_watched_films (user_id, watched_rank);
@@ -121,6 +130,55 @@ CREATE TABLE IF NOT EXISTS public.film_posters (
   release_year  INTEGER,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_film_posters_tmdb_id
+  ON public.film_posters (tmdb_id)
+  WHERE tmdb_id IS NOT NULL;
+
+-- Successful director portraits are durable shared assets. Empty/failed lookups
+-- are intentionally not stored here, so a transient TMDb miss can heal later.
+CREATE TABLE IF NOT EXISTS public.director_images (
+  normalized_name TEXT PRIMARY KEY,
+  display_name    TEXT NOT NULL,
+  photo_url       TEXT NOT NULL,
+  tmdb_person_id  INTEGER,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION public.upsert_director_images(p_directors JSONB)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  INSERT INTO public.director_images (
+    normalized_name, display_name, photo_url, tmdb_person_id, updated_at
+  )
+  SELECT
+    lower(trim(item->>'name')),
+    trim(item->>'name'),
+    item->>'photo_url',
+    NULLIF(item->>'tmdb_person_id', '')::INTEGER,
+    now()
+  FROM jsonb_array_elements(COALESCE(p_directors, '[]'::jsonb)) AS item
+  WHERE COALESCE(trim(item->>'name'), '') <> ''
+    AND COALESCE(item->>'photo_url', '') <> ''
+  ON CONFLICT (normalized_name) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    photo_url = EXCLUDED.photo_url,
+    tmdb_person_id = COALESCE(EXCLUDED.tmdb_person_id, public.director_images.tmdb_person_id),
+    updated_at = now();
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_director_images(JSONB)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_director_images(JSONB) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.upsert_film_posters(p_films JSONB)
 RETURNS INTEGER
@@ -173,9 +231,16 @@ CREATE TABLE IF NOT EXISTS public.profile_sync_jobs (
   heartbeat_at    TIMESTAMPTZ,
   backoff_until   TIMESTAMPTZ,
   last_error      TEXT NOT NULL DEFAULT '',
+  sync_run_id     UUID,
+  lease_token     UUID,
+  lease_expires_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.profile_sync_jobs ADD COLUMN IF NOT EXISTS sync_run_id UUID;
+ALTER TABLE public.profile_sync_jobs ADD COLUMN IF NOT EXISTS lease_token UUID;
+ALTER TABLE public.profile_sync_jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_profile_sync_jobs_resumable
   ON public.profile_sync_jobs (state, heartbeat_at)
@@ -420,7 +485,8 @@ BEGIN
 
   INSERT INTO public.user_watched_films (
     user_id, film_slug, title, release_year, tmdb_id, director, genres, keywords,
-    user_rating, poster_url, watched_rank, details_loaded, updated_at
+    user_rating, rating_observed, poster_url, watched_rank, details_loaded,
+    last_seen_run_id, is_active, updated_at
   )
   SELECT
     p_user_id,
@@ -432,9 +498,12 @@ BEGIN
     COALESCE(item->'genres', '[]'::jsonb),
     COALESCE(item->'keywords', '[]'::jsonb),
     NULLIF(item->>'user_rating', '')::REAL,
+    COALESCE((item->>'rating_observed')::BOOLEAN, FALSE),
     NULLIF(item->>'poster_url', ''),
     NULLIF(item->>'watched_rank', '')::INTEGER,
     COALESCE((item->>'details_loaded')::BOOLEAN, FALSE),
+    NULLIF(item->>'last_seen_run_id', '')::UUID,
+    COALESCE((item->>'is_active')::BOOLEAN, TRUE),
     now()
   FROM jsonb_array_elements(COALESCE(p_films, '[]'::jsonb)) AS item
   WHERE COALESCE(item->>'slug', '') <> ''
@@ -445,10 +514,19 @@ BEGIN
     director = CASE WHEN EXCLUDED.director <> '' THEN EXCLUDED.director ELSE public.user_watched_films.director END,
     genres = CASE WHEN EXCLUDED.genres <> '[]'::jsonb THEN EXCLUDED.genres ELSE public.user_watched_films.genres END,
     keywords = CASE WHEN EXCLUDED.keywords <> '[]'::jsonb THEN EXCLUDED.keywords ELSE public.user_watched_films.keywords END,
-    user_rating = COALESCE(EXCLUDED.user_rating, public.user_watched_films.user_rating),
+    user_rating = CASE
+      WHEN EXCLUDED.rating_observed THEN EXCLUDED.user_rating
+      ELSE public.user_watched_films.user_rating
+    END,
+    rating_observed = public.user_watched_films.rating_observed OR EXCLUDED.rating_observed,
     poster_url = COALESCE(EXCLUDED.poster_url, public.user_watched_films.poster_url),
     watched_rank = COALESCE(EXCLUDED.watched_rank, public.user_watched_films.watched_rank),
     details_loaded = public.user_watched_films.details_loaded OR EXCLUDED.details_loaded,
+    last_seen_run_id = COALESCE(EXCLUDED.last_seen_run_id, public.user_watched_films.last_seen_run_id),
+    is_active = CASE
+      WHEN EXCLUDED.last_seen_run_id IS NOT NULL THEN TRUE
+      ELSE public.user_watched_films.is_active
+    END,
     updated_at = now();
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
@@ -459,6 +537,69 @@ $$;
 REVOKE ALL ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)
+  TO service_role;
+
+-- Cross-process ownership for Render/background workers. Only one valid lease
+-- can own a user's sync job at a time; stale leases may be reclaimed.
+CREATE OR REPLACE FUNCTION public.claim_profile_sync_job(
+  p_user_id BIGINT,
+  p_lease_token UUID,
+  p_lease_seconds INTEGER
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_claimed BIGINT;
+BEGIN
+  UPDATE public.profile_sync_jobs
+  SET lease_token = p_lease_token,
+      lease_expires_at = now() + make_interval(secs => GREATEST(60, p_lease_seconds)),
+      heartbeat_at = now(),
+      updated_at = now()
+  WHERE user_id = p_user_id
+    AND state IN ('queued', 'running', 'failed')
+    AND (
+      lease_token = p_lease_token
+      OR lease_expires_at IS NULL
+      OR lease_expires_at <= now()
+    )
+  RETURNING user_id INTO v_claimed;
+  RETURN v_claimed IS NOT NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.finalize_profile_sync_run(
+  p_user_id BIGINT,
+  p_sync_run_id UUID
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  UPDATE public.user_watched_films
+  SET is_active = COALESCE(last_seen_run_id = p_sync_run_id, FALSE),
+      updated_at = CASE
+        WHEN is_active IS DISTINCT FROM COALESCE(last_seen_run_id = p_sync_run_id, FALSE) THEN now()
+        ELSE updated_at
+      END
+  WHERE user_id = p_user_id;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_profile_sync_job(BIGINT, UUID, INTEGER)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.finalize_profile_sync_run(BIGINT, UUID)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_profile_sync_job(BIGINT, UUID, INTEGER)
+  TO service_role;
+GRANT EXECUTE ON FUNCTION public.finalize_profile_sync_run(BIGINT, UUID)
   TO service_role;
 
 CREATE OR REPLACE FUNCTION public.create_blend_request(
@@ -849,6 +990,7 @@ CREATE TABLE IF NOT EXISTS public.tmdb_cache (
 ALTER TABLE public.users     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tmdb_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.film_posters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.director_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.taste_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profile_favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_watched_films ENABLE ROW LEVEL SECURITY;
@@ -868,6 +1010,7 @@ DROP POLICY IF EXISTS "service_all_tmdb_cache" ON public.tmdb_cache;
 REVOKE ALL ON TABLE public.users FROM anon, authenticated;
 REVOKE ALL ON TABLE public.tmdb_cache FROM anon, authenticated;
 REVOKE ALL ON TABLE public.film_posters FROM anon, authenticated;
+REVOKE ALL ON TABLE public.director_images FROM anon, authenticated;
 REVOKE ALL ON TABLE public.taste_profiles FROM anon, authenticated;
 REVOKE ALL ON TABLE public.profile_favorites FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_watched_films FROM anon, authenticated;
@@ -887,6 +1030,7 @@ REVOKE ALL ON SEQUENCE public.recommendation_feedback_events_id_seq FROM anon, a
 GRANT ALL ON TABLE public.users TO service_role;
 GRANT ALL ON TABLE public.tmdb_cache TO service_role;
 GRANT ALL ON TABLE public.film_posters TO service_role;
+GRANT ALL ON TABLE public.director_images TO service_role;
 GRANT ALL ON TABLE public.taste_profiles TO service_role;
 GRANT ALL ON TABLE public.profile_favorites TO service_role;
 GRANT ALL ON TABLE public.user_watched_films TO service_role;

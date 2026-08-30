@@ -69,9 +69,9 @@ def _top_weighted(values: dict[str, float], limit: int) -> list[str]:
 
 
 def _director_detail(
-    watched: list[EnrichedFilm], names: list[str], *, per_director: int = 60
+    watched: list[EnrichedFilm], names: list[str], *, per_director: int = 6
 ) -> list[dict]:
-    """For each top director, every film of theirs the user has watched.
+    """Compact preview for each top director.
 
     Films are ordered by the user's own rating first (their vote is what
     matters), then by recency; `watched` is already recency-ordered.
@@ -104,6 +104,7 @@ def _director_detail(
                 "count": len(films),
                 "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
                 "films": films[:per_director],
+                "has_more": len(films) > per_director,
             }
         )
     return detail

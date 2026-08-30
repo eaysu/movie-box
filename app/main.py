@@ -54,6 +54,7 @@ from .scraper import (
     scrape_films,
     scrape_profile,
     scrape_recent_watched,
+    resolve_missing_posters,
     scrape_watchlist,
     scrape_watched,
 )
@@ -436,7 +437,7 @@ TTL_USER_FILMS = 24 * 3600  # 1 gün
 TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftalık tam crawl
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
-RECOMMENDER_VERSION = "v2-rating-mmr"
+RECOMMENDER_VERSION = "v3-last100-director-affinity"
 BLEND_VERSION = "blend-v2-calibrated"
 
 
@@ -496,6 +497,7 @@ def _recommendation_cache_key(
     *,
     model: str,
     count: int,
+    favorite_directors: list[str] | None = None,
 ) -> str:
     """Content-address a recommendation so profile changes invalidate it."""
     payload = {
@@ -505,6 +507,7 @@ def _recommendation_cache_key(
         "count": count,
         "watched": [(film.slug, film.user_rating) for film in watched],
         "watchlist": [film.slug for film in watchlist],
+        "favorite_directors": (favorite_directors or [])[:3],
     }
     digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -570,7 +573,22 @@ async def _scrape_enrich_and_cache(
         # Profile cache stores cheap search metadata. Director/keywords are fetched
         # later only for the small subset that affects ranking or Blend.
         films = await enricher.enrich(scraped, include_details=False)
+        final_misses = [
+            source
+            for source, film in zip(scraped, films)
+            if not film.poster_url and source.poster_resolver_url
+        ]
+        if final_misses:
+            await resolve_missing_posters(final_misses)
+            repaired = []
+            for source, film in zip(scraped, films):
+                if not film.poster_url and source.poster_url:
+                    film.poster_url = source.poster_url
+                    repaired.append(film)
+            if repaired:
+                await enricher.save_film_assets(repaired)
     else:
+        await resolve_missing_posters(scraped)
         films = [
             EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
             for f in scraped
@@ -1116,6 +1134,47 @@ async def profile_me(request: Request) -> dict:
     return profile
 
 
+@app.get("/api/profile/directors/{rank}/films")
+async def profile_director_films(
+    rank: int, request: Request, limit: int = 60, offset: int = 0
+) -> dict:
+    """Lazy-load one ranked director's watched films for the profile accordion."""
+    account = await _require_account(request)
+    if rank < 1 or rank > 10 or limit < 1 or limit > 100 or offset < 0:
+        raise HTTPException(status_code=422, detail="Geçersiz yönetmen sayfalaması.")
+    service = _auth_service()
+    profile = await asyncio.to_thread(service.get_profile, account)
+    taste = profile.get("taste") or {}
+    names = [name for name in taste.get("top_directors", []) if name]
+    if rank > len(names):
+        raise HTTPException(status_code=404, detail="Yönetmen bulunamadı.")
+    director = names[rank - 1]
+    rows = await asyncio.to_thread(
+        service.list_director_films,
+        account.id,
+        director,
+        limit=limit,
+        offset=offset,
+    )
+    films = [
+        {
+            "slug": row.get("film_slug") or "",
+            "title": row.get("title") or "",
+            "year": row.get("release_year"),
+            "poster_url": row.get("poster_url") or "",
+            "user_rating": row.get("user_rating"),
+        }
+        for row in rows
+    ]
+    return {
+        "rank": rank,
+        "director": director,
+        "films": films,
+        "offset": offset,
+        "has_more": len(films) == limit,
+    }
+
+
 @app.post("/api/recommendations/feedback")
 async def save_recommendation_feedback(
     req: RecommendationFeedbackRequest, request: Request
@@ -1183,7 +1242,10 @@ async def _provisional_profile_sync(
         )
         supabase_client, cache = _make_cache(settings)
         pcache = _make_persistent_cache(settings, supabase_client)
-        enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+        enricher = (
+            Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            if settings.has_tmdb else None
+        )
         watched, _from_cache = await _load_user_films(
             account.username,
             "watched",
@@ -1371,7 +1433,11 @@ class _SyncPipeline:
             self._enricher_built = True
             if self.settings.has_tmdb:
                 _client, cache = _make_cache(self.settings)
-                self._enricher_obj = Enricher(self.settings.tmdb_api_key, cache)
+                self._enricher_obj = Enricher(
+                    self.settings.tmdb_api_key,
+                    cache,
+                    asset_store=_auth_service(),
+                )
         return self._enricher_obj
 
     async def scrape_watched_window(self, username: str, start_page: int) -> list[dict]:
@@ -1388,6 +1454,8 @@ class _SyncPipeline:
                 "title": film.title,
                 "year": film.year,
                 "user_rating": film.user_rating,
+                "poster_url": film.poster_url,
+                "poster_resolver_url": film.poster_resolver_url,
             }
             for film in films
             if film.slug
@@ -1403,6 +1471,8 @@ class _SyncPipeline:
                 "title": film.title,
                 "year": film.year,
                 "user_rating": film.user_rating,
+                "poster_url": film.poster_url,
+                "poster_resolver_url": film.poster_resolver_url,
             }
             for film in films
             if film.slug
@@ -1411,12 +1481,14 @@ class _SyncPipeline:
     async def enrich_search(self, films: list[dict]) -> list[dict]:
         enricher = self._enricher()
         if enricher is None:
+            await resolve_missing_posters(films)
             return [
                 {
                     "slug": film["slug"],
                     "title": film.get("title") or "",
                     "release_year": film.get("year"),
                     "user_rating": film.get("user_rating"),
+                    "poster_url": film.get("poster_url") or "",
                     "watched_rank": film.get("watched_rank"),
                     "details_loaded": False,
                 }
@@ -1434,6 +1506,13 @@ class _SyncPipeline:
             ],
             include_details=False,
         )
+        final_misses = [
+            source
+            for source, film in zip(films, enriched)
+            if not film.poster_url and source.get("poster_resolver_url")
+        ]
+        if final_misses:
+            await resolve_missing_posters(final_misses)
         out: list[dict] = []
         for src, ef in zip(films, enriched):
             out.append(
@@ -1443,7 +1522,7 @@ class _SyncPipeline:
                     "release_year": ef.year or src.get("year"),
                     "tmdb_id": ef.tmdb_id,
                     "genres": ef.genres or [],
-                    "poster_url": ef.poster_url or "",
+                    "poster_url": ef.poster_url or src.get("poster_url") or "",
                     "user_rating": src.get("user_rating"),
                     "watched_rank": src.get("watched_rank"),
                     "details_loaded": False,
@@ -1511,8 +1590,8 @@ class _SyncPipeline:
         ]
         enricher = self._enricher()
         # ── Poster repair ────────────────────────────────────────────────
-        # 1) shared pool (free), 2) TMDb for the directors we're about to
-        # surface. Anything resolved is written back to rows + the pool.
+        # 1) shared pool (free), 2) TMDb only for unresolved rows. Every
+        # successful repair is written back to both the user row and shared pool.
         missing = [f for f in watched if not f.poster_url]
         if missing:
             with contextlib.suppress(Exception):
@@ -1536,55 +1615,45 @@ class _SyncPipeline:
         # search pass dropped.
         by_id = [f for f in watched if not f.poster_url and f.tmdb_id]
         if by_id and enricher is not None:
-            with contextlib.suppress(Exception):
-                resolved = await enricher.posters_by_id(
-                    [f.tmdb_id for f in by_id][:500]
-                )
-                id_patch = []
-                for film in by_id:
-                    if resolved.get(film.tmdb_id):
-                        film.poster_url = resolved[film.tmdb_id]
-                        id_patch.append(
-                            {
-                                "slug": film.slug,
-                                "poster_url": film.poster_url,
-                                "tmdb_id": film.tmdb_id,
-                                "title": film.title,
-                                "release_year": film.year,
-                            }
-                        )
-                if id_patch:
-                    await asyncio.to_thread(
-                        service.save_watched_films, account.id, id_patch
+            for offset in range(0, len(by_id), 250):
+                with contextlib.suppress(Exception):
+                    batch = by_id[offset : offset + 250]
+                    resolved = await enricher.posters_by_id(
+                        [f.tmdb_id for f in batch]
                     )
-                    await _stash_posters(id_patch)
+                    id_patch = []
+                    for film in batch:
+                        if resolved.get(film.tmdb_id):
+                            film.poster_url = resolved[film.tmdb_id]
+                            id_patch.append(
+                                {
+                                    "slug": film.slug,
+                                    "poster_url": film.poster_url,
+                                    "tmdb_id": film.tmdb_id,
+                                    "title": film.title,
+                                    "release_year": film.year,
+                                }
+                            )
+                    if id_patch:
+                        await asyncio.to_thread(
+                            service.save_watched_films, account.id, id_patch
+                        )
 
         if enricher is not None:
-            from collections import Counter as _Counter
-
-            top_dirs = {
-                name
-                for name, _ in _Counter(
-                    film.director for film in watched if film.director
-                ).most_common(12)
-            }
-            need_poster = [
-                film
-                for film in watched
-                if not film.poster_url and (film.director in top_dirs or not film.director)
-            ][:400]
-            if need_poster:
+            need_poster = [film for film in watched if not film.poster_url]
+            for offset in range(0, len(need_poster), 150):
                 with contextlib.suppress(Exception):
+                    batch = need_poster[offset : offset + 150]
                     refreshed = await enricher.enrich(
                         [
                             {"slug": f.slug, "title": f.title, "year": f.year}
-                            for f in need_poster
+                            for f in batch
                         ],
                         include_details=False,
                     )
                     by_slug = {r.slug: r for r in refreshed if r.slug}
                     patch = []
-                    for film in need_poster:
+                    for film in batch:
                         hit = by_slug.get(film.slug)
                         if hit and hit.poster_url:
                             film.poster_url = hit.poster_url
@@ -1601,7 +1670,6 @@ class _SyncPipeline:
                         await asyncio.to_thread(
                             service.save_watched_films, account.id, patch
                         )
-                        await _stash_posters(patch)
 
         profile = await scrape_profile(
             account.username, max_retries=self.settings.scrape_max_retries
@@ -1625,8 +1693,22 @@ class _SyncPipeline:
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
         taste.personality = personality_from_favorites(favorites)
         await _apply_director_photos(taste, enricher, service)
-        # Background pass: upgrade the deterministic prose with an LLM read.
-        if use_llm:
+        stored_taste = {}
+        with contextlib.suppress(Exception):
+            stored_taste = (
+                await asyncio.to_thread(service.get_profile, account)
+            ).get("taste") or {}
+        source_changed = (
+            stored_taste.get("source_fingerprint") != taste.source_fingerprint
+        )
+        # No-change incremental runs retain the last strong prose. Material
+        # changes (new films, ratings or Fav 4) earn one fresh LLM analysis.
+        if not use_llm and not source_changed:
+            if stored_taste.get("analysis"):
+                taste.analysis = stored_taste["analysis"]
+            if stored_taste.get("personality"):
+                taste.personality = stored_taste["personality"]
+        if use_llm or source_changed:
             with contextlib.suppress(Exception):
                 extra = await analyze_taste(self.settings, watched, favorites)
                 if extra.get("analysis"):
@@ -1823,7 +1905,10 @@ async def _compute_accepted_blend(
     settings = get_settings()
     supabase_client, cache = _make_cache(settings)
     pcache = _make_persistent_cache(settings, supabase_client)
-    enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+    enricher = (
+        Enricher(settings.tmdb_api_key, cache, asset_store=service)
+        if settings.has_tmdb else None
+    )
     watched_kwargs = {
         "delay": settings.scrape_delay,
         "max_pages": settings.watched_max_pages,
@@ -2032,9 +2117,10 @@ async def recommend(req: RecommendRequest, request: Request):
     global _q_waiting, _q_active
     account = await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
+    service = _auth_service() if account is not None else None
     try:
         suppressed_slugs = (
-            await asyncio.to_thread(_auth_service().get_suppressed_slugs, account)
+            await asyncio.to_thread(service.get_suppressed_slugs, account)
             if account is not None
             else set()
         )
@@ -2065,7 +2151,10 @@ async def recommend(req: RecommendRequest, request: Request):
                 pcache = _make_persistent_cache(settings, supabase_client)
                 if supabase_client is not None:
                     await asyncio.to_thread(upsert_user, supabase_client, req.username)
-                enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+                enricher = (
+                    Enricher(settings.tmdb_api_key, cache, asset_store=service)
+                    if settings.has_tmdb else None
+                )
 
                 watched_kwargs = dict(
                     delay=settings.scrape_delay,
@@ -2101,6 +2190,9 @@ async def recommend(req: RecommendRequest, request: Request):
                         return
                     raise exc
                 (watched_films, w_cached), (watchlist_films, wl_cached) = hs["result"]
+                watched_films = watched_films[
+                    : getattr(settings, "recommendation_history_limit", 100)
+                ]
                 watchlist_count = len(watchlist_films)
                 watchlist_films = _filter_suppressed_films(
                     watchlist_films, suppressed_slugs
@@ -2120,12 +2212,24 @@ async def recommend(req: RecommendRequest, request: Request):
                     yield _sse({"type": "error", "detail": detail})
                     return
 
+                favorite_directors: list[str] = []
+                if service is not None and account is not None:
+                    with contextlib.suppress(Exception):
+                        stored_profile = await asyncio.to_thread(
+                            service.get_profile, account
+                        )
+                        taste = stored_profile.get("taste") or {}
+                        favorite_directors = [
+                            name for name in taste.get("top_directors", []) if name
+                        ][:3]
+
                 recommendation_key = _recommendation_cache_key(
                     req.username,
                     watched_films,
                     watchlist_films,
                     model=settings.openai_model if settings.has_openai else "local",
                     count=settings.num_recommendations,
+                    favorite_directors=favorite_directors,
                 )
                 cached_recommendation = await asyncio.to_thread(
                     pcache.get,
@@ -2170,10 +2274,36 @@ async def recommend(req: RecommendRequest, request: Request):
                 t3 = time.perf_counter()
                 if enricher is not None:
                     await enricher.ensure_details(_detail_sample(watched_films, 24))
+                    # One cached filmography request per favorite director lets
+                    # us identify their watchlist titles before shortlist pruning,
+                    # without downloading credits for every candidate.
+                    director_movies = await enricher.director_movie_ids(
+                        favorite_directors
+                    )
+                    for film in watchlist_films:
+                        if film.director or not film.tmdb_id:
+                            continue
+                        for director_name, movie_ids in director_movies.items():
+                            if film.tmdb_id in movie_ids:
+                                film.director = director_name
+                                break
                 candidate_count = settings.num_recommendations * 2
-                candidates = rank_watchlist(watched_films, watchlist_films, n=candidate_count)
+                director_pool = rank_watchlist(
+                    watched_films,
+                    watchlist_films,
+                    n=min(len(watchlist_films), candidate_count * 4),
+                    favorite_directors=favorite_directors,
+                    director_boost=getattr(settings, "favorite_director_boost", 0.08),
+                )
                 if enricher is not None:
-                    await enricher.ensure_details(candidates)
+                    await enricher.ensure_details(director_pool)
+                candidates = rank_watchlist(
+                    watched_films,
+                    director_pool,
+                    n=candidate_count,
+                    favorite_directors=favorite_directors,
+                    director_boost=getattr(settings, "favorite_director_boost", 0.08),
+                )
                 rank_ms = round((time.perf_counter() - t3) * 1000)
                 log.warning("⏱ tfidf rank      %.2fs  (candidates=%d)", time.perf_counter() - t3, len(candidates))
 
@@ -2275,7 +2405,10 @@ async def random_pick(req: RandomRequest, request: Request):
         if entry is not None:
             cached, fresh = entry
             if not fresh:
-                enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+                enricher = (
+                    Enricher(settings.tmdb_api_key, cache, asset_store=_auth_service())
+                    if settings.has_tmdb else None
+                )
                 full_entry = await asyncio.to_thread(
                     pcache.get_with_freshness,
                     "films_full_refresh",
@@ -2354,9 +2487,25 @@ async def random_pick(req: RandomRequest, request: Request):
 
         yield _sse({"type": "step", "step": "enriching"})
         if settings.has_tmdb:
-            enricher = Enricher(settings.tmdb_api_key, cache)
+            enricher = Enricher(
+                settings.tmdb_api_key, cache, asset_store=_auth_service()
+            )
             films = await enricher.enrich(chosen)
+            final_misses = [
+                source
+                for source, film in zip(chosen, films)
+                if not film.poster_url and source.poster_resolver_url
+            ]
+            if final_misses:
+                await resolve_missing_posters(final_misses)
+                repaired = []
+                for source, film in zip(chosen, films):
+                    if not film.poster_url and source.poster_url:
+                        film.poster_url = source.poster_url
+                        repaired.append(film)
+                await enricher.save_film_assets(repaired)
         else:
+            await resolve_missing_posters(chosen)
             films = [
                 EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
                 for f in chosen
@@ -2589,7 +2738,10 @@ async def blend(req: BlendRequest, request: Request):
             if supabase_client is not None:
                 await asyncio.to_thread(upsert_user, supabase_client, req.username1)
                 await asyncio.to_thread(upsert_user, supabase_client, req.username2)
-            enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+            enricher = (
+                Enricher(settings.tmdb_api_key, cache, asset_store=_auth_service())
+                if settings.has_tmdb else None
+            )
 
             watched_kwargs = dict(
                 delay=settings.scrape_delay, max_pages=settings.watched_max_pages,
