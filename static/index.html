@@ -130,6 +130,37 @@ tailwind.config = {
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
   }
 
+  #view-auth::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image: url('/static/criterion-closet.jpeg');
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+  #view-auth::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.30);
+  }
+  .auth-info-dialog {
+    width: min(92vw, 520px);
+    margin: auto;
+    padding: 0;
+    color: #e0e2e6;
+    background: transparent;
+    border: 0;
+  }
+  .auth-info-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(5px);
+  }
+
   /* Gradient text utility */
   .text-gradient-green {
     background: linear-gradient(135deg, #43fe6d 0%, #00e054 60%, #40bcf4 100%);
@@ -267,11 +298,16 @@ tailwind.config = {
 
 <!-- ═══════════════════════════  HEADER  ═══════════════════════════ -->
 <header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
-  <div class="flex items-center justify-between px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto">
-    <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
+  <div class="grid grid-cols-[1fr_auto_1fr] items-center px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto gap-2">
+    <button id="header-how-it-works" class="hidden justify-self-start font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors text-left" type="button">
+      <span class="hidden sm:inline">Program </span>nasıl çalışır?
     </button>
-    <div class="font-headline-md text-headline-md tracking-tighter text-gradient-green">MOVIEBOXD · AI</div>
-    <div id="header-account" class="hidden relative items-center gap-2">
+    <button id="btn-home" class="justify-self-center font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="Ana sayfa">
+      MOVIEBOXD · AI
+    </button>
+    <div class="justify-self-end flex items-center">
+      <button id="header-privacy" class="hidden font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors" type="button">Gizlilik</button>
+      <div id="header-account" class="hidden relative items-center gap-2">
       <button id="btn-account-menu" class="flex items-center gap-2 text-on-surface-variant hover:text-on-surface transition-colors" aria-label="Profil menüsü" aria-expanded="false">
         <img id="header-avatar" class="hidden w-8 h-8 rounded-full object-cover border border-outline-variant/40" alt=""/>
         <span id="header-username" class="hidden sm:inline font-label-md text-label-md"></span>
@@ -287,13 +323,48 @@ tailwind.config = {
         <button id="menu-delete-data" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
         <button id="btn-logout" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
       </div>
+      </div>
     </div>
   </div>
 </header>
 
+<dialog id="dialog-how-it-works" class="auth-info-dialog">
+  <div class="glass-panel rounded-xl p-6 md:p-8 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Movieboxd · AI</span>
+        <h2 class="font-headline-md text-headline-md text-on-surface mt-2">Program nasıl çalışır?</h2>
+      </div>
+      <button type="button" data-close-dialog="dialog-how-it-works" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <ol class="mt-5 space-y-3 font-body-md text-body-md text-on-surface-variant">
+      <li><strong class="text-on-surface">1.</strong> Letterboxd kullanıcı adınla profil sahipliğini doğrularsın.</li>
+      <li><strong class="text-on-surface">2.</strong> Herkese açık izleme geçmişin ve watchlist’in doğrudan Letterboxd’dan okunur.</li>
+      <li><strong class="text-on-surface">3.</strong> Zevk profilin çıkarılır; watchlist’inden sana uygun beş film önerilir.</li>
+    </ol>
+  </div>
+</dialog>
+
+<dialog id="dialog-privacy" class="auth-info-dialog">
+  <div class="glass-panel rounded-xl p-6 md:p-8 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Veri yaklaşımı</span>
+        <h2 class="font-headline-md text-headline-md text-on-surface mt-2">Gizlilik</h2>
+      </div>
+      <button type="button" data-close-dialog="dialog-privacy" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="mt-5 space-y-3 font-body-md text-body-md text-on-surface-variant">
+      <p>Yalnızca herkese açık Letterboxd profil verileri okunur. Letterboxd parolan hiçbir zaman istenmez.</p>
+      <p>Movieboxd parolan Supabase Auth tarafından korunur; uygulama tablolarına parola veya parola özeti yazılmaz.</p>
+      <p>Hesabındaki “Verimi sil” seçeneğiyle profilini, tercihlerini ve ilişkili verilerini silebilirsin.</p>
+    </div>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
 <div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
-  <div class="absolute inset-0 pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
+  <div class="absolute inset-0 z-[2] pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
   <main class="relative z-10 w-full max-w-[460px] glass-panel rounded-xl p-6 md:p-8">
     <div class="mb-6">
       <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Kişisel sinema profilin</span>
@@ -1103,11 +1174,17 @@ function setMode(mode) {
   $('idle-description').textContent = h.desc;
 }
 
+function setAuthHeaderLinks(visible) {
+  $('header-how-it-works').classList.toggle('hidden', !visible);
+  $('header-privacy').classList.toggle('hidden', !visible);
+}
+
 function showView(name) {
   ['auth', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'loading', 'blend-loading'].includes(name));
+  setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
 }
 
 function setIdleError(msg) {
@@ -2606,6 +2683,11 @@ function handleFeedbackHistoryClick(event) {
   if (button) undoRecommendationFeedback(button);
 }
 
+function openInfoDialog(id) {
+  const dialog = $(id);
+  if (dialog && !dialog.open) dialog.showModal();
+}
+
 // ── Event listeners ────────────────────────────────────────────────────────
 $('login-form').addEventListener('submit', loginAccount);
 $('register-form').addEventListener('submit', startRegistration);
@@ -2627,6 +2709,16 @@ $('btn-reset-back').addEventListener('click', () => setAuthMode('login'));
 $('btn-reset-start').addEventListener('click', startPasswordReset);
 $('btn-reset-finish').addEventListener('click', finishPasswordReset);
 $('btn-logout').addEventListener('click', logoutAccount);
+$('header-how-it-works').addEventListener('click', () => openInfoDialog('dialog-how-it-works'));
+$('header-privacy').addEventListener('click', () => openInfoDialog('dialog-privacy'));
+document.querySelectorAll('[data-close-dialog]').forEach(button => {
+  button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
+});
+[$('dialog-how-it-works'), $('dialog-privacy')].forEach(dialog => {
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) dialog.close();
+  });
+});
 $('btn-account-menu').addEventListener('click', event => {
   event.stopPropagation();
   toggleAccountMenu();
@@ -2677,7 +2769,7 @@ $('blend-user-suggestions').addEventListener('click', event => {
 
 $('btn-home').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView('idle');
+  showView(_authEnabled && !_account ? 'auth' : 'idle');
   setIdleError(null);
   setIdleNotice(null);
 });
