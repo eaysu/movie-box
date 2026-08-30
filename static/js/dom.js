@@ -15,6 +15,14 @@ export function safeImageURL(value) {
   }
 }
 
+const _FILM_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,159}$/;
+
+// Public Letterboxd film page for a slug (used to make posters clickable).
+export function letterboxdFilmURL(slug) {
+  const clean = String(slug || '').trim().toLowerCase();
+  return _FILM_SLUG_RE.test(clean) ? `https://letterboxd.com/film/${clean}/` : '';
+}
+
 // Failed artwork is replaced by the adjacent accessible text fallback.
 export function posterErr(img) {
   img.hidden = true;

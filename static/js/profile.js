@@ -1,9 +1,10 @@
-import { escapeHTML, safeImageURL } from './dom.js';
+import { escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
 
 export function directorFilmTile(film) {
   const poster = safeImageURL(film.poster_url);
   const title = escapeHTML(film.title || '');
   const year = film.year ? escapeHTML(String(film.year)) : '';
+  const href = letterboxdFilmURL(film.slug);
   const vote = film.user_rating
     ? `<span class="absolute inset-x-1 bottom-1 flex items-center justify-center gap-0.5 rounded bg-black/80 py-0.5 text-[10px] font-bold text-primary-container"><span class="material-symbols-outlined text-[11px]" style="font-variation-settings:'FILL' 1">star</span>${Number(film.user_rating).toFixed(1)}</span>`
     : '';
@@ -11,8 +12,9 @@ export function directorFilmTile(film) {
   const inner = poster
     ? `<img src="${poster}" alt="${title}" loading="lazy" onerror="posterErr(this)" class="absolute inset-0 w-full h-full object-cover"/><div hidden>${textFallback}</div>`
     : textFallback;
+  const art = `<div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-surface-container ring-1 ring-outline-variant/20 transition-transform duration-200 hover:-translate-y-0.5 hover:ring-primary-container/40">${inner}${vote}</div>`;
   return `<div>
-    <div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-surface-container ring-1 ring-outline-variant/20">${inner}${vote}</div>
+    ${href ? `<a href="${href}" target="_blank" rel="noopener" title="${title} — Letterboxd">${art}</a>` : art}
     <p class="mt-1 text-[10px] leading-tight text-on-surface-variant line-clamp-2">${title}</p>
     ${year ? `<span class="text-[9px] text-on-surface-variant/45">${year}</span>` : ''}
   </div>`;

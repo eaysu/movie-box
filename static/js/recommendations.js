@@ -1,6 +1,13 @@
-import { escapeHTML, safeImageURL } from './dom.js';
+import { escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
 
 export function createRecommendationCards(buildFeedbackActions) {
+// Make a poster clickable through to its Letterboxd page.
+function posterLink(inner, film) {
+  const href = letterboxdFilmURL(film && film.slug);
+  return href
+    ? `<a href="${href}" target="_blank" rel="noopener" title="${escapeHTML(film.title || '')} — Letterboxd" class="block w-full h-full">${inner}</a>`
+    : inner;
+}
 function buildHeroCard(film) {
   const title = escapeHTML(film.title);
   const director = escapeHTML(film.director);
@@ -27,7 +34,7 @@ function buildHeroCard(film) {
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
       <div class="md:w-[260px] shrink-0 aspect-[2/3] md:aspect-auto md:h-auto overflow-hidden relative bg-surface-container">
-        ${poster}
+        ${posterLink(poster, film)}
         <div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/60 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-surface-container-lowest/30 pointer-events-none"></div>
         <div class="absolute top-3 left-3 px-3 py-1 rounded-full bg-primary-container/90 backdrop-blur-sm font-label-md text-label-md text-on-primary-container font-bold">#1</div>
       </div>
@@ -67,7 +74,7 @@ function buildAltCard(film, idx) {
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
-        ${poster}
+        ${posterLink(poster, film)}
         <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-surface-container-lowest/80 to-transparent pointer-events-none"></div>
         <div class="absolute top-2 left-2 w-7 h-7 rounded-full bg-surface-container/80 backdrop-blur-sm flex items-center justify-center font-bold text-xs ${ac}">#${idx + 2}</div>
       </div>
@@ -112,7 +119,7 @@ function buildRandomCard(film) {
   return `
     <article class="reco-card glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
       <div class="md:w-[260px] shrink-0 aspect-[2/3] md:aspect-auto md:h-auto overflow-hidden relative bg-surface-container">
-        ${poster}
+        ${posterLink(poster, film)}
         <div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest/60 via-transparent to-transparent md:bg-gradient-to-r md:from-transparent md:to-surface-container-lowest/30 pointer-events-none"></div>
         <div class="absolute top-3 left-3 px-2 py-1 rounded-full bg-tertiary-container/90 backdrop-blur-sm">
           <span class="material-symbols-outlined text-on-tertiary-container" style="font-size:16px;font-variation-settings:'FILL' 1">shuffle</span>

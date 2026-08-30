@@ -1,4 +1,4 @@
-import { $, escapeHTML, safeImageURL } from './dom.js';
+import { $, escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
 import {
   API_BASE,
   apiJSON,
@@ -743,8 +743,13 @@ function renderPersistedProfile(data) {
              <strong class="mt-3 font-label-md text-label-md text-on-surface-variant line-clamp-3">${title}</strong>
              ${year ? `<span class="mt-1 font-label-sm text-label-sm text-on-surface-variant/50">${year}</span>` : ''}
            </div>`;
+      const href = letterboxdFilmURL(film.slug);
+      const openTag = href
+        ? `<a href="${href}" target="_blank" rel="noopener" title="${title} — Letterboxd" class="group block relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25 shadow-[0_26px_60px_-20px_rgba(0,0,0,.65)] transition-transform duration-300 hover:-translate-y-1.5 hover:ring-primary-container/40">`
+        : `<article class="group relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25 shadow-[0_26px_60px_-20px_rgba(0,0,0,.65)] transition-transform duration-300 hover:-translate-y-1.5">`;
+      const closeTag = href ? '</a>' : '</article>';
       return poster
-        ? `<article class="group relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25 shadow-[0_26px_60px_-20px_rgba(0,0,0,.65)] transition-transform duration-300 hover:-translate-y-1.5">
+        ? `${openTag}
              <img src="${poster}" alt="${title}" onerror="posterErr(this)" class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]" loading="lazy"/>
              <div hidden>${emptyCard}</div>
              <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
@@ -753,10 +758,10 @@ function renderPersistedProfile(data) {
                <strong class="block font-headline-md text-[14px] md:text-[15px] text-white leading-tight line-clamp-2">${title}</strong>
                ${year ? `<span class="mt-0.5 block font-label-sm text-label-sm text-white/55">${year}</span>` : ''}
              </div>
-           </article>`
-        : `<article class="relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25">
+           ${closeTag}`
+        : `${href ? openTag : '<article class="relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25">'}
              ${badge}${emptyCard}
-           </article>`;
+           ${href ? closeTag : '</article>'}`;
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 
