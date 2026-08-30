@@ -69,12 +69,12 @@ def _top_weighted(values: dict[str, float], limit: int) -> list[str]:
 
 
 def _director_detail(
-    watched: list[EnrichedFilm], names: list[str], *, per_director: int = 10
+    watched: list[EnrichedFilm], names: list[str], *, per_director: int = 60
 ) -> list[dict]:
-    """For each top director, the films of theirs the user has watched.
+    """For each top director, every film of theirs the user has watched.
 
-    `watched` is recency-ordered, so the first `per_director` are the most
-    recently seen.
+    Films are ordered by the user's own rating first (their vote is what
+    matters), then by recency; `watched` is already recency-ordered.
     """
     detail: list[dict] = []
     for name in names:
@@ -91,6 +91,11 @@ def _director_detail(
         ]
         if not films:
             continue
+        # Stable sort: rated films first (highest vote first), then unrated in
+        # recency order.
+        films.sort(
+            key=lambda f: -(f["user_rating"] if f["user_rating"] is not None else -1.0)
+        )
         ratings = [f["user_rating"] for f in films if f["user_rating"] is not None]
         detail.append(
             {
@@ -267,7 +272,7 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
             if film.director:
                 director_scores[film.director] += _recency_weight(index)
 
-    top_directors = _top_weighted(director_scores, 3)
+    top_directors = _top_weighted(director_scores, 10)
     top_genres = _top_weighted(genre_scores, 3)
     top_keywords = _top_weighted(keyword_scores, 5)
     metadata_coverage = round(metadata_points / len(watched) * 100)

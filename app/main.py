@@ -1357,23 +1357,26 @@ class _SyncPipeline:
         enricher = self._enricher()
         if enricher is None:
             return []
-        films = [
-            EnrichedFilm(
-                title=row.get("title") or "",
-                year=row.get("release_year"),
-                slug=row.get("film_slug") or row.get("slug") or "",
-                tmdb_id=row.get("tmdb_id"),
-            )
+        # A full enrich (search + details) so this pass also fills poster_url /
+        # tmdb_id for rows the search step missed, not just director/keywords.
+        seeds = [
+            {
+                "slug": row.get("film_slug") or row.get("slug") or "",
+                "title": row.get("title") or "",
+                "year": row.get("release_year"),
+            }
             for row in rows
-            if row.get("tmdb_id") and (row.get("film_slug") or row.get("slug"))
+            if row.get("film_slug") or row.get("slug")
         ]
-        detailed = await enricher.ensure_details(films)
+        detailed = await enricher.enrich(seeds, include_details=True)
         return [
             {
                 "slug": film.slug,
+                "tmdb_id": film.tmdb_id,
                 "director": film.director or "",
                 "genres": film.genres or [],
                 "keywords": film.keywords or [],
+                "poster_url": film.poster_url or "",
                 "details_loaded": bool(film.details_loaded),
             }
             for film in detailed
@@ -1403,10 +1406,49 @@ class _SyncPipeline:
             )
             for row in rows
         ]
+        enricher = self._enricher()
+        # Backfill posters for the directors we're about to surface — covers
+        # rows crawled before poster_url was persisted, cache-first so it's cheap.
+        if enricher is not None:
+            from collections import Counter as _Counter
+
+            top_dirs = {
+                name
+                for name, _ in _Counter(
+                    film.director for film in watched if film.director
+                ).most_common(12)
+            }
+            need_poster = [
+                film
+                for film in watched
+                if film.director in top_dirs and not film.poster_url
+            ][:400]
+            if need_poster:
+                with contextlib.suppress(Exception):
+                    refreshed = await enricher.enrich(
+                        [
+                            {"slug": f.slug, "title": f.title, "year": f.year}
+                            for f in need_poster
+                        ],
+                        include_details=False,
+                    )
+                    by_slug = {r.slug: r for r in refreshed if r.slug}
+                    patch = []
+                    for film in need_poster:
+                        hit = by_slug.get(film.slug)
+                        if hit and hit.poster_url:
+                            film.poster_url = hit.poster_url
+                            patch.append(
+                                {"slug": film.slug, "poster_url": hit.poster_url}
+                            )
+                    if patch:
+                        await asyncio.to_thread(
+                            service.save_watched_films, account.id, patch
+                        )
+
         profile = await scrape_profile(
             account.username, max_retries=self.settings.scrape_max_retries
         )
-        enricher = self._enricher()
         if enricher is not None:
             favorites = await enricher.enrich(
                 profile.favorite_films, include_details=False
@@ -1421,6 +1463,15 @@ class _SyncPipeline:
                 )
                 for film in profile.favorite_films
             ]
+        # Fill any Fav 4 poster we already have from the watched-history rows.
+        row_poster = {
+            row.get("film_slug"): row.get("poster_url")
+            for row in rows
+            if row.get("poster_url")
+        }
+        for fav in favorites:
+            if not fav.poster_url and row_poster.get(fav.slug):
+                fav.poster_url = row_poster[fav.slug]
         taste = build_taste_profile(watched)
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
         taste.personality = personality_from_favorites(favorites)

@@ -79,9 +79,18 @@ class TasteProfileTests(unittest.TestCase):
 
         profile = build_taste_profile(watched)
 
-        self.assertEqual(profile.top_directors, ["First", "Second", "Third"])
+        self.assertEqual(profile.top_directors[:3], ["First", "Second", "Third"])
         self.assertEqual(profile.favorite_director, "First")
         self.assertEqual(profile.algorithm_version, "taste-v3")
+
+    def test_top_directors_returns_up_to_ten_ranked(self):
+        watched = [
+            EnrichedFilm(title=f"f{i}", slug=f"f{i}", director=f"D{i:02d}", user_rating=4.0)
+            for i in range(14)
+        ]
+        profile = build_taste_profile(watched)
+        self.assertEqual(len(profile.top_directors), 10)
+        self.assertEqual(len(profile.top_directors_detail), 10)
 
     def test_top_directors_detail_lists_the_directors_watched_films(self):
         watched = [
