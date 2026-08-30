@@ -43,8 +43,11 @@ CREATE TABLE IF NOT EXISTS public.taste_profiles (
   summary             TEXT NOT NULL DEFAULT '',
   favorite_director   TEXT NOT NULL DEFAULT '',
   top_directors       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  top_directors_detail JSONB NOT NULL DEFAULT '[]'::jsonb,
   top_genres          JSONB NOT NULL DEFAULT '[]'::jsonb,
   top_keywords        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  analysis            JSONB NOT NULL DEFAULT '[]'::jsonb,
+  personality         TEXT NOT NULL DEFAULT '',
   sample_size         INTEGER NOT NULL DEFAULT 0,
   rated_count         INTEGER NOT NULL DEFAULT 0,
   metadata_coverage   INTEGER NOT NULL DEFAULT 0 CHECK (metadata_coverage BETWEEN 0 AND 100),
@@ -60,6 +63,12 @@ ALTER TABLE public.taste_profiles
   ADD COLUMN IF NOT EXISTS source_fingerprint TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.taste_profiles
   ADD COLUMN IF NOT EXISTS top_directors JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.taste_profiles
+  ADD COLUMN IF NOT EXISTS top_directors_detail JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.taste_profiles
+  ADD COLUMN IF NOT EXISTS analysis JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.taste_profiles
+  ADD COLUMN IF NOT EXISTS personality TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS public.profile_favorites (
   user_id       BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -85,6 +94,7 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
   genres         JSONB NOT NULL DEFAULT '[]'::jsonb,
   keywords       JSONB NOT NULL DEFAULT '[]'::jsonb,
   user_rating    REAL,
+  poster_url     TEXT,
   watched_rank   INTEGER,          -- diary position; 0 = most recent (chronological proxy)
   details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
   first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -92,8 +102,13 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
   PRIMARY KEY (user_id, film_slug)
 );
 
+ALTER TABLE public.user_watched_films
+  ADD COLUMN IF NOT EXISTS poster_url TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
   ON public.user_watched_films (user_id, watched_rank);
+CREATE INDEX IF NOT EXISTS idx_user_watched_films_director
+  ON public.user_watched_films (user_id, director);
 
 -- Checkpointed background crawl for the one-time full history sweep. One row per
 -- user; a run advances cursor_page under a per-run time budget and can be resumed
@@ -262,7 +277,8 @@ BEGIN
   END IF;
 
   INSERT INTO public.taste_profiles (
-    user_id, summary, favorite_director, top_directors, top_genres, top_keywords,
+    user_id, summary, favorite_director, top_directors, top_directors_detail,
+    top_genres, top_keywords, analysis, personality,
     sample_size, rated_count, metadata_coverage, confidence_level,
     confidence_score, algorithm_version, source_fingerprint, generated_at, updated_at
   ) VALUES (
@@ -270,8 +286,11 @@ BEGIN
     COALESCE(p_taste->>'summary', ''),
     COALESCE(p_taste->>'favorite_director', ''),
     COALESCE(p_taste->'top_directors', '[]'::jsonb),
+    COALESCE(p_taste->'top_directors_detail', '[]'::jsonb),
     COALESCE(p_taste->'top_genres', '[]'::jsonb),
     COALESCE(p_taste->'top_keywords', '[]'::jsonb),
+    COALESCE(p_taste->'analysis', '[]'::jsonb),
+    COALESCE(p_taste->>'personality', ''),
     COALESCE((p_taste->>'sample_size')::INTEGER, 0),
     COALESCE((p_taste->>'rated_count')::INTEGER, 0),
     COALESCE((p_taste->>'metadata_coverage')::INTEGER, 0),
@@ -286,8 +305,11 @@ BEGIN
     summary = EXCLUDED.summary,
     favorite_director = EXCLUDED.favorite_director,
     top_directors = EXCLUDED.top_directors,
+    top_directors_detail = EXCLUDED.top_directors_detail,
     top_genres = EXCLUDED.top_genres,
     top_keywords = EXCLUDED.top_keywords,
+    analysis = EXCLUDED.analysis,
+    personality = EXCLUDED.personality,
     sample_size = EXCLUDED.sample_size,
     rated_count = EXCLUDED.rated_count,
     metadata_coverage = EXCLUDED.metadata_coverage,
@@ -353,7 +375,7 @@ BEGIN
 
   INSERT INTO public.user_watched_films (
     user_id, film_slug, title, release_year, tmdb_id, director, genres, keywords,
-    user_rating, watched_rank, details_loaded, updated_at
+    user_rating, poster_url, watched_rank, details_loaded, updated_at
   )
   SELECT
     p_user_id,
@@ -365,6 +387,7 @@ BEGIN
     COALESCE(item->'genres', '[]'::jsonb),
     COALESCE(item->'keywords', '[]'::jsonb),
     NULLIF(item->>'user_rating', '')::REAL,
+    NULLIF(item->>'poster_url', ''),
     NULLIF(item->>'watched_rank', '')::INTEGER,
     COALESCE((item->>'details_loaded')::BOOLEAN, FALSE),
     now()
@@ -378,6 +401,7 @@ BEGIN
     genres = CASE WHEN EXCLUDED.genres <> '[]'::jsonb THEN EXCLUDED.genres ELSE public.user_watched_films.genres END,
     keywords = CASE WHEN EXCLUDED.keywords <> '[]'::jsonb THEN EXCLUDED.keywords ELSE public.user_watched_films.keywords END,
     user_rating = COALESCE(EXCLUDED.user_rating, public.user_watched_films.user_rating),
+    poster_url = COALESCE(EXCLUDED.poster_url, public.user_watched_films.poster_url),
     watched_rank = COALESCE(EXCLUDED.watched_rank, public.user_watched_films.watched_rank),
     details_loaded = public.user_watched_films.details_loaded OR EXCLUDED.details_loaded,
     updated_at = now();

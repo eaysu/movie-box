@@ -26,8 +26,11 @@ class TasteProfileSnapshot:
     summary: str
     favorite_director: str = ""
     top_directors: list[str] = field(default_factory=list)
+    top_directors_detail: list[dict] = field(default_factory=list)
     top_genres: list[str] = field(default_factory=list)
     top_keywords: list[str] = field(default_factory=list)
+    analysis: list[str] = field(default_factory=list)
+    personality: str = ""
     sample_size: int = 0
     rated_count: int = 0
     metadata_coverage: int = 0
@@ -63,6 +66,137 @@ def _top_weighted(values: dict[str, float], limit: int) -> list[str]:
             values.items(), key=lambda item: (-item[1], item[0].lower())
         )[:limit]
     ]
+
+
+def _director_detail(
+    watched: list[EnrichedFilm], names: list[str], *, per_director: int = 10
+) -> list[dict]:
+    """For each top director, the films of theirs the user has watched.
+
+    `watched` is recency-ordered, so the first `per_director` are the most
+    recently seen.
+    """
+    detail: list[dict] = []
+    for name in names:
+        films = [
+            {
+                "title": film.title,
+                "slug": film.slug,
+                "year": film.year,
+                "poster_url": film.poster_url or "",
+                "user_rating": film.user_rating,
+            }
+            for film in watched
+            if film.director == name
+        ]
+        if not films:
+            continue
+        ratings = [f["user_rating"] for f in films if f["user_rating"] is not None]
+        detail.append(
+            {
+                "name": name,
+                "count": len(films),
+                "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
+                "films": films[:per_director],
+            }
+        )
+    return detail
+
+
+def personality_from_favorites(favorites) -> str:
+    """Deterministic Fav-4 personality read — the LLM overrides this when available."""
+    picks = [f for f in (favorites or [])[:4] if getattr(f, "title", "")]
+    if not picks:
+        return ""
+    genre_counts: dict[str, int] = defaultdict(int)
+    directors: list[str] = []
+    for film in picks:
+        for genre in getattr(film, "genres", None) or []:
+            genre_counts[genre] += 1
+        if getattr(film, "director", ""):
+            directors.append(film.director)
+    top = [g for g, _ in sorted(genre_counts.items(), key=lambda x: (-x[1], x[0]))[:3]]
+    titles = ", ".join(f.title for f in picks)
+    parts = [f"Favori dörtlün ({titles})"]
+    if top:
+        parts.append(f"{', '.join(top)} tonlarında buluşuyor")
+    unique_directors = set(directors)
+    if len(unique_directors) == 1:
+        parts.append(f"ve {directors[0]} imzasına açık bir bağlılık gösteriyor")
+    elif len(unique_directors) >= 3:
+        parts.append("ve tek bir yönetmene değil güçlü auteur seslerine yöneliyor")
+    return " ".join(parts).strip() + "."
+
+
+def _deterministic_analysis(
+    watched: list[EnrichedFilm],
+    *,
+    top_genres: list[str],
+    top_directors: list[str],
+    top_keywords: list[str],
+    director_scores: dict[str, float],
+) -> list[str]:
+    """A multi-part deterministic read used until the LLM prose lands."""
+    lines: list[str] = []
+
+    decades: dict[int, float] = defaultdict(float)
+    for index, film in enumerate(watched):
+        if film.year:
+            decades[(int(film.year) // 10) * 10] += _recency_weight(index)
+    if decades:
+        ranked = sorted(decades.items(), key=lambda item: -item[1])[:2]
+        labels = [f"{decade}'ler" for decade, _ in ranked]
+        lines.append(
+            f"Ağırlık merkezin {' ve '.join(labels)} sineması; "
+            "yakın dönem izlemelerin bu dönemlere kayıyor."
+        )
+
+    rated = [float(f.user_rating) for f in watched if f.user_rating is not None]
+    if len(rated) >= 8:
+        avg = sum(rated) / len(rated)
+        weak = sum(1 for r in rated if r <= 2.5) / len(rated)
+        if avg >= 3.9:
+            tone = "cömert bir puanlayıcısın"
+        elif avg <= 3.1:
+            tone = "sert bir puanlayıcısın"
+        else:
+            tone = "dengeli puan veriyorsun"
+        tail = (
+            f"; izlediklerinin %{round(weak * 100)}'ini zayıf buluyorsun."
+            if weak >= 0.15
+            else "."
+        )
+        lines.append(f"Puan ortalaman {avg:.1f}/5 — {tone}{tail}")
+
+    distinct = {g for f in watched for g in (f.genres or [])}
+    if len(top_genres) >= 2:
+        if len(distinct) >= 12:
+            spread = "Tür yelpazen geniş"
+        elif len(distinct) <= 6:
+            spread = "Birkaç türe sadıksın"
+        else:
+            spread = "Tür tercihlerin odaklı"
+        lines.append(f"{spread}; en baskın damarlar {', '.join(top_genres[:3])}.")
+
+    if director_scores and top_directors:
+        total = sum(director_scores.values())
+        share = round(
+            sum(director_scores.get(d, 0.0) for d in top_directors[:3]) / total * 100
+        ) if total else 0
+        if share >= 20:
+            lines.append(
+                f"Yönetmen bağlılığın belirgin: sinyalin ~%{share}'i "
+                f"{top_directors[0]} başta olmak üzere üç isimden geliyor."
+            )
+        elif share and share <= 8:
+            lines.append(
+                "Tek bir yönetmene bağlanmadan geniş bir auteur yelpazesi izliyorsun."
+            )
+
+    if len(top_keywords) >= 3:
+        lines.append(f"Tekrar eden temalar: {', '.join(top_keywords[:4])}.")
+
+    return lines[:4]
 
 
 def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
@@ -140,8 +274,16 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
         summary=summary,
         favorite_director=director,
         top_directors=top_directors,
+        top_directors_detail=_director_detail(watched, top_directors),
         top_genres=top_genres,
         top_keywords=top_keywords,
+        analysis=_deterministic_analysis(
+            watched,
+            top_genres=top_genres,
+            top_directors=top_directors,
+            top_keywords=top_keywords,
+            director_scores=director_scores,
+        ),
         sample_size=len(watched),
         rated_count=rated_count,
         metadata_coverage=metadata_coverage,

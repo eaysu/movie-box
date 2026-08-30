@@ -44,7 +44,7 @@ from .auth import (
 from .cache import Cache, LayeredCache
 from .database import delete_user, upsert_user, SupabaseCache
 from .enrich import Enricher, EnrichedFilm, close_tmdb_client
-from .llm import rank_candidates
+from .llm import analyze_taste, rank_candidates
 from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
@@ -60,6 +60,7 @@ from .scraper import (
 from .taste_profile import (
     TASTE_PROFILE_VERSION,
     build_taste_profile,
+    personality_from_favorites,
     taste_source_fingerprint,
 )
 from . import profile_sync
@@ -1225,6 +1226,7 @@ async def _provisional_profile_sync(
             ]
         taste = build_taste_profile(watched)
         taste.source_fingerprint = source_fingerprint
+        taste.personality = personality_from_favorites(favorites)
         await asyncio.to_thread(
             service.save_profile_snapshot,
             account,
@@ -1420,6 +1422,14 @@ class _SyncPipeline:
             ]
         taste = build_taste_profile(watched)
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
+        taste.personality = personality_from_favorites(favorites)
+        # Background pass: upgrade the deterministic prose with an LLM read.
+        with contextlib.suppress(Exception):
+            extra = await analyze_taste(self.settings, watched, favorites)
+            if extra.get("analysis"):
+                taste.analysis = extra["analysis"]
+            if extra.get("personality"):
+                taste.personality = extra["personality"]
         await asyncio.to_thread(
             service.save_profile_snapshot, account, profile, favorites, taste
         )

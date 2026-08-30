@@ -518,6 +518,7 @@ tailwind.config = {
           <div class="relative mt-6 pl-5">
             <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-gradient-to-b from-primary-container via-tertiary-container/60 to-transparent"></span>
             <p id="profile-taste-summary" class="font-headline-md text-[23px] md:text-[29px] xl:text-[33px] leading-[1.28] tracking-[-.025em] text-on-surface">Zevk profili hazırlanıyor…</p>
+            <div id="profile-analysis" class="hidden mt-4 flex-col gap-2.5"></div>
           </div>
 
           <div id="profile-genres" class="mt-6 flex flex-wrap gap-2.5"></div>
@@ -559,8 +560,39 @@ tailwind.config = {
       </div>
     </section>
 
+    <!-- ── En sevilen yönetmenler + Favori dört film ──────────────────── -->
+    <div class="profile-rise grid lg:grid-cols-[minmax(300px,340px)_1fr] gap-6 mt-6" style="animation-delay:.06s">
+      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
+        <div class="flex items-start justify-between gap-4 mb-7">
+          <div>
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Auteur radar</span>
+            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">En sevilen<br/>yönetmenler</h2>
+          </div>
+          <span class="material-symbols-outlined text-tertiary-container/40 text-[28px]">movie_edit</span>
+        </div>
+        <div id="profile-directors" class="flex flex-col gap-4"></div>
+      </section>
+
+      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
+        <div class="flex items-end justify-between gap-4 mb-7">
+          <div>
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Kişisel seçki</span>
+            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Favori dört film</h2>
+          </div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant/50 uppercase tracking-wide">Letterboxd Fav 4</span>
+        </div>
+        <div id="profile-favorites" class="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-5"></div>
+        <div id="profile-personality" class="hidden mt-6 rounded-2xl border border-secondary-container/20 bg-secondary-container/[0.06] p-5">
+          <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-secondary-container mb-2">
+            <span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">fingerprint</span>Fav 4 kişilik okuması
+          </span>
+          <p id="profile-personality-text" class="font-body-lg text-body-lg leading-[1.6] text-on-surface"></p>
+        </div>
+      </section>
+    </div>
+
     <!-- ── BU GECE · ne izlesen? / Blend ─────────────────────────────── -->
-    <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.06s">
+    <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.12s">
       <div class="flex items-start justify-between gap-4 mb-6">
         <div>
           <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Bu gece</span>
@@ -620,31 +652,6 @@ tailwind.config = {
       <div id="profile-action-error" class="hidden mt-4 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
       <div id="profile-action-notice" class="hidden mt-4 rounded-xl px-4 py-3 bg-primary-container/10 text-primary-container font-body-md text-body-md"></div>
     </section>
-
-    <!-- ── En sevilen yönetmenler + Favori dört film ──────────────────── -->
-    <div class="profile-rise grid lg:grid-cols-[minmax(300px,340px)_1fr] gap-6 mt-6" style="animation-delay:.08s">
-      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
-        <div class="flex items-start justify-between gap-4 mb-7">
-          <div>
-            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Auteur radar</span>
-            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">En sevilen<br/>yönetmenler</h2>
-          </div>
-          <span class="material-symbols-outlined text-tertiary-container/40 text-[28px]">movie_edit</span>
-        </div>
-        <div id="profile-directors" class="flex flex-col gap-4"></div>
-      </section>
-
-      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
-        <div class="flex items-end justify-between gap-4 mb-7">
-          <div>
-            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Kişisel seçki</span>
-            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Favori dört film</h2>
-          </div>
-          <span class="font-label-sm text-label-sm text-on-surface-variant/50 uppercase tracking-wide">Letterboxd Fav 4</span>
-        </div>
-        <div id="profile-favorites" class="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-5"></div>
-      </section>
-    </div>
   </main>
 </div>
 
@@ -1746,31 +1753,74 @@ function renderPersistedProfile(data) {
     $('profile-genres').innerHTML = genres.length
       ? genres.slice(0, 4).map(genre => `<span class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-primary-container/20 bg-primary-container/5 text-on-surface font-label-md text-label-md"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>${escapeHTML(genre)}</span>`).join('')
       : '<span class="text-on-surface-variant/60 text-sm">Tür sinyali henüz yeterli değil.</span>';
-    const directors = (taste.top_directors?.length ? taste.top_directors : [taste.favorite_director]).filter(Boolean).slice(0, 3);
     const directorRanks = [
       { tone: '#00e054', ghost: 'rgba(0,224,84,0.09)', chip: 'rgba(0,224,84,0.10)', ring: 'rgba(0,224,84,0.30)', label: 'En güçlü sinyal' },
       { tone: '#6ccdff', ghost: 'rgba(108,205,255,0.09)', chip: 'rgba(108,205,255,0.10)', ring: 'rgba(108,205,255,0.30)', label: '2. sıra' },
       { tone: '#ff8000', ghost: 'rgba(255,128,0,0.10)', chip: 'rgba(255,128,0,0.12)', ring: 'rgba(255,128,0,0.32)', label: '3. sıra' },
     ];
-    $('profile-directors').innerHTML = directors.length
-      ? directors.map((director, index) => {
+    const directorDetail = (taste.top_directors_detail || []).filter(item => item && item.name).slice(0, 3);
+    const directorNames = directorDetail.length
+      ? directorDetail.map(item => item.name)
+      : (taste.top_directors?.length ? taste.top_directors : [taste.favorite_director]).filter(Boolean).slice(0, 3);
+
+    $('profile-directors').innerHTML = directorNames.length
+      ? directorNames.map((director, index) => {
           const rank = directorRanks[index] || directorRanks[0];
           const ordinal = String(index + 1).padStart(2, '0');
           const initial = escapeHTML((director.trim()[0] || '?').toUpperCase());
+          const detail = directorDetail[index];
+          const films = (detail && detail.films) || [];
+          const meta = detail
+            ? `${detail.count} film${detail.avg_rating ? ` · ort. ${Number(detail.avg_rating).toFixed(1)}★` : ''}`
+            : `${rank.label} · puan ağırlıklı`;
+          const strip = films.length ? `
+            <div id="director-films-${index}" class="hidden mt-4 -mx-1 px-1 overflow-x-auto no-scrollbar">
+              <div class="flex gap-2.5 w-max">
+                ${films.map(film => {
+                  const poster = safeImageURL(film.poster_url);
+                  const ft = escapeHTML(film.title || '');
+                  const fy = film.year ? `<span class="text-[10px] text-on-surface-variant/50">${escapeHTML(String(film.year))}</span>` : '';
+                  const fr = film.user_rating ? `<span class="absolute top-1 right-1 px-1 rounded bg-black/70 text-[9px] font-bold text-primary-container">${Number(film.user_rating).toFixed(1)}</span>` : '';
+                  return poster
+                    ? `<div class="w-[68px] shrink-0"><div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-surface-container ring-1 ring-outline-variant/20"><img src="${poster}" alt="${ft}" loading="lazy" class="absolute inset-0 w-full h-full object-cover"/>${fr}</div><p class="mt-1 text-[10px] leading-tight text-on-surface-variant line-clamp-2">${ft}</p>${fy}</div>`
+                    : `<div class="w-[68px] shrink-0"><div class="relative aspect-[2/3] rounded-lg bg-surface-container ring-1 ring-outline-variant/20 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[20px]">movie</span>${fr}</div><p class="mt-1 text-[10px] leading-tight text-on-surface-variant line-clamp-2">${ft}</p></div>`;
+                }).join('')}
+              </div>
+            </div>` : '';
+          const chevron = films.length
+            ? `<span class="material-symbols-outlined text-on-surface-variant/40 text-[20px] shrink-0 transition-transform" data-director-chevron>expand_more</span>`
+            : '';
+          const tag = films.length ? 'button' : 'div';
+          const attrs = films.length ? `type="button" data-director-toggle="${index}"` : '';
           return `
-          <div class="group relative overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container/45 p-5 md:p-6 transition-colors hover:bg-surface-container/70">
+          <${tag} ${attrs} class="group relative w-full text-left overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container/45 p-5 md:p-6 transition-colors hover:bg-surface-container/70">
             <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[118px] leading-none select-none" style="color:${rank.ghost}">${ordinal}</span>
             <div class="relative flex items-center gap-4">
               <span class="font-display-lg text-[26px] leading-none shrink-0" style="color:${rank.tone}">${ordinal}</span>
               <span class="w-11 h-11 shrink-0 rounded-full flex items-center justify-center font-headline-md text-[17px]" style="color:${rank.tone};background:${rank.chip};border:1px solid ${rank.ring}">${initial}</span>
-              <div class="min-w-0">
+              <div class="min-w-0 flex-grow">
                 <strong class="block font-headline-md text-[18px] md:text-[19px] text-on-surface truncate">${escapeHTML(director)}</strong>
-                <span class="font-label-sm text-label-sm text-on-surface-variant/55 uppercase tracking-wide">${rank.label} · puan ağırlıklı</span>
+                <span class="font-label-sm text-label-sm text-on-surface-variant/55 uppercase tracking-wide">${escapeHTML(meta)}</span>
               </div>
+              ${chevron}
             </div>
-          </div>`;
+            ${strip}
+          </${tag}>`;
         }).join('')
       : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için daha fazla metadata gerekiyor.</div>';
+
+    const analysisLines = (taste.analysis || []).filter(line => typeof line === 'string' && line.trim());
+    if (analysisLines.length) {
+      $('profile-analysis').innerHTML = analysisLines
+        .map(line => `<p class="font-body-md text-body-md leading-[1.6] text-on-surface-variant flex gap-2.5"><span class="mt-2 w-1 h-1 rounded-full bg-primary-container/70 shrink-0"></span><span>${escapeHTML(line)}</span></p>`)
+        .join('');
+      $('profile-analysis').classList.remove('hidden');
+      $('profile-analysis').classList.add('flex');
+    } else {
+      $('profile-analysis').classList.add('hidden');
+      $('profile-analysis').classList.remove('flex');
+    }
+
     const syncedAt = taste.updated_at || taste.generated_at;
     if (syncedAt) {
       $('profile-last-sync').innerHTML = `<span class="material-symbols-outlined text-[16px]">schedule</span>Son güncelleme · ${escapeHTML(new Date(syncedAt).toLocaleString('tr-TR'))}`;
@@ -1781,7 +1831,17 @@ function renderPersistedProfile(data) {
     $('profile-confidence-score').textContent = '—';
     $('profile-confidence-ring').style.strokeDashoffset = String(2 * Math.PI * 28);
     $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
+    $('profile-analysis').classList.add('hidden');
   }
+
+  const personality = (taste && taste.personality || '').trim();
+  if (personality) {
+    $('profile-personality-text').textContent = personality;
+    $('profile-personality').classList.remove('hidden');
+  } else {
+    $('profile-personality').classList.add('hidden');
+  }
+
   const favorites = data.favorite_films || [];
   $('profile-favorites').innerHTML = favorites.length
     ? favorites.slice(0, 4).map((film, index) => {
@@ -3189,6 +3249,16 @@ $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('btn-feedback-back').addEventListener('click', () => showView(homeView()));
+
+$('profile-directors').addEventListener('click', event => {
+  const card = event.target.closest('[data-director-toggle]');
+  if (!card) return;
+  const strip = $(`director-films-${card.dataset.directorToggle}`);
+  if (!strip) return;
+  const open = strip.classList.toggle('hidden');
+  const chevron = card.querySelector('[data-director-chevron]');
+  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+});
 
 // Profil ana ekranı — "Bu gece" aksiyonları
 $('profile-act-watch').addEventListener('click', () => openProfilePanel('watch'));

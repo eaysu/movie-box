@@ -173,3 +173,77 @@ async def rank_candidates(
             "benzerlik sıralaması kullanıldı."
         )
         return result
+
+
+_ANALYSIS_REASONING_MODELS = {
+    "gpt-5-mini-2025-08-07", "o3-mini", "o4-mini", "o1-mini", "o1", "o3",
+}
+
+
+def _taste_analysis_prompt(
+    watched: list[EnrichedFilm], favorites: list[EnrichedFilm]
+) -> str:
+    liked, _mode = _taste_references(watched, limit=45)
+    sample = liked or watched[:30]
+    watched_lines = "\n".join(f"- {_film_label(f)}" for f in sample)
+    fav_lines = "\n".join(
+        f"- {_film_label(f)}" for f in (favorites or [])[:4] if f.title
+    ) or "- (belirtilmemiş)"
+    return (
+        "Bir sinefilin izleme verisinden ZENGİN, SPESİFİK bir zevk analizi çıkar. "
+        "Sadece verilen filmlere dayan; klişe ve genel geçer laf yok. Türkçe yaz.\n\n"
+        f"Sevdiği / çok izlediği filmler:\n{watched_lines}\n\n"
+        f"Letterboxd Favori 4:\n{fav_lines}\n\n"
+        "Şu JSON'u döndür (başka hiçbir şey yazma):\n"
+        '{\n'
+        '  "analysis": ["3-5 cümle; her biri ayrı bir gözlem: dönem/coğrafya '
+        'eğilimi, tonal tercih, tekrar eden temalar, türler arası gerilim, neyden '
+        'kaçındığı, yönetmen-oyuncu örüntüleri"],\n'
+        '  "personality": "Favori 4 filmden yola çıkarak kişiliği hakkında 2-3 '
+        'cümlelik, iddialı ama filmlere dayanan bir okuma"\n'
+        '}'
+    )
+
+
+async def analyze_taste(
+    settings: Settings,
+    watched: list[EnrichedFilm],
+    favorites: list[EnrichedFilm] | None = None,
+) -> dict:
+    """LLM ile ayrıntılı zevk analizi + Fav 4 kişilik okuması.
+
+    LLM yoksa veya hata olursa {} döner; çağıran deterministik metni korur.
+    """
+    if not settings.has_openai or not watched:
+        return {}
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        model_id = _resolve_model(settings.openai_model)
+        if model_id in _ANALYSIS_REASONING_MODELS:
+            token_kwargs = {"max_completion_tokens": 4000}
+        else:
+            token_kwargs = {"max_tokens": 800}
+        response = await client.chat.completions.create(
+            model=model_id,
+            **token_kwargs,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _taste_analysis_prompt(watched, favorites or []),
+                }
+            ],
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        parsed = json.loads(raw)
+        analysis = [
+            line.strip()
+            for line in parsed.get("analysis", [])
+            if isinstance(line, str) and line.strip()
+        ][:5]
+        personality = str(parsed.get("personality", "")).strip()
+        return {"analysis": analysis, "personality": personality}
+    except Exception:  # noqa: BLE001 — deterministic fallback stays in place
+        return {}

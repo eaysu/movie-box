@@ -83,6 +83,54 @@ class TasteProfileTests(unittest.TestCase):
         self.assertEqual(profile.favorite_director, "First")
         self.assertEqual(profile.algorithm_version, "taste-v3")
 
+    def test_top_directors_detail_lists_the_directors_watched_films(self):
+        watched = [
+            EnrichedFilm(title="The Shining", slug="the-shining", year=1980,
+                         director="Stanley Kubrick", user_rating=5.0,
+                         poster_url="https://img/shining.jpg"),
+            EnrichedFilm(title="Barry Lyndon", slug="barry-lyndon", year=1975,
+                         director="Stanley Kubrick", user_rating=4.5),
+            EnrichedFilm(title="Solaris", slug="solaris", year=1972,
+                         director="Andrei Tarkovsky", user_rating=4.0),
+        ]
+
+        profile = build_taste_profile(watched)
+        detail = {d["name"]: d for d in profile.top_directors_detail}
+
+        self.assertEqual(detail["Stanley Kubrick"]["count"], 2)
+        self.assertEqual(detail["Stanley Kubrick"]["avg_rating"], 4.75)
+        slugs = [f["slug"] for f in detail["Stanley Kubrick"]["films"]]
+        self.assertEqual(slugs, ["the-shining", "barry-lyndon"])
+        self.assertEqual(
+            detail["Stanley Kubrick"]["films"][0]["poster_url"],
+            "https://img/shining.jpg",
+        )
+
+    def test_personality_from_favorites_reads_shared_genres_and_director(self):
+        from app.taste_profile import personality_from_favorites
+
+        self.assertEqual(personality_from_favorites([]), "")
+        favs = [
+            EnrichedFilm(title="2001", genres=["Sci-Fi", "Drama"], director="Stanley Kubrick"),
+            EnrichedFilm(title="A Clockwork Orange", genres=["Sci-Fi", "Crime"], director="Stanley Kubrick"),
+        ]
+        text = personality_from_favorites(favs)
+        self.assertIn("2001", text)
+        self.assertIn("Sci-Fi", text)
+        self.assertIn("Stanley Kubrick", text)
+
+    def test_analysis_is_a_multi_line_deterministic_read(self):
+        watched = [
+            EnrichedFilm(title=f"f{i}", slug=f"f{i}", year=1970 + (i % 3),
+                         director="D1" if i % 2 else "D2",
+                         genres=["Drama", "Mystery"], keywords=["memory", "grief"],
+                         user_rating=4.0)
+            for i in range(30)
+        ]
+        profile = build_taste_profile(watched)
+        self.assertGreaterEqual(len(profile.analysis), 2)
+        self.assertTrue(all(isinstance(line, str) for line in profile.analysis))
+
     def test_recency_decay_favours_recently_watched_over_equal_older_cluster(self):
         from app.taste_profile import _recency_weight
 
