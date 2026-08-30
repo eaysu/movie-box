@@ -281,7 +281,7 @@ onayı gelmeden uygulanmaz.
 - [ ] Browser integration test: yarıda kesilen gerçek stream ve kullanıcı iptali.
 - [ ] Recommendation eval'lerini CI'a ekle.
 - [x] Tailwind Play CDN yerine build-time statik CSS üret.
-- [ ] Netlify deployment yolunu düzelt veya artık kullanılmıyorsa kaldır.
+- [x] Kullanılmayan Netlify Lambda deployment yolu (`netlify.toml`, `netlify/functions/`) kaldırıldı; tek deploy hedefi Render.
 - [x] README, `.env.example` ve gerçek endpoint/model mimarisini eşitle.
 - [x] Frontend'i tek HTML dosyasından `api.js`, `auth.js`, `profile.js`,
   `recommendations.js`, `blend.js` ve DOM yardımcı modüllerine ayır.
