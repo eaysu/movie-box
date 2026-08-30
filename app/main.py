@@ -37,7 +37,6 @@ from .auth import (
     AuthService,
     BlendServiceError,
     InvalidCredentialsError,
-    RecommendationFeedbackError,
     VerificationError,
     validate_password,
 )
@@ -112,12 +111,6 @@ _auth_rate_limiter = SlidingWindowRateLimiter(
     burst=3,
     burst_seconds=30,
 )
-_feedback_rate_limiter = SlidingWindowRateLimiter(
-    limit=120,
-    window_seconds=60 * 60,
-    burst=20,
-    burst_seconds=60,
-)
 _readiness_lock = asyncio.Lock()
 _readiness_cache = {"checked_at": 0.0, "ready": False}
 
@@ -167,16 +160,6 @@ async def _enforce_auth_rate_limit(request: Request) -> None:
         raise HTTPException(
             status_code=429,
             detail="Çok fazla hesap isteği gönderildi. Lütfen biraz sonra tekrar dene.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
-
-async def _enforce_feedback_rate_limit(request: Request) -> None:
-    allowed, retry_after = await _feedback_rate_limiter.check(_client_ip(request))
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="Çok fazla öneri tercihi gönderildi. Lütfen biraz sonra tekrar dene.",
             headers={"Retry-After": str(retry_after)},
         )
 
@@ -308,20 +291,6 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
     raise HTTPException(
         status_code=status_code, detail=detail, headers={"X-Error-Code": code}
     ) from exc
-
-
-def _raise_feedback_http(exc: RecommendationFeedbackError) -> None:
-    errors = {
-        "invalid_feedback_action": (422, "Geçersiz öneri geri bildirimi."),
-        "invalid_film": (422, "Film bilgisi geçersiz."),
-        "active_account_not_found": (403, "Aktif hesap bulunamadı."),
-        "feedback_save_failed": (503, "Geri bildirim kaydedilemedi."),
-        "feedback_undo_failed": (503, "Geri bildirim geri alınamadı."),
-        "feedback_history_failed": (503, "Öneri geçmişi yüklenemedi."),
-        "feedback_filter_failed": (503, "Öneri tercihleri yüklenemedi."),
-    }
-    status_code, detail = errors.get(str(exc), (400, "Geri bildirim işlenemedi."))
-    raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
 def _raise_scrape_http(exc: ScrapeError) -> None:
@@ -847,67 +816,6 @@ class ReportUserRequest(BaseModel):
         return detail
 
 
-_FILM_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,159}$")
-
-
-class RecommendationFeedbackRequest(BaseModel):
-    slug: str
-    title: str
-    tmdb_id: int | None = None
-    poster_url: str | None = None
-    action: str
-
-    @field_validator("slug", mode="before")
-    @classmethod
-    def validate_slug(cls, value: str) -> str:
-        slug = str(value or "").strip().lower()
-        if not _FILM_SLUG_RE.fullmatch(slug):
-            raise ValueError("Geçersiz film kimliği.")
-        return slug
-
-    @field_validator("title", mode="before")
-    @classmethod
-    def validate_title(cls, value: str) -> str:
-        title = str(value or "").strip()
-        if not 1 <= len(title) <= 300:
-            raise ValueError("Film adı 1–300 karakter olmalı.")
-        return title
-
-    @field_validator("tmdb_id", mode="before")
-    @classmethod
-    def validate_tmdb_id(cls, value):
-        if value in (None, ""):
-            return None
-        parsed = int(value)
-        if parsed <= 0:
-            raise ValueError("Geçersiz TMDb kimliği.")
-        return parsed
-
-    @field_validator("poster_url", mode="before")
-    @classmethod
-    def validate_poster_url(cls, value):
-        if value in (None, ""):
-            return None
-        url = str(value).strip()
-        if len(url) > 1000 or not url.startswith("https://"):
-            raise ValueError("Geçersiz poster adresi.")
-        return url
-
-    @field_validator("action", mode="before")
-    @classmethod
-    def validate_action(cls, value: str) -> str:
-        action = str(value or "").strip().lower()
-        if action not in {"watch", "skip", "block"}:
-            raise ValueError("Geçersiz öneri geri bildirimi.")
-        return action
-
-
-def _filter_suppressed_films(films: list, suppressed_slugs: set[str]) -> list:
-    if not suppressed_slugs:
-        return list(films)
-    return [film for film in films if getattr(film, "slug", "") not in suppressed_slugs]
-
-
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -1175,58 +1083,6 @@ async def profile_director_films(
         "offset": offset,
         "has_more": len(films) == limit,
     }
-
-
-@app.post("/api/recommendations/feedback")
-async def save_recommendation_feedback(
-    req: RecommendationFeedbackRequest, request: Request
-) -> dict:
-    _require_csrf(request)
-    await _enforce_feedback_rate_limit(request)
-    account = await _require_account(request)
-    try:
-        feedback = await asyncio.to_thread(
-            _auth_service().set_recommendation_feedback,
-            account,
-            {
-                "slug": req.slug,
-                "title": req.title,
-                "tmdb_id": req.tmdb_id,
-                "poster_url": req.poster_url,
-            },
-            req.action,
-        )
-    except RecommendationFeedbackError as exc:
-        _raise_feedback_http(exc)
-    return {"ok": True, "feedback": feedback}
-
-
-@app.delete("/api/recommendations/feedback/{film_slug}")
-async def undo_recommendation_feedback(film_slug: str, request: Request) -> dict:
-    _require_csrf(request)
-    await _enforce_feedback_rate_limit(request)
-    account = await _require_account(request)
-    slug = film_slug.strip().lower()
-    if not _FILM_SLUG_RE.fullmatch(slug):
-        raise HTTPException(status_code=422, detail="Geçersiz film kimliği.")
-    try:
-        undone = await asyncio.to_thread(
-            _auth_service().undo_recommendation_feedback, account, slug
-        )
-    except RecommendationFeedbackError as exc:
-        _raise_feedback_http(exc)
-    return {"ok": True, "undone": undone, "film_slug": slug}
-
-
-@app.get("/api/recommendations/history")
-async def recommendation_history(request: Request) -> dict:
-    account = await _require_account(request)
-    try:
-        return await asyncio.to_thread(
-            _auth_service().list_recommendation_history, account
-        )
-    except RecommendationFeedbackError as exc:
-        _raise_feedback_http(exc)
 
 
 async def _provisional_profile_sync(
@@ -2124,14 +1980,6 @@ async def recommend(req: RecommendRequest, request: Request):
     account = await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
     service = _auth_service() if account is not None else None
-    try:
-        suppressed_slugs = (
-            await asyncio.to_thread(service.get_suppressed_slugs, account)
-            if account is not None
-            else set()
-        )
-    except RecommendationFeedbackError as exc:
-        _raise_feedback_http(exc)
 
     async def generate():
         global _q_waiting, _q_active
@@ -2200,9 +2048,6 @@ async def recommend(req: RecommendRequest, request: Request):
                     : getattr(settings, "recommendation_history_limit", 100)
                 ]
                 watchlist_count = len(watchlist_films)
-                watchlist_films = _filter_suppressed_films(
-                    watchlist_films, suppressed_slugs
-                )
                 load_ms = round((time.perf_counter() - t1) * 1000)
                 yield _sse({"type": "step", "step": "enriching"})
                 log.warning("⏱ load films      %.2fs  (watched=%d[cache=%s], watchlist=%d[cache=%s])",
@@ -2210,12 +2055,7 @@ async def recommend(req: RecommendRequest, request: Request):
                             len(watchlist_films), wl_cached)
 
                 if not watchlist_films:
-                    detail = (
-                        "Tercihlerinden sonra önerilebilir film kalmadı. Öneri geçmişinden geri alabilirsin."
-                        if watchlist_count
-                        else "Watchlist boş veya gizli."
-                    )
-                    yield _sse({"type": "error", "detail": detail})
+                    yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
                     return
 
                 favorite_directors: list[str] = []
@@ -2378,16 +2218,8 @@ async def recommend(req: RecommendRequest, request: Request):
 @app.post("/api/random")
 async def random_pick(req: RandomRequest, request: Request):
     """SSE stream: watchlist'ten 3 rastgele film seç ve zenginleştir."""
-    account = await _enforce_account_username(request, req.username)
+    await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
-    try:
-        suppressed_slugs = (
-            await asyncio.to_thread(_auth_service().get_suppressed_slugs, account)
-            if account is not None
-            else set()
-        )
-    except RecommendationFeedbackError as exc:
-        _raise_feedback_http(exc)
 
     async def generate():
         settings = get_settings()
@@ -2432,16 +2264,10 @@ async def random_pick(req: RandomRequest, request: Request):
                 )
             enriched = _enriched_from_cache(cached)
             watchlist_count = len(enriched)
-            enriched = _filter_suppressed_films(enriched, suppressed_slugs)
             with_poster = [f for f in enriched if f.poster_url]
             pool = with_poster if len(with_poster) >= 3 else enriched
             if not pool:
-                detail = (
-                    "Tercihlerinden sonra önerilebilir film kalmadı. Öneri geçmişinden geri alabilirsin."
-                    if watchlist_count
-                    else "Watchlist boş veya gizli."
-                )
-                yield _sse({"type": "error", "detail": detail})
+                yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
                 return
             chosen = _random.sample(pool, min(3, len(pool)))
             log.warning("cache HIT  watchlist/%s (random pick)", req.username)
@@ -2473,16 +2299,8 @@ async def random_pick(req: RandomRequest, request: Request):
         scraped_watchlist, _complete = hr["result"]
 
         watchlist_count = len(scraped_watchlist)
-        scraped_watchlist = _filter_suppressed_films(
-            scraped_watchlist, suppressed_slugs
-        )
         if not scraped_watchlist:
-            detail = (
-                "Tercihlerinden sonra önerilebilir film kalmadı. Öneri geçmişinden geri alabilirsin."
-                if watchlist_count
-                else "Watchlist boş veya gizli."
-            )
-            yield _sse({"type": "error", "detail": detail})
+            yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
             return
 
         # Posteri olan filmler varsa onlardan seç — postersize film göstermemek için.

@@ -323,37 +323,6 @@ CREATE INDEX IF NOT EXISTS idx_user_reports_status_time
 CREATE INDEX IF NOT EXISTS idx_user_reports_reporter_time
   ON public.user_reports (reporter_user_id, created_at DESC);
 
--- Recommendation feedback keeps a compact current state for hot-path filtering
--- and a separate append-only trail for history/audit. "skip" expires after
--- seven days; "watch" and "block" remain active until explicitly undone.
-CREATE TABLE IF NOT EXISTS public.recommendation_feedback (
-  user_id         BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  film_slug       TEXT NOT NULL CHECK (film_slug ~ '^[a-z0-9][a-z0-9-]{0,159}$'),
-  tmdb_id         INTEGER,
-  title           TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 300),
-  poster_url      TEXT,
-  action          TEXT NOT NULL CHECK (action IN ('watch', 'skip', 'block')),
-  suppress_until  TIMESTAMPTZ,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (user_id, film_slug)
-);
-
-CREATE INDEX IF NOT EXISTS idx_recommendation_feedback_active
-  ON public.recommendation_feedback (user_id, suppress_until);
-
-CREATE TABLE IF NOT EXISTS public.recommendation_feedback_events (
-  id          BIGSERIAL PRIMARY KEY,
-  user_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  film_slug   TEXT NOT NULL,
-  title       TEXT NOT NULL,
-  action      TEXT NOT NULL CHECK (action IN ('watch', 'skip', 'block', 'undo')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_recommendation_feedback_events_user_time
-  ON public.recommendation_feedback_events (user_id, created_at DESC);
-
 CREATE TABLE IF NOT EXISTS public.auth_audit_log (
   id            BIGSERIAL PRIMARY KEY,
   user_id       BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
@@ -870,83 +839,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.set_recommendation_feedback(
-  p_user_id BIGINT,
-  p_film_slug TEXT,
-  p_title TEXT,
-  p_tmdb_id INTEGER,
-  p_poster_url TEXT,
-  p_action TEXT
-) RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_row public.recommendation_feedback%ROWTYPE;
-  v_slug TEXT := lower(trim(p_film_slug));
-  v_title TEXT := trim(p_title);
-BEGIN
-  IF p_action NOT IN ('watch', 'skip', 'block') THEN
-    RAISE EXCEPTION 'invalid_feedback_action';
-  END IF;
-  IF v_slug !~ '^[a-z0-9][a-z0-9-]{0,159}$' OR char_length(v_title) NOT BETWEEN 1 AND 300 THEN
-    RAISE EXCEPTION 'invalid_film';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM public.users WHERE id = p_user_id AND account_status = 'active'
-  ) THEN
-    RAISE EXCEPTION 'active_account_not_found';
-  END IF;
-
-  INSERT INTO public.recommendation_feedback (
-    user_id, film_slug, tmdb_id, title, poster_url, action, suppress_until
-  ) VALUES (
-    p_user_id, v_slug, p_tmdb_id, v_title, NULLIF(trim(p_poster_url), ''), p_action,
-    CASE WHEN p_action = 'skip' THEN now() + interval '7 days' ELSE NULL END
-  )
-  ON CONFLICT (user_id, film_slug) DO UPDATE SET
-    tmdb_id = EXCLUDED.tmdb_id,
-    title = EXCLUDED.title,
-    poster_url = EXCLUDED.poster_url,
-    action = EXCLUDED.action,
-    suppress_until = EXCLUDED.suppress_until,
-    updated_at = now()
-  RETURNING * INTO v_row;
-
-  INSERT INTO public.recommendation_feedback_events (user_id, film_slug, title, action)
-  VALUES (p_user_id, v_slug, v_title, p_action);
-  RETURN to_jsonb(v_row);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.undo_recommendation_feedback(
-  p_user_id BIGINT,
-  p_film_slug TEXT
-) RETURNS BOOLEAN
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_row public.recommendation_feedback%ROWTYPE;
-BEGIN
-  SELECT * INTO v_row
-  FROM public.recommendation_feedback
-  WHERE user_id = p_user_id AND film_slug = lower(trim(p_film_slug))
-  FOR UPDATE;
-  IF NOT FOUND THEN
-    RETURN FALSE;
-  END IF;
-
-  DELETE FROM public.recommendation_feedback
-  WHERE user_id = p_user_id AND film_slug = v_row.film_slug;
-  INSERT INTO public.recommendation_feedback_events (user_id, film_slug, title, action)
-  VALUES (p_user_id, v_row.film_slug, v_row.title, 'undo');
-  RETURN TRUE;
-END;
-$$;
-
 REVOKE ALL ON FUNCTION public.create_blend_request(BIGINT, TEXT)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.decide_blend_request(UUID, BIGINT, TEXT)
@@ -958,10 +850,6 @@ REVOKE ALL ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB, JS
 REVOKE ALL ON FUNCTION public.block_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.unblock_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.set_recommendation_feedback(BIGINT, TEXT, TEXT, INTEGER, TEXT, TEXT)
-  FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.undo_recommendation_feedback(BIGINT, TEXT)
-  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_blend_request(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.decide_blend_request(UUID, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.cancel_blend_request(UUID, BIGINT) TO service_role;
@@ -970,10 +858,6 @@ GRANT EXECUTE ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB,
 GRANT EXECUTE ON FUNCTION public.block_user(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.unblock_user(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.set_recommendation_feedback(BIGINT, TEXT, TEXT, INTEGER, TEXT, TEXT)
-  TO service_role;
-GRANT EXECUTE ON FUNCTION public.undo_recommendation_feedback(BIGINT, TEXT)
-  TO service_role;
 
 -- TMDb API önbelleği: SQLite'ın üretim ortamındaki yedeği.
 CREATE TABLE IF NOT EXISTS public.tmdb_cache (
@@ -1000,8 +884,6 @@ ALTER TABLE public.blend_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.recommendation_feedback ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.recommendation_feedback_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_audit_log ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "service_all_users" ON public.users;
@@ -1020,12 +902,9 @@ REVOKE ALL ON TABLE public.blend_requests FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_blocks FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_reports FROM anon, authenticated;
-REVOKE ALL ON TABLE public.recommendation_feedback FROM anon, authenticated;
-REVOKE ALL ON TABLE public.recommendation_feedback_events FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_audit_log FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.users_id_seq FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.auth_audit_log_id_seq FROM anon, authenticated;
-REVOKE ALL ON SEQUENCE public.recommendation_feedback_events_id_seq FROM anon, authenticated;
 
 GRANT ALL ON TABLE public.users TO service_role;
 GRANT ALL ON TABLE public.tmdb_cache TO service_role;
@@ -1040,9 +919,6 @@ GRANT ALL ON TABLE public.blend_requests TO service_role;
 GRANT ALL ON TABLE public.blend_results TO service_role;
 GRANT ALL ON TABLE public.user_blocks TO service_role;
 GRANT ALL ON TABLE public.user_reports TO service_role;
-GRANT ALL ON TABLE public.recommendation_feedback TO service_role;
-GRANT ALL ON TABLE public.recommendation_feedback_events TO service_role;
 GRANT ALL ON TABLE public.auth_audit_log TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.users_id_seq TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.auth_audit_log_id_seq TO service_role;
-GRANT USAGE, SELECT ON SEQUENCE public.recommendation_feedback_events_id_seq TO service_role;

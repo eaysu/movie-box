@@ -47,10 +47,6 @@ class BlendServiceError(AuthError):
     code = "blend_failed"
 
 
-class RecommendationFeedbackError(AuthError):
-    code = "recommendation_feedback_failed"
-
-
 @dataclass
 class Account:
     id: int
@@ -127,8 +123,6 @@ class AuthService:
             "blend_results": "id,request_id",
             "user_blocks": "blocker_user_id,blocked_user_id",
             "user_reports": "id,status",
-            "recommendation_feedback": "user_id,film_slug,action,suppress_until",
-            "recommendation_feedback_events": "id,user_id,film_slug,action",
         }
         for table, columns in required.items():
             service.table(table).select(columns).limit(0).execute()
@@ -1153,100 +1147,3 @@ class AuthService:
             )
             code = next((item for item in known if item in message), "report_failed")
             raise BlendServiceError(code) from exc
-
-    @staticmethod
-    def feedback_is_active(
-        row: dict, *, now: datetime | None = None
-    ) -> bool:
-        """Return whether a current feedback row still suppresses a film."""
-        if row.get("action") in {"watch", "block"}:
-            return True
-        if row.get("action") != "skip" or not row.get("suppress_until"):
-            return False
-        value = str(row["suppress_until"]).replace("Z", "+00:00")
-        try:
-            expires_at = datetime.fromisoformat(value)
-        except ValueError:
-            return False
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        return expires_at > (now or datetime.now(timezone.utc))
-
-    def get_suppressed_slugs(self, account: Account) -> set[str]:
-        try:
-            rows = (
-                self._service_client()
-                .table("recommendation_feedback")
-                .select("film_slug,action,suppress_until")
-                .eq("user_id", account.id)
-                .execute()
-            ).data or []
-            return {
-                str(row["film_slug"])
-                for row in rows
-                if row.get("film_slug") and self.feedback_is_active(row)
-            }
-        except Exception as exc:
-            raise RecommendationFeedbackError("feedback_filter_failed") from exc
-
-    def set_recommendation_feedback(
-        self, account: Account, film: dict, action: str
-    ) -> dict:
-        try:
-            result = self._service_client().rpc(
-                "set_recommendation_feedback",
-                {
-                    "p_user_id": account.id,
-                    "p_film_slug": film["slug"],
-                    "p_title": film["title"],
-                    "p_tmdb_id": film.get("tmdb_id"),
-                    "p_poster_url": film.get("poster_url") or "",
-                    "p_action": action,
-                },
-            ).execute()
-            return self._rpc_value(result) or {}
-        except Exception as exc:
-            message = str(exc)
-            known = (
-                "invalid_feedback_action",
-                "invalid_film",
-                "active_account_not_found",
-            )
-            code = next((item for item in known if item in message), "feedback_save_failed")
-            raise RecommendationFeedbackError(code) from exc
-
-    def undo_recommendation_feedback(self, account: Account, film_slug: str) -> bool:
-        try:
-            result = self._service_client().rpc(
-                "undo_recommendation_feedback",
-                {"p_user_id": account.id, "p_film_slug": film_slug},
-            ).execute()
-            return bool(self._rpc_value(result))
-        except Exception as exc:
-            raise RecommendationFeedbackError("feedback_undo_failed") from exc
-
-    def list_recommendation_history(self, account: Account) -> dict:
-        try:
-            service = self._service_client()
-            current = (
-                service.table("recommendation_feedback")
-                .select(
-                    "film_slug,tmdb_id,title,poster_url,action,suppress_until,"
-                    "created_at,updated_at"
-                )
-                .eq("user_id", account.id)
-                .order("updated_at", desc=True)
-                .limit(200)
-                .execute()
-            ).data or []
-            events = (
-                service.table("recommendation_feedback_events")
-                .select("id,film_slug,title,action,created_at")
-                .eq("user_id", account.id)
-                .order("created_at", desc=True)
-                .limit(200)
-                .execute()
-            ).data or []
-            return {"current": current, "events": events}
-        except Exception as exc:
-            raise RecommendationFeedbackError("feedback_history_failed") from exc

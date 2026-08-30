@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -8,7 +7,6 @@ from fastapi.testclient import TestClient
 
 from app import main
 from app.auth import Account, AuthService, AuthSession, validate_password
-from app.enrich import EnrichedFilm
 from app.scraper import AccessBlockedError
 
 
@@ -51,39 +49,6 @@ def test_synthetic_identity_is_stable_and_does_not_expose_username():
     assert first != service.identity_email("other_user")
     assert "film_fan" not in first
     assert first.endswith("@users.movieboxd.invalid")
-
-
-def test_feedback_activity_respects_seven_day_skip_and_indefinite_actions():
-    now = datetime(2026, 8, 30, tzinfo=timezone.utc)
-    assert AuthService.feedback_is_active({"action": "watch"}, now=now)
-    assert AuthService.feedback_is_active({"action": "block"}, now=now)
-    assert AuthService.feedback_is_active(
-        {"action": "skip", "suppress_until": (now + timedelta(days=1)).isoformat()},
-        now=now,
-    )
-    assert not AuthService.feedback_is_active(
-        {"action": "skip", "suppress_until": (now - timedelta(seconds=1)).isoformat()},
-        now=now,
-    )
-
-
-def test_suppressed_films_are_removed_without_mutating_original_list():
-    films = [
-        EnrichedFilm(title="A", slug="a"),
-        EnrichedFilm(title="B", slug="b"),
-    ]
-    result = main._filter_suppressed_films(films, {"a"})
-    assert [film.slug for film in result] == ["b"]
-    assert [film.slug for film in films] == ["a", "b"]
-
-
-def test_feedback_schema_has_current_state_append_only_events_and_atomic_rpcs():
-    schema = (Path(__file__).parents[1] / "supabase" / "schema.sql").read_text()
-    assert "CREATE TABLE IF NOT EXISTS public.recommendation_feedback (" in schema
-    assert "CREATE TABLE IF NOT EXISTS public.recommendation_feedback_events (" in schema
-    assert "CREATE OR REPLACE FUNCTION public.set_recommendation_feedback(" in schema
-    assert "CREATE OR REPLACE FUNCTION public.undo_recommendation_feedback(" in schema
-    assert "now() + interval '7 days'" in schema
 
 
 def test_full_history_sync_schema_is_service_role_only():
@@ -189,72 +154,6 @@ def test_account_mode_rejects_state_change_without_csrf_before_work_starts():
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Güvenlik doğrulaması başarısız."
-
-
-def test_authenticated_feedback_is_persisted_for_current_account():
-    account = _account()
-    saved = []
-    fake_service = SimpleNamespace(
-        current_account=lambda _token: account,
-        set_recommendation_feedback=lambda user, film, action: (
-            saved.append((user.id, film, action))
-            or {"film_slug": film["slug"], "action": action}
-        ),
-    )
-    with (
-        patch("app.main.get_settings", return_value=_settings()),
-        patch("app.main._auth_service", return_value=fake_service),
-        TestClient(main.app, base_url="https://testserver") as client,
-    ):
-        response = client.post(
-            "/api/recommendations/feedback",
-            json={
-                "slug": "perfect-days",
-                "title": "Perfect Days",
-                "tmdb_id": 976893,
-                "poster_url": "https://image.tmdb.org/poster.jpg",
-                "action": "skip",
-            },
-            headers={
-                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
-                "X-CSRF-Token": "csrf-token",
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.json()["feedback"]["action"] == "skip"
-    assert saved == [
-        (
-            account.id,
-            {
-                "slug": "perfect-days",
-                "title": "Perfect Days",
-                "tmdb_id": 976893,
-                "poster_url": "https://image.tmdb.org/poster.jpg",
-            },
-            "skip",
-        )
-    ]
-
-
-def test_feedback_rejects_unknown_action_before_service_call():
-    account = _account()
-    fake_service = SimpleNamespace(current_account=lambda _token: account)
-    with (
-        patch("app.main.get_settings", return_value=_settings()),
-        patch("app.main._auth_service", return_value=fake_service),
-        TestClient(main.app, base_url="https://testserver") as client,
-    ):
-        response = client.post(
-            "/api/recommendations/feedback",
-            json={"slug": "perfect-days", "title": "Perfect Days", "action": "hide"},
-            headers={
-                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
-                "X-CSRF-Token": "csrf-token",
-            },
-        )
-
-    assert response.status_code == 422
 
 
 def test_register_password_mismatch_stops_before_scraping():
