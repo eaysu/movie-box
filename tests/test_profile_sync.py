@@ -1,0 +1,262 @@
+import unittest
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+from app import profile_sync
+
+
+def _iso(dt):
+    return dt.isoformat()
+
+
+class JobHelperTests(unittest.TestCase):
+    def test_job_needs_full_sweep(self):
+        self.assertTrue(profile_sync.job_needs_full_sweep(None))
+        self.assertTrue(profile_sync.job_needs_full_sweep({"state": "running", "scope": "full"}))
+        self.assertTrue(
+            profile_sync.job_needs_full_sweep({"state": "done", "scope": "incremental"})
+        )
+        self.assertFalse(
+            profile_sync.job_needs_full_sweep({"state": "done", "scope": "full"})
+        )
+
+    def test_job_is_resumable_states(self):
+        now = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+        self.assertTrue(profile_sync.job_is_resumable({"state": "queued"}, now=now))
+        self.assertFalse(
+            profile_sync.job_is_resumable({"state": "done", "scope": "full"}, now=now)
+        )
+        # Fresh heartbeat → another worker owns it.
+        self.assertFalse(
+            profile_sync.job_is_resumable(
+                {"state": "running", "heartbeat_at": _iso(now - timedelta(seconds=30))},
+                now=now,
+            )
+        )
+        # Stale heartbeat → abandoned, resume it.
+        self.assertTrue(
+            profile_sync.job_is_resumable(
+                {"state": "running", "heartbeat_at": _iso(now - timedelta(minutes=10))},
+                now=now,
+            )
+        )
+        # Backoff window still open.
+        self.assertFalse(
+            profile_sync.job_is_resumable(
+                {"state": "queued", "backoff_until": _iso(now + timedelta(minutes=5))},
+                now=now,
+            )
+        )
+
+    def test_progress_of(self):
+        self.assertIsNone(profile_sync.progress_of(None))
+        mid = profile_sync.progress_of(
+            {"state": "running", "phase": "diary", "films_processed": 40, "films_total": 200}
+        )
+        self.assertEqual(mid["percent"], 20)
+        self.assertEqual(mid["phase"], "diary")
+        done = profile_sync.progress_of(
+            {"state": "done", "films_processed": 812, "films_total": 812}
+        )
+        self.assertEqual(done["percent"], 100)
+        # Never report 100 before the job is actually done.
+        almost = profile_sync.progress_of(
+            {"state": "running", "films_processed": 999, "films_total": 1000}
+        )
+        self.assertEqual(almost["percent"], 99)
+
+
+class FakeService:
+    def __init__(self):
+        self.job = None
+        self.films = {}
+
+    def get_sync_job(self, uid):
+        return dict(self.job) if self.job else None
+
+    def upsert_sync_job(self, uid, **fields):
+        base = dict(self.job) if self.job else {"user_id": uid}
+        base.update(fields)
+        self.job = base
+        return dict(base)
+
+    def touch_sync_job(self, uid, **fields):
+        base = dict(self.job) if self.job else {"user_id": uid, "state": "running"}
+        base.update(fields)
+        base["heartbeat_at"] = datetime.now(timezone.utc).isoformat()
+        self.job = base
+
+    def get_watched_slugs(self, uid):
+        return set(self.films)
+
+    def get_watched_films(self, uid):
+        return [dict(row) for row in self.films.values()]
+
+    def save_watched_films(self, uid, rows):
+        written = 0
+        for row in rows:
+            slug = row.get("slug") or row.get("film_slug")
+            if not slug:
+                continue
+            cur = self.films.get(slug, {"film_slug": slug, "details_loaded": False})
+            for key, value in row.items():
+                if key == "slug":
+                    continue
+                if key in ("director", "genres", "keywords") and not value:
+                    continue  # mirror the RPC: don't clobber with empties
+                cur[key] = value
+            cur["film_slug"] = slug
+            if row.get("details_loaded"):
+                cur["details_loaded"] = True
+            self.films[slug] = cur
+            written += 1
+        return written
+
+
+class FakePipeline:
+    def __init__(self, service, pages):
+        self.service = service
+        self.pages = pages
+        self.window_calls = []
+        self.rebuilt_with = None
+
+    async def scrape_diary_window(self, username, start_page):
+        self.window_calls.append(start_page)
+        return [dict(f) for f in self.pages.get(start_page, [])]
+
+    async def enrich_search(self, films):
+        out = []
+        for i, film in enumerate(films):
+            out.append(
+                {
+                    "slug": film["slug"],
+                    "title": film.get("title") or "",
+                    "release_year": film.get("year"),
+                    "tmdb_id": 500 + i,
+                    "genres": ["Drama"],
+                    "user_rating": film.get("user_rating"),
+                    "watched_rank": film.get("watched_rank"),
+                    "details_loaded": False,
+                }
+            )
+        return out
+
+    async def enrich_details(self, rows):
+        return [
+            {
+                "slug": row.get("film_slug") or row.get("slug"),
+                "director": "Some Director",
+                "genres": ["Drama"],
+                "keywords": ["kw"],
+                "details_loaded": True,
+            }
+            for row in rows
+        ]
+
+    async def rebuild_snapshot(self, account):
+        self.rebuilt_with = account.id
+        return len(self.service.films)
+
+
+def _account(uid=7, username="film_fan"):
+    return SimpleNamespace(id=uid, username=username)
+
+
+class RunnerTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        profile_sync._running.discard(7)
+
+    async def test_full_sweep_walks_windows_then_enriches_and_aggregates(self):
+        service = FakeService()
+        service.job = {
+            "user_id": 7,
+            "state": "queued",
+            "phase": "diary",
+            "scope": "full",
+            "cursor_page": 1,
+            "films_processed": 0,
+        }
+        pages = {
+            1: [
+                {"slug": "a", "title": "A", "year": 2020, "user_rating": 4.5},
+                {"slug": "b", "title": "B", "year": 2019, "user_rating": None},
+                {"slug": "c", "title": "C", "year": 2018, "user_rating": 3.0},
+            ],
+            1 + profile_sync.DIARY_WINDOW_PAGES: [
+                {"slug": "d", "title": "D", "year": 2001, "user_rating": 5.0}
+            ],
+            1 + 2 * profile_sync.DIARY_WINDOW_PAGES: [],
+        }
+        pipeline = FakePipeline(service, pages)
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertEqual(service.job["state"], "done")
+        self.assertEqual(service.job["phase"], "done")
+        self.assertEqual(service.job["films_total"], 4)
+        self.assertEqual(set(service.films), {"a", "b", "c", "d"})
+        # watched_rank is a chronological proxy: window 1 → 0..2, window 2 → +200.
+        self.assertEqual(service.films["a"]["watched_rank"], 0)
+        self.assertEqual(service.films["c"]["watched_rank"], 2)
+        self.assertEqual(service.films["d"]["watched_rank"], 200)
+        # Details were filled in for every row.
+        self.assertTrue(all(row["details_loaded"] for row in service.films.values()))
+        self.assertEqual(service.films["b"]["director"], "Some Director")
+        self.assertEqual(pipeline.rebuilt_with, 7)
+
+    async def test_resume_starts_from_checkpoint_without_refetching_page_one(self):
+        service = FakeService()
+        service.films = {
+            "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "watched_rank": 0},
+            "b": {"film_slug": "b", "tmdb_id": 2, "details_loaded": True, "watched_rank": 1},
+            "c": {"film_slug": "c", "tmdb_id": 3, "details_loaded": True, "watched_rank": 2},
+        }
+        resume_cursor = 1 + profile_sync.DIARY_WINDOW_PAGES
+        service.job = {
+            "user_id": 7,
+            "state": "running",
+            "phase": "diary",
+            "scope": "full",
+            "cursor_page": resume_cursor,
+            "films_processed": 3,
+            "heartbeat_at": (
+                datetime.now(timezone.utc) - timedelta(minutes=20)
+            ).isoformat(),
+        }
+        pages = {
+            resume_cursor: [{"slug": "d", "title": "D", "year": 2001, "user_rating": 5.0}],
+            resume_cursor + profile_sync.DIARY_WINDOW_PAGES: [],
+        }
+        pipeline = FakePipeline(service, pages)
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertNotIn(1, pipeline.window_calls)
+        self.assertEqual(pipeline.window_calls[0], resume_cursor)
+        self.assertEqual(set(service.films), {"a", "b", "c", "d"})
+        self.assertEqual(service.job["state"], "done")
+
+    async def test_hard_failure_sets_failed_state_with_backoff(self):
+        service = FakeService()
+        service.job = {
+            "user_id": 7,
+            "state": "queued",
+            "phase": "diary",
+            "scope": "full",
+            "cursor_page": 1,
+        }
+
+        class Boom(FakePipeline):
+            async def scrape_diary_window(self, username, start_page):
+                raise RuntimeError("letterboxd blocked")
+
+        await profile_sync.run_job(Boom(service, {}), service, _account())
+
+        self.assertEqual(service.job["state"], "failed")
+        self.assertIn("blocked", service.job["last_error"])
+        self.assertTrue(service.job["backoff_until"])
+        self.assertNotIn(7, profile_sync._running)
+
+
+if __name__ == "__main__":
+    unittest.main()

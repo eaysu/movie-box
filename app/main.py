@@ -60,6 +60,7 @@ from .taste_profile import (
     build_taste_profile,
     taste_source_fingerprint,
 )
+from . import profile_sync
 
 
 @contextlib.asynccontextmanager
@@ -1088,11 +1089,23 @@ async def password_reset_finish(
 @app.get("/api/profile/me")
 async def profile_me(request: Request) -> dict:
     account = await _require_account(request)
-    profile = await asyncio.to_thread(_auth_service().get_profile, account)
+    service = _auth_service()
+    profile = await asyncio.to_thread(service.get_profile, account)
     profile["needs_refresh"] = bool(
         not profile.get("taste")
         or profile["taste"].get("algorithm_version") != TASTE_PROFILE_VERSION
     )
+    with contextlib.suppress(Exception):
+        job = await asyncio.to_thread(service.get_sync_job, account.id)
+        profile["sync_job"] = profile_sync.progress_of(job)
+        # Resume-on-visit: a job whose heartbeat went stale (instance restart)
+        # is picked up again here without any external scheduler.
+        if (
+            job
+            and profile_sync.job_is_resumable(job)
+            and not profile_sync.is_running(account.id)
+        ):
+            profile_sync.start(_SyncPipeline(get_settings()), service, account)
     return profile
 
 
@@ -1148,20 +1161,14 @@ async def recommendation_history(request: Request) -> dict:
         _raise_feedback_http(exc)
 
 
-@app.post("/api/profile/sync")
-async def sync_my_profile(request: Request, force: bool = False) -> dict:
-    _require_csrf(request)
-    await _enforce_heavy_rate_limit(request)
-    account = await _require_account(request)
-    settings = get_settings()
-    service = _auth_service()
-    try:
-        await asyncio.to_thread(service.check_schema)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Profil veri şeması güncelleniyor. Lütfen biraz sonra tekrar dene.",
-        ) from exc
+async def _provisional_profile_sync(
+    account: Account, settings, service, *, force: bool
+) -> dict:
+    """The fast in-request pass: identity + Fav 4 + last-N watched → snapshot.
+
+    This is the pre-existing behaviour; it keeps the profile useful within one
+    request while the full watched-history sweep runs in the background.
+    """
     await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
     try:
         profile = await scrape_profile(
@@ -1231,6 +1238,8 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
         with contextlib.suppress(Exception):
             await asyncio.to_thread(service.mark_sync_status, account.id, "failed")
         _raise_scrape_http(exc)
+    except HTTPException:
+        raise
     except Exception as exc:
         log.warning("profile sync failed username=%s: %s", account.username, exc)
         with contextlib.suppress(Exception):
@@ -1239,6 +1248,204 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
             status_code=503,
             detail="Profil senkronu tamamlanamadı. Son sağlam analiz korunuyor.",
         ) from exc
+
+
+class _SyncPipeline:
+    """Glue the background runner (app.profile_sync) calls for the full sweep."""
+
+    window_pages = profile_sync.DIARY_WINDOW_PAGES
+
+    def __init__(self, settings):
+        self.settings = settings
+        self._enricher_obj = None
+        self._enricher_built = False
+
+    def _enricher(self):
+        if not self._enricher_built:
+            self._enricher_built = True
+            if self.settings.has_tmdb:
+                _client, cache = _make_cache(self.settings)
+                self._enricher_obj = Enricher(self.settings.tmdb_api_key, cache)
+        return self._enricher_obj
+
+    async def scrape_diary_window(self, username: str, start_page: int) -> list[dict]:
+        films, _complete = await scrape_diary(
+            username,
+            start_page=start_page,
+            max_pages=self.window_pages,
+            film_limit=self.window_pages * 60,
+            max_retries=self.settings.scrape_max_retries,
+        )
+        return [
+            {
+                "slug": film.slug,
+                "title": film.title,
+                "year": film.year,
+                "user_rating": film.user_rating,
+            }
+            for film in films
+            if film.slug
+        ]
+
+    async def enrich_search(self, films: list[dict]) -> list[dict]:
+        enricher = self._enricher()
+        if enricher is None:
+            return [
+                {
+                    "slug": film["slug"],
+                    "title": film.get("title") or "",
+                    "release_year": film.get("year"),
+                    "user_rating": film.get("user_rating"),
+                    "watched_rank": film.get("watched_rank"),
+                    "details_loaded": False,
+                }
+                for film in films
+            ]
+        enriched = await enricher.enrich(
+            [
+                {
+                    "slug": film["slug"],
+                    "title": film.get("title") or "",
+                    "year": film.get("year"),
+                    "user_rating": film.get("user_rating"),
+                }
+                for film in films
+            ],
+            include_details=False,
+        )
+        out: list[dict] = []
+        for src, ef in zip(films, enriched):
+            out.append(
+                {
+                    "slug": src["slug"],
+                    "title": ef.title or src.get("title") or "",
+                    "release_year": ef.year or src.get("year"),
+                    "tmdb_id": ef.tmdb_id,
+                    "genres": ef.genres or [],
+                    "user_rating": src.get("user_rating"),
+                    "watched_rank": src.get("watched_rank"),
+                    "details_loaded": False,
+                }
+            )
+        return out
+
+    async def enrich_details(self, rows: list[dict]) -> list[dict]:
+        enricher = self._enricher()
+        if enricher is None:
+            return []
+        films = [
+            EnrichedFilm(
+                title=row.get("title") or "",
+                year=row.get("release_year"),
+                slug=row.get("film_slug") or row.get("slug") or "",
+                tmdb_id=row.get("tmdb_id"),
+            )
+            for row in rows
+            if row.get("tmdb_id") and (row.get("film_slug") or row.get("slug"))
+        ]
+        detailed = await enricher.ensure_details(films)
+        return [
+            {
+                "slug": film.slug,
+                "director": film.director or "",
+                "genres": film.genres or [],
+                "keywords": film.keywords or [],
+                "details_loaded": bool(film.details_loaded),
+            }
+            for film in detailed
+            if film.slug
+        ]
+
+    async def rebuild_snapshot(self, account: Account) -> int:
+        service = _auth_service()
+        rows = await asyncio.to_thread(service.get_watched_films, account.id)
+        rows.sort(
+            key=lambda row: row["watched_rank"]
+            if row.get("watched_rank") is not None
+            else 10**9
+        )
+        watched = [
+            EnrichedFilm(
+                title=row.get("title") or "",
+                year=row.get("release_year"),
+                slug=row.get("film_slug") or "",
+                tmdb_id=row.get("tmdb_id"),
+                genres=row.get("genres") or [],
+                director=row.get("director") or "",
+                keywords=row.get("keywords") or [],
+                details_loaded=bool(row.get("details_loaded")),
+                user_rating=row.get("user_rating"),
+            )
+            for row in rows
+        ]
+        profile = await scrape_profile(
+            account.username, max_retries=self.settings.scrape_max_retries
+        )
+        enricher = self._enricher()
+        if enricher is not None:
+            favorites = await enricher.enrich(
+                profile.favorite_films, include_details=False
+            )
+        else:
+            favorites = [
+                EnrichedFilm(
+                    title=film.title,
+                    year=film.year,
+                    slug=film.slug,
+                    poster_url=film.poster_url,
+                )
+                for film in profile.favorite_films
+            ]
+        taste = build_taste_profile(watched)
+        taste.source_fingerprint = taste_source_fingerprint(profile, watched)
+        await asyncio.to_thread(
+            service.save_profile_snapshot, account, profile, favorites, taste
+        )
+        return len(watched)
+
+
+@app.post("/api/profile/sync")
+async def sync_my_profile(request: Request, force: bool = False) -> dict:
+    _require_csrf(request)
+    await _enforce_heavy_rate_limit(request)
+    account = await _require_account(request)
+    settings = get_settings()
+    service = _auth_service()
+    try:
+        await asyncio.to_thread(service.check_schema)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Profil veri şeması güncelleniyor. Lütfen biraz sonra tekrar dene.",
+        ) from exc
+
+    full_sync_available = True
+    try:
+        await asyncio.to_thread(service.check_sync_schema)
+    except Exception:
+        full_sync_available = False
+
+    # Once the full history has been analysed once, never regress to the
+    # 100-film in-request pass — just serve the stored snapshot.
+    if full_sync_available and not force:
+        job = await asyncio.to_thread(service.get_sync_job, account.id)
+        if job and job.get("state") == "done" and job.get("scope") == "full":
+            stored = await asyncio.to_thread(service.get_profile, account)
+            stored["account"] = account.__dict__
+            stored["sync_job"] = profile_sync.progress_of(job)
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
+            return stored
+
+    result = await _provisional_profile_sync(account, settings, service, force=force)
+
+    if full_sync_available:
+        with contextlib.suppress(Exception):
+            job = await profile_sync.ensure_started(
+                _SyncPipeline(settings), service, account, scope="full", force=force
+            )
+            result["sync_job"] = profile_sync.progress_of(job)
+    return result
 
 
 @app.get("/api/users/search")

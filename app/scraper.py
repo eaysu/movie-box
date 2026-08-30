@@ -479,6 +479,7 @@ async def _scrape_list(
     *,
     delay: float = 1.0,
     max_pages: int = 40,
+    start_page: int = 1,
     film_limit: int | None = None,
     max_retries: int = 3,
 ) -> tuple[list[ScrapedFilm], bool]:
@@ -489,6 +490,8 @@ async def _scrape_list(
       2. Her sayfayı curl-cffi ile getir; humanize edilmiş jitter'lı gecikmeler.
       3. 403/429 gelirse backoff + parmak izi rotasyonu ile birkaç kez tekrar dene.
 
+    start_page: bu sayfadan başlar (resume edilebilir pencereli crawl için);
+    en fazla `max_pages` sayfa daha çeker.
     film_limit: toplam bu sayıya ulaşınca durur (None = sınırsız).
     Döner: (films, complete). complete=False → tarama bir blok/hata ile yarıda
     kaldı (eksik olabilir); cache'lenmemeli. complete=True → doğal son / limit.
@@ -510,7 +513,7 @@ async def _scrape_list(
                 f"Letterboxd kullanıcısı '@{username}' bulunamadı.", status=404
             )
 
-        for page in range(1, max_pages + 1):
+        for page in range(start_page, start_page + max_pages):
             direct_url = (
                 f"{BASE_URL}/{username}/{list_path}/"
                 if page == 1
@@ -628,13 +631,14 @@ async def scrape_diary(
     username: str,
     *,
     max_pages: int = 5,
+    start_page: int = 1,
     film_limit: int = 250,
     max_retries: int = 3,
 ) -> tuple[list[ScrapedFilm], bool]:
     """Diary HTML sayfalarından ek film listesi çeker. Döner: (films, complete)."""
     return await _scrape_list(
         username, "films/diary",
-        delay=0.6, max_pages=max_pages, film_limit=film_limit,
+        delay=0.6, max_pages=max_pages, start_page=start_page, film_limit=film_limit,
         max_retries=max_retries,
     )
 
