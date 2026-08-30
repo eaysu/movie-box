@@ -791,6 +791,7 @@ tailwind.config = {
       <p class="font-body-md text-body-md text-on-surface-variant mt-1">Film zevkleri yalnızca alıcı kabul ettikten sonra karşılaştırılır.</p>
     </div>
     <div id="inbox-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
+    <div id="inbox-notice" class="hidden glass-panel rounded-lg px-4 py-3 text-primary-container font-body-md text-body-md"></div>
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gelen istekler</h2>
       <div id="inbox-incoming" class="flex flex-col gap-3"></div>
@@ -802,6 +803,10 @@ tailwind.config = {
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Blend geçmişi</h2>
       <div id="inbox-history" class="flex flex-col gap-3"></div>
+    </section>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Engellenen kullanıcılar</h2>
+      <div id="inbox-blocked" class="flex flex-col gap-3"></div>
     </section>
   </div>
 </div>
@@ -1220,7 +1225,7 @@ function renderPersistedProfile(data) {
   }
 }
 
-let _blendInbox = { incoming: [], outgoing: [], history: [] };
+let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
 
 function peerAvatar(peer) {
   const poster = safeImageURL(peer?.avatar_url);
@@ -1236,13 +1241,16 @@ function blendRequestCard(item, kind) {
   const displayName = escapeHTML(peer.display_name || peer.username || 'Bilinmeyen kullanıcı');
   const id = escapeHTML(item.id);
   let actions = '';
+  const safety = `<button data-blend-action="report" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-secondary-container text-xs" title="Kullanıcıyı bildir">Bildir</button>
+    <button data-blend-action="block" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-error text-xs" title="Kullanıcıyı engelle">Engelle</button>`;
   if (kind === 'incoming') {
     actions = `<div class="flex gap-2 ml-auto">
+      ${safety}
       <button data-blend-action="rejected" data-request-id="${id}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">Reddet</button>
       <button data-blend-action="accepted" data-request-id="${id}" class="px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Kabul et</button>
     </div>`;
   } else if (kind === 'outgoing') {
-    actions = `<button data-blend-action="cancel" data-request-id="${id}" class="ml-auto px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">İptal et</button>`;
+    actions = `<div class="flex gap-2 ml-auto">${safety}<button data-blend-action="cancel" data-request-id="${id}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">İptal et</button></div>`;
   }
   return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
     ${peerAvatar(peer)}
@@ -1258,20 +1266,32 @@ function blendHistoryCard(item) {
   const labels = { accepted: 'Kabul edildi', rejected: 'Reddedildi', cancelled: 'İptal edildi', expired: 'Süresi doldu' };
   const dateValue = result?.created_at || item.decided_at || item.created_at;
   const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
-  const button = result
-    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="ml-auto px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
+  const resultButton = result
+    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
     : item.status === 'accepted'
-      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="ml-auto px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
+      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
       : '';
+  const username = escapeHTML(peer.username || '');
+  const buttons = `<div class="ml-auto flex items-center gap-1"><button data-blend-action="report" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}</div>`;
   return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
     ${peerAvatar(peer)}
     <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(peer.display_name || peer.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm">${labels[item.status] || item.status}${dateLabel ? ` · ${escapeHTML(dateLabel)}` : ''}</span></div>
-    ${score}${button}
+    ${score}${buttons}
   </article>`;
 }
 
 function emptyInbox(text) {
   return `<div class="rounded-xl border border-dashed border-outline-variant/30 p-5 text-center text-on-surface-variant text-sm">${escapeHTML(text)}</div>`;
+}
+
+function blockedUserCard(item) {
+  const user = item.user || {};
+  const username = escapeHTML(user.username || '');
+  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
+    ${peerAvatar(user)}
+    <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(user.display_name || user.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm">@${username}</span></div>
+    <button data-blend-action="unblock" data-peer-username="${username}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs uppercase">Engeli kaldır</button>
+  </article>`;
 }
 
 function renderBlendInbox(data) {
@@ -1285,6 +1305,9 @@ function renderBlendInbox(data) {
   $('inbox-history').innerHTML = data.history?.length
     ? data.history.map(blendHistoryCard).join('')
     : emptyInbox('Henüz tamamlanmış bir Blend yok.');
+  $('inbox-blocked').innerHTML = data.blocked?.length
+    ? data.blocked.map(blockedUserCard).join('')
+    : emptyInbox('Engellediğin kullanıcı yok.');
   const count = data.incoming?.length || 0;
   $('inbox-badge').textContent = count > 9 ? '9+' : String(count);
   $('inbox-badge').classList.toggle('hidden', count === 0);
@@ -1310,6 +1333,66 @@ async function handleBlendInboxAction(event) {
   if (!button) return;
   const action = button.dataset.blendAction;
   const requestId = button.dataset.requestId;
+  const peerUsername = button.dataset.peerUsername;
+  $('inbox-notice').classList.add('hidden');
+  if (action === 'block') {
+    if (!peerUsername || !window.confirm(`@${peerUsername} engellensin mi? Bekleyen Blend istekleri de iptal edilir.`)) return;
+    button.disabled = true;
+    try {
+      await apiJSON(`/api/users/${encodeURIComponent(peerUsername)}/block`, {
+        method: 'POST', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      $('inbox-notice').textContent = `@${peerUsername} engellendi.`;
+      $('inbox-notice').classList.remove('hidden');
+    } catch (error) {
+      $('inbox-error').textContent = error.message || 'Kullanıcı engellenemedi.';
+      $('inbox-error').classList.remove('hidden');
+    } finally { button.disabled = false; }
+    return;
+  }
+  if (action === 'unblock') {
+    if (!peerUsername) return;
+    button.disabled = true;
+    try {
+      await apiJSON(`/api/users/${encodeURIComponent(peerUsername)}/block`, {
+        method: 'DELETE', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      $('inbox-notice').textContent = `@${peerUsername} engeli kaldırıldı.`;
+      $('inbox-notice').classList.remove('hidden');
+    } catch (error) {
+      $('inbox-error').textContent = error.message || 'Engel kaldırılamadı.';
+      $('inbox-error').classList.remove('hidden');
+    } finally { button.disabled = false; }
+    return;
+  }
+  if (action === 'report') {
+    if (!peerUsername) return;
+    const category = window.prompt('Bildirim kategorisi: spam, harassment, impersonation veya other', 'spam');
+    if (category === null) return;
+    const normalizedCategory = category.trim().toLowerCase();
+    if (!['spam', 'harassment', 'impersonation', 'other'].includes(normalizedCategory)) {
+      $('inbox-error').textContent = 'Geçersiz bildirim kategorisi.';
+      $('inbox-error').classList.remove('hidden');
+      return;
+    }
+    const detail = window.prompt('Kısa açıklama (isteğe bağlı, en fazla 500 karakter)', '') ?? '';
+    button.disabled = true;
+    try {
+      await apiJSON(`/api/users/${encodeURIComponent(peerUsername)}/report`, {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ category: normalizedCategory, detail: detail.slice(0, 500) }),
+      });
+      $('inbox-notice').textContent = 'Bildirimin alındı.';
+      $('inbox-notice').classList.remove('hidden');
+    } catch (error) {
+      $('inbox-error').textContent = error.message || 'Bildirim gönderilemedi.';
+      $('inbox-error').classList.remove('hidden');
+    } finally { button.disabled = false; }
+    return;
+  }
   if (action === 'view') {
     const item = _blendInbox.history.find(entry => entry.id === requestId);
     if (item?.blend_result?.result) renderBlendResult(item.blend_result.result);

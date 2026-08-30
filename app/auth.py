@@ -497,18 +497,36 @@ class AuthService:
         }
 
     def search_accounts(self, account: Account, query: str, limit: int = 8) -> list[dict]:
+        service = self._service_client()
         result = (
-            self._service_client()
+            service
             .table("users")
-            .select("username,display_name,avatar_url")
+            .select("id,username,display_name,avatar_url")
             .eq("account_status", "active")
             .neq("id", account.id)
             .ilike("username", f"%{query}%")
             .order("username")
-            .limit(max(1, min(limit, 12)))
+            .limit(24)
             .execute()
         )
-        return result.data or []
+        blocks = (
+            service.table("user_blocks")
+            .select("blocker_user_id,blocked_user_id")
+            .or_(f"blocker_user_id.eq.{account.id},blocked_user_id.eq.{account.id}")
+            .execute()
+        ).data or []
+        blocked_ids = {
+            int(row["blocked_user_id"])
+            if int(row["blocker_user_id"]) == account.id
+            else int(row["blocker_user_id"])
+            for row in blocks
+        }
+        safe_limit = max(1, min(limit, 12))
+        return [
+            {key: value for key, value in row.items() if key != "id"}
+            for row in (result.data or [])
+            if int(row["id"]) not in blocked_ids
+        ][:safe_limit]
 
     @staticmethod
     def _rpc_value(result):
@@ -539,6 +557,7 @@ class AuthService:
                 "self_request",
                 "blend_request_exists",
                 "pending_quota_reached",
+                "blend_user_blocked",
             )
             code = next((item for item in known if item in message), "blend_request_failed")
             raise BlendServiceError(code) from exc
@@ -631,12 +650,20 @@ class AuthService:
             .limit(100)
             .execute()
         ).data or []
+        blocked_rows = (
+            service.table("user_blocks")
+            .select("blocked_user_id,created_at")
+            .eq("blocker_user_id", account.id)
+            .order("created_at", desc=True)
+            .execute()
+        ).data or []
         user_ids = {
             int(row["requester_user_id"])
             if int(row["requester_user_id"]) != account.id
             else int(row["recipient_user_id"])
             for row in requests
         }
+        user_ids.update(int(row["blocked_user_id"]) for row in blocked_rows)
         accounts = self._accounts_by_id(service, user_ids)
         request_ids = [row["id"] for row in requests]
         results = []
@@ -667,7 +694,19 @@ class AuthService:
                 (incoming if is_incoming else outgoing).append(item)
             else:
                 history.append(item)
-        return {"incoming": incoming, "outgoing": outgoing, "history": history}
+        blocked = [
+            {
+                "created_at": row["created_at"],
+                "user": accounts.get(int(row["blocked_user_id"])),
+            }
+            for row in blocked_rows
+        ]
+        return {
+            "incoming": incoming,
+            "outgoing": outgoing,
+            "history": history,
+            "blocked": blocked,
+        }
 
     def get_blend_participants(
         self, account: Account, request_id: str
@@ -742,3 +781,57 @@ class AuthService:
             return str(self._rpc_value(response))
         except Exception as exc:
             raise BlendServiceError("blend_result_save_failed") from exc
+
+    def block_user(self, account: Account, username: str) -> None:
+        try:
+            self._service_client().rpc(
+                "block_user",
+                {
+                    "p_blocker_user_id": account.id,
+                    "p_blocked_username": username,
+                },
+            ).execute()
+        except Exception as exc:
+            message = str(exc)
+            code = next(
+                (item for item in ("user_not_found", "self_block") if item in message),
+                "block_failed",
+            )
+            raise BlendServiceError(code) from exc
+
+    def unblock_user(self, account: Account, username: str) -> None:
+        try:
+            self._service_client().rpc(
+                "unblock_user",
+                {
+                    "p_blocker_user_id": account.id,
+                    "p_blocked_username": username,
+                },
+            ).execute()
+        except Exception as exc:
+            raise BlendServiceError("unblock_failed") from exc
+
+    def report_user(
+        self, account: Account, username: str, category: str, detail: str
+    ) -> str:
+        try:
+            response = self._service_client().rpc(
+                "report_user",
+                {
+                    "p_reporter_user_id": account.id,
+                    "p_reported_username": username,
+                    "p_category": category,
+                    "p_detail": detail[:500],
+                },
+            ).execute()
+            return str(self._rpc_value(response))
+        except Exception as exc:
+            message = str(exc)
+            known = (
+                "invalid_report_category",
+                "user_not_found",
+                "self_report",
+                "report_quota_reached",
+            )
+            code = next((item for item in known if item in message), "report_failed")
+            raise BlendServiceError(code) from exc

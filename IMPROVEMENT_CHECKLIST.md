@@ -104,12 +104,15 @@ onayı gelmeden uygulanmaz.
 - [x] Profil yeniden hesaplanınca eski Blend sonucunu tarihsel snapshot olarak koru;
   kullanıcı isterse yeni Blend isteği gönderebilsin.
 - [x] Inbox IP limiti, kişi başına 10 pending kota ve 14 günlük expiry politikası ekle.
-- [ ] Block/report hazırlığı ekle.
+- [x] Block/report hazırlığı ekle: karşılıklı arama/istek engeli, pending iptali,
+  engel kaldırma, günlük report kotası ve moderasyon durumu.
 
 ### P1 — Test, gözlemlenebilirlik ve rollout
 
 - [x] Auth password/identity/login cookie/CSRF sınırı testleri.
-- [ ] Sahiplik doğrulama, parola kurtarma ve account deletion güvenlik testleri.
+- [x] Parola eşleşme sınırı, authenticated account deletion ve session cookie
+  temizleme güvenlik testleri.
+- [ ] Gerçek Supabase üzerinde bio sahiplik/parola kurtarma entegrasyon testi.
 - [x] Gerçek profil HTML'inden anonimleştirilmiş avatar/Fav 4 fixture testleri.
 - [x] Taste profil hesaplama golden testleri: rating-aware favori yönetmen, Fav 4 ve
   düşük veri güveni senaryoları.

@@ -119,6 +119,33 @@ CREATE TABLE IF NOT EXISTS public.blend_results (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS public.user_blocks (
+  blocker_user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  blocked_user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blocker_user_id, blocked_user_id),
+  CHECK (blocker_user_id <> blocked_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked
+  ON public.user_blocks (blocked_user_id, blocker_user_id);
+
+CREATE TABLE IF NOT EXISTS public.user_reports (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  reported_user_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  category         TEXT NOT NULL CHECK (category IN ('spam', 'harassment', 'impersonation', 'other')),
+  detail           TEXT NOT NULL DEFAULT '' CHECK (char_length(detail) <= 500),
+  status           TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewed', 'dismissed')),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (reporter_user_id <> reported_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_reports_status_time
+  ON public.user_reports (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_reports_reporter_time
+  ON public.user_reports (reporter_user_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS public.auth_audit_log (
   id            BIGSERIAL PRIMARY KEY,
   user_id       BIGINT REFERENCES public.users(id) ON DELETE SET NULL,
@@ -241,6 +268,14 @@ BEGIN
   END IF;
   IF v_recipient_user_id = p_requester_user_id THEN
     RAISE EXCEPTION 'self_request';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.user_blocks
+    WHERE (blocker_user_id = p_requester_user_id AND blocked_user_id = v_recipient_user_id)
+       OR (blocker_user_id = v_recipient_user_id AND blocked_user_id = p_requester_user_id)
+  ) THEN
+    RAISE EXCEPTION 'blend_user_blocked';
   END IF;
 
   PERFORM pg_advisory_xact_lock(
@@ -390,6 +425,95 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.block_user(
+  p_blocker_user_id BIGINT,
+  p_blocked_username TEXT
+) RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_blocked_user_id BIGINT;
+BEGIN
+  SELECT id INTO v_blocked_user_id FROM public.users
+  WHERE username = lower(trim(leading '@' FROM p_blocked_username))
+    AND account_status = 'active';
+  IF v_blocked_user_id IS NULL THEN RAISE EXCEPTION 'user_not_found'; END IF;
+  IF v_blocked_user_id = p_blocker_user_id THEN RAISE EXCEPTION 'self_block'; END IF;
+
+  INSERT INTO public.user_blocks (blocker_user_id, blocked_user_id)
+  VALUES (p_blocker_user_id, v_blocked_user_id)
+  ON CONFLICT DO NOTHING;
+
+  UPDATE public.blend_requests
+  SET status = 'cancelled', decided_at = now()
+  WHERE status = 'pending'
+    AND (
+      (requester_user_id = p_blocker_user_id AND recipient_user_id = v_blocked_user_id)
+      OR
+      (requester_user_id = v_blocked_user_id AND recipient_user_id = p_blocker_user_id)
+    );
+  RETURN v_blocked_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.unblock_user(
+  p_blocker_user_id BIGINT,
+  p_blocked_username TEXT
+) RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  DELETE FROM public.user_blocks b
+  USING public.users u
+  WHERE b.blocker_user_id = p_blocker_user_id
+    AND b.blocked_user_id = u.id
+    AND u.username = lower(trim(leading '@' FROM p_blocked_username));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.report_user(
+  p_reporter_user_id BIGINT,
+  p_reported_username TEXT,
+  p_category TEXT,
+  p_detail TEXT
+) RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_reported_user_id BIGINT;
+  v_report_id UUID;
+BEGIN
+  IF p_category NOT IN ('spam', 'harassment', 'impersonation', 'other') THEN
+    RAISE EXCEPTION 'invalid_report_category';
+  END IF;
+  SELECT id INTO v_reported_user_id FROM public.users
+  WHERE username = lower(trim(leading '@' FROM p_reported_username))
+    AND account_status = 'active';
+  IF v_reported_user_id IS NULL THEN RAISE EXCEPTION 'user_not_found'; END IF;
+  IF v_reported_user_id = p_reporter_user_id THEN RAISE EXCEPTION 'self_report'; END IF;
+  IF (
+    SELECT count(*) FROM public.user_reports
+    WHERE reporter_user_id = p_reporter_user_id
+      AND created_at >= now() - interval '24 hours'
+  ) >= 5 THEN
+    RAISE EXCEPTION 'report_quota_reached';
+  END IF;
+
+  INSERT INTO public.user_reports (
+    reporter_user_id, reported_user_id, category, detail
+  ) VALUES (
+    p_reporter_user_id, v_reported_user_id, p_category, left(COALESCE(p_detail, ''), 500)
+  ) RETURNING id INTO v_report_id;
+  RETURN v_report_id;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.create_blend_request(BIGINT, TEXT)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.decide_blend_request(UUID, BIGINT, TEXT)
@@ -398,11 +522,17 @@ REVOKE ALL ON FUNCTION public.cancel_blend_request(UUID, BIGINT)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB, JSONB, TEXT)
   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.block_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.unblock_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_blend_request(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.decide_blend_request(UUID, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.cancel_blend_request(UUID, BIGINT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB, JSONB, TEXT)
   TO service_role;
+GRANT EXECUTE ON FUNCTION public.block_user(BIGINT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.unblock_user(BIGINT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) TO service_role;
 
 -- TMDb API önbelleği: SQLite'ın üretim ortamındaki yedeği.
 CREATE TABLE IF NOT EXISTS public.tmdb_cache (
@@ -423,6 +553,8 @@ ALTER TABLE public.profile_favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_challenges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_audit_log ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "service_all_users" ON public.users;
@@ -435,6 +567,8 @@ REVOKE ALL ON TABLE public.profile_favorites FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_challenges FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_requests FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
+REVOKE ALL ON TABLE public.user_blocks FROM anon, authenticated;
+REVOKE ALL ON TABLE public.user_reports FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_audit_log FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.users_id_seq FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.auth_audit_log_id_seq FROM anon, authenticated;
@@ -446,6 +580,8 @@ GRANT ALL ON TABLE public.profile_favorites TO service_role;
 GRANT ALL ON TABLE public.auth_challenges TO service_role;
 GRANT ALL ON TABLE public.blend_requests TO service_role;
 GRANT ALL ON TABLE public.blend_results TO service_role;
+GRANT ALL ON TABLE public.user_blocks TO service_role;
+GRANT ALL ON TABLE public.user_reports TO service_role;
 GRANT ALL ON TABLE public.auth_audit_log TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.users_id_seq TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.auth_audit_log_id_seq TO service_role;

@@ -97,3 +97,6 @@ def test_schema_contains_atomic_consent_guards():
     assert "v_request.recipient_user_id <> p_recipient_user_id" in schema
     assert "status = 'accepted'" in schema
     assert "CREATE OR REPLACE FUNCTION public.save_blend_result" in schema
+    assert "CREATE TABLE IF NOT EXISTS public.user_blocks" in schema
+    assert "CREATE TABLE IF NOT EXISTS public.user_reports" in schema
+    assert "RAISE EXCEPTION 'blend_user_blocked'" in schema

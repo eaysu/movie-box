@@ -202,3 +202,106 @@ def test_accepting_blend_returns_persisted_comparison_result():
 
     assert response.status_code == 200
     assert response.json() == {"status": "accepted", "result": computed}
+
+
+def test_block_endpoint_is_authenticated_and_csrf_protected():
+    account = _account()
+    blocked = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        block_user=lambda _account, username: blocked.append(username),
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main._enforce_auth_rate_limit", new=AsyncMock()),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        missing_csrf = client.post("/api/users/other_user/block")
+        response = client.post(
+            "/api/users/other_user/block",
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert missing_csrf.status_code == 403
+    assert response.status_code == 200
+    assert blocked == ["other_user"]
+
+
+def test_report_rejects_unknown_category_before_service_call():
+    account = _account()
+    fake_service = SimpleNamespace(current_account=lambda _token: account)
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/users/other_user/report",
+            json={"category": "not-valid", "detail": "test"},
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_password_reset_mismatch_stops_before_profile_scrape():
+    scrape = AsyncMock()
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._enforce_auth_rate_limit", new=AsyncMock()),
+        patch("app.main.scrape_profile", new=scrape),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/auth/password-reset/finish",
+            json={
+                "username": "film_fan",
+                "code": "MOVIEBOXD-ABC123",
+                "new_password": "long-enough-password",
+                "new_password_confirm": "different-password",
+            },
+        )
+
+    assert response.status_code == 422
+    scrape.assert_not_awaited()
+
+
+def test_authenticated_delete_removes_auth_identity_and_clears_session():
+    account = _account()
+    deleted = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        delete_account=lambda value: deleted.append(value.id),
+    )
+    settings = _settings(cache_db_path="/tmp/movieboxd-test-cache.sqlite3")
+    with (
+        patch("app.main.get_settings", return_value=settings),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main._enforce_delete_rate_limit", new=AsyncMock()),
+        patch("app.main.Cache", return_value=object()),
+        patch("app.main.SupabaseCache", return_value=object()),
+        patch("app.main._delete_cached_user_data", return_value=True),
+        patch("supabase.create_client", return_value=object()),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.request(
+            "DELETE",
+            "/api/data",
+            json={"username": "film_fan"},
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert deleted == [account.id]
+    cookies = response.headers.get_list("set-cookie")
+    assert any(item.startswith("mb_access=") and "Max-Age=0" in item for item in cookies)

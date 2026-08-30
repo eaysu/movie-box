@@ -259,12 +259,21 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "self_request": (422, "Kendine Blend isteği gönderemezsin."),
         "blend_request_exists": (409, "Bu iki kullanıcı arasında bekleyen bir istek var."),
         "pending_quota_reached": (429, "Bekleyen Blend isteği kotasına ulaştın."),
+        "blend_user_blocked": (403, "Bu kullanıcıyla Blend isteği oluşturulamaz."),
         "request_not_found": (404, "Blend isteği bulunamadı."),
         "forbidden": (403, "Bu Blend isteği için yetkin yok."),
         "request_already_decided": (409, "Bu Blend isteği daha önce sonuçlandırılmış."),
         "request_not_cancellable": (409, "Bu Blend isteği artık iptal edilemez."),
         "accepted_request_not_found": (409, "Kabul edilmiş Blend isteği bulunamadı."),
         "blend_result_save_failed": (503, "Blend sonucu kaydedilemedi."),
+        "user_not_found": (404, "Kayıtlı Movieboxd kullanıcısı bulunamadı."),
+        "self_block": (422, "Kendini engelleyemezsin."),
+        "self_report": (422, "Kendini bildiremezsin."),
+        "invalid_report_category": (422, "Geçersiz bildirim kategorisi."),
+        "report_quota_reached": (429, "Günlük bildirim kotasına ulaştın."),
+        "block_failed": (400, "Kullanıcı engellenemedi."),
+        "unblock_failed": (400, "Engel kaldırılamadı."),
+        "report_failed": (400, "Bildirim gönderilemedi."),
     }
     status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
     raise HTTPException(status_code=status_code, detail=detail) from exc
@@ -742,6 +751,27 @@ class BlendDecisionRequest(BaseModel):
         return decision
 
 
+class ReportUserRequest(BaseModel):
+    category: str
+    detail: str = ""
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        category = str(value).strip().lower()
+        if category not in {"spam", "harassment", "impersonation", "other"}:
+            raise ValueError("Geçersiz bildirim kategorisi.")
+        return category
+
+    @field_validator("detail", mode="before")
+    @classmethod
+    def validate_detail(cls, value: str) -> str:
+        detail = str(value or "").strip()
+        if len(detail) > 500:
+            raise ValueError("Bildirim detayı en fazla 500 karakter olabilir.")
+        return detail
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -1010,6 +1040,58 @@ async def search_registered_users(q: str, request: Request) -> dict:
         _auth_service().search_accounts, account, query
     )
     return {"users": users}
+
+
+@app.post("/api/users/{username}/block")
+async def block_registered_user(username: str, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_auth_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        normalized = _normalize_username(username)
+        await asyncio.to_thread(_auth_service().block_user, account, normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True, "username": normalized, "blocked": True}
+
+
+@app.delete("/api/users/{username}/block")
+async def unblock_registered_user(username: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        normalized = _normalize_username(username)
+        await asyncio.to_thread(_auth_service().unblock_user, account, normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True, "username": normalized, "blocked": False}
+
+
+@app.post("/api/users/{username}/report")
+async def report_registered_user(
+    username: str, req: ReportUserRequest, request: Request
+) -> dict:
+    _require_csrf(request)
+    await _enforce_auth_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        normalized = _normalize_username(username)
+        report_id = await asyncio.to_thread(
+            _auth_service().report_user,
+            account,
+            normalized,
+            req.category,
+            req.detail,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True, "report_id": report_id}
 
 
 @app.post("/api/blends/requests")
