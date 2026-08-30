@@ -601,15 +601,7 @@ class AuthService:
         return {row["film_slug"] for row in rows if row.get("film_slug")}
 
     def count_watched_films(self, user_id: int) -> int:
-        result = (
-            self._service_client()
-            .table("user_watched_films")
-            .select("film_slug", count="exact")
-            .eq("user_id", user_id)
-            .limit(0)
-            .execute()
-        )
-        return int(getattr(result, "count", 0) or 0)
+        return len(self.get_watched_slugs(user_id))
 
     def search_accounts(self, account: Account, query: str, limit: int = 8) -> list[dict]:
         service = self._service_client()
