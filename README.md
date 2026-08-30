@@ -48,6 +48,7 @@ Open http://localhost:8000
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/health` | Shows which integrations are configured |
+| `GET /api/readiness` | Returns 200 only when auth config and required Supabase tables are usable |
 | `POST /api/auth/register/start` | Creates a pending account and bio challenge |
 | `POST /api/auth/register/verify` | Verifies Letterboxd ownership |
 | `POST /api/auth/login` | Opens an HttpOnly cookie session |
@@ -138,7 +139,9 @@ letterboxd-recommender/
 2. Set `SUPABASE_URL`, service-role `SUPABASE_KEY`, `SUPABASE_ANON_KEY` and a
    stable `AUTH_IDENTITY_SECRET` (`openssl rand -hex 32`) in Render.
 3. Deploy. `/api/health` must report `auth_enabled: true`.
-4. Register a test username, copy the challenge into its public Letterboxd bio,
+4. Verify `/api/readiness` reports `status: ready`; a 503 means the current
+   `supabase/schema.sql` still needs to be applied or Supabase is unavailable.
+5. Register a test username, copy the challenge into its public Letterboxd bio,
    verify, log in, and wait for the first profile sync.
 
 Never rotate `AUTH_IDENTITY_SECRET` without an identity migration: synthetic

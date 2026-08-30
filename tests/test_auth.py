@@ -305,3 +305,32 @@ def test_authenticated_delete_removes_auth_identity_and_clears_session():
     assert deleted == [account.id]
     cookies = response.headers.get_list("set-cookie")
     assert any(item.startswith("mb_access=") and "Max-Age=0" in item for item in cookies)
+
+
+def test_readiness_reports_schema_state_without_exposing_details():
+    fake_service = SimpleNamespace(check_schema=lambda: True)
+    main._readiness_cache.update(checked_at=0.0, ready=False)
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        TestClient(main.app) as client,
+    ):
+        response = client.get("/api/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "auth_configured": True,
+        "schema_ready": True,
+    }
+
+
+def test_readiness_is_503_when_auth_is_not_configured():
+    with (
+        patch("app.main.get_settings", return_value=SimpleNamespace(has_auth=False)),
+        TestClient(main.app) as client,
+    ):
+        response = client.get("/api/readiness")
+
+    assert response.status_code == 503
+    assert response.json()["schema_ready"] is False

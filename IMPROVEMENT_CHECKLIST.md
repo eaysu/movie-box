@@ -156,6 +156,8 @@ onayı gelmeden uygulanmaz.
     backend `service_role` yetkisini koru.
   - [ ] **MANUEL UYGULAMA:** Güncellenen `supabase/schema.sql` dosyasını Supabase SQL
     Editor'da çalıştır ve anon key ile erişimin reddedildiğini doğrula.
+  - [x] Auth yapılandırması ve gerekli tabloları veri okumadan doğrulayan, kısa
+    cache'li `/api/readiness` endpoint'i ekle.
 - [x] Başarılı eski sonucu koruyan stale-if-error davranışı ekle; başarısız veya
   eksik crawl hiçbir zaman sağlam cache'in üzerine yazmasın.
 - [ ] DOM değişikliklerini erken yakalayan günlük canary/health kontrolü ekle.

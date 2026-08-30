@@ -112,6 +112,22 @@ class AuthService:
             self.settings.supabase_url, self.settings.supabase_anon_key
         )
 
+    def check_schema(self) -> bool:
+        """Verify the account schema without exposing or reading user records."""
+        service = self._service_client()
+        required = {
+            "users": "id,auth_user_id,account_status",
+            "taste_profiles": "user_id,source_fingerprint",
+            "profile_favorites": "user_id,position",
+            "blend_requests": "id,status",
+            "blend_results": "id,request_id",
+            "user_blocks": "blocker_user_id,blocked_user_id",
+            "user_reports": "id,status",
+        }
+        for table, columns in required.items():
+            service.table(table).select(columns).limit(0).execute()
+        return True
+
     def _digest(self, value: str, *, purpose: str) -> str:
         return hmac.new(
             self.settings.auth_identity_secret.encode("utf-8"),

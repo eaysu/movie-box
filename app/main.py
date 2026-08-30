@@ -101,6 +101,8 @@ _auth_rate_limiter = SlidingWindowRateLimiter(
     burst=3,
     burst_seconds=30,
 )
+_readiness_lock = asyncio.Lock()
+_readiness_cache = {"checked_at": 0.0, "ready": False}
 
 ACCESS_COOKIE = "mb_access"
 REFRESH_COOKIE = "mb_refresh"
@@ -787,6 +789,41 @@ def health() -> dict:
         "llm_enabled": settings.has_openai,
         "supabase_enabled": settings.has_supabase,
         "auth_enabled": getattr(settings, "has_auth", False),
+    }
+
+
+@app.get("/api/readiness")
+@app.head("/api/readiness", include_in_schema=False)
+async def readiness(response: Response) -> dict:
+    """Check that auth configuration and the required Supabase schema are usable."""
+    settings = get_settings()
+    if not settings.has_auth:
+        response.status_code = 503
+        return {"status": "not_ready", "auth_configured": False, "schema_ready": False}
+
+    now = time.monotonic()
+    ttl = 60 if _readiness_cache["ready"] else 15
+    if now - _readiness_cache["checked_at"] < ttl:
+        ready = bool(_readiness_cache["ready"])
+    else:
+        async with _readiness_lock:
+            now = time.monotonic()
+            ttl = 60 if _readiness_cache["ready"] else 15
+            if now - _readiness_cache["checked_at"] >= ttl:
+                try:
+                    ready = await asyncio.to_thread(_auth_service().check_schema)
+                except Exception as exc:
+                    log.warning("readiness schema check failed: %s", type(exc).__name__)
+                    ready = False
+                _readiness_cache.update(checked_at=now, ready=bool(ready))
+            else:
+                ready = bool(_readiness_cache["ready"])
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ready" if ready else "not_ready",
+        "auth_configured": True,
+        "schema_ready": ready,
     }
 
 
