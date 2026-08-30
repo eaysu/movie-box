@@ -66,15 +66,15 @@ def _reset_one(client, username: str, *, hard: bool) -> None:
     print(f"  {username}: tmdb_cache purge {'ok' if cache_ok else 'partial'}")
 
     if hard:
-        client.table("users").delete().eq("id", uid).execute()
         auth_id = user.get("auth_user_id")
+        client.table("users").delete().eq("id", uid).execute()
         if auth_id:
             try:
                 client.auth.admin.delete_user(auth_id)
                 print(f"  {username}: auth identity removed")
             except Exception as exc:  # noqa: BLE001 - best effort
                 print(f"  {username}: auth identity NOT removed ({exc})")
-        print(f"  {username}: account row removed — re-register + re-verify next")
+        print(f"  {username}: account GONE -> register again (bio code needed)")
         return
 
     client.table("users").update(
@@ -84,7 +84,10 @@ def _reset_one(client, username: str, *, hard: bool) -> None:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     ).eq("id", uid).execute()
-    print(f"  {username}: profile_sync_status -> pending (ready for onboarding)")
+    print(
+        f"  {username}: profile wiped, status -> pending. "
+        "Account kept -> LOG IN (do not register); onboarding replays."
+    )
 
 
 def main() -> int:
