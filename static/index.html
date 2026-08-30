@@ -292,6 +292,16 @@ tailwind.config = {
   .blend-score-in  { animation: score-number-in   .5s cubic-bezier(.22,1,.36,1) .9s both; }
   .blend-fade-up   { animation: fade-up .5s ease forwards; }
   .ring-glow       { animation: ring-glow-pulse 2.5s ease-in-out infinite 1.6s; }
+
+  /* Profile reveal */
+  @keyframes profile-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .profile-rise { opacity: 0; animation: profile-rise .6s cubic-bezier(.22,1,.36,1) forwards; }
+  @media (prefers-reduced-motion: reduce) {
+    .profile-rise { opacity: 1; animation: none; }
+  }
 </style>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
@@ -318,7 +328,7 @@ tailwind.config = {
         <span id="inbox-badge" class="hidden absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-secondary-container text-on-secondary-container text-[9px] font-bold items-center justify-center"></span>
       </button>
       <div id="account-menu" class="hidden absolute top-11 right-0 w-52 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1">
-        <button id="menu-profile-sync" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">sync</span>Profili yenile</button>
+        <button id="menu-profile-view" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">person</span>Profilim</button>
         <button id="menu-feedback-history" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">history</span>Öneri geçmişi</button>
         <button id="menu-delete-data" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
         <button id="btn-logout" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
@@ -430,6 +440,132 @@ tailwind.config = {
   </main>
 </div>
 
+<!-- ═══════════════════════════  VIEW: PROFILE  ═══════════════════════════ -->
+<div id="view-profile" class="hidden flex-grow pt-20 pb-24 relative overflow-hidden">
+  <div class="absolute inset-0 pointer-events-none" style="background:radial-gradient(circle at 10% 6%,rgba(0,224,84,.13),transparent 34%),radial-gradient(circle at 92% 4%,rgba(108,205,255,.09),transparent 30%),radial-gradient(circle at 78% 96%,rgba(255,128,0,.06),transparent 38%)"></div>
+  <div class="absolute inset-0 pointer-events-none opacity-[0.16]" style="background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);background-size:54px 54px;mask-image:linear-gradient(to bottom,black,transparent 88%)"></div>
+
+  <main class="relative z-10 max-w-[1240px] mx-auto w-full px-margin-mobile md:px-margin-desktop">
+    <div class="flex items-center justify-between py-5">
+      <button id="btn-profile-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
+        <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+        Ana sayfa
+      </button>
+      <button id="btn-profile-sync" class="flex items-center gap-2 px-4 py-2.5 rounded-full border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 hover:border-primary-container/50 transition-colors font-label-md text-label-md disabled:opacity-40">
+        <span class="material-symbols-outlined text-[18px]">sync</span>
+        Profili yenile
+      </button>
+    </div>
+
+    <!-- ── HERO · kimlik + sinematik DNA ─────────────────────────────── -->
+    <section class="profile-rise relative overflow-hidden rounded-[28px] border border-outline-variant/25 bg-surface/70 backdrop-blur-2xl shadow-[0_36px_120px_-28px_rgba(0,0,0,.6)]">
+      <div class="absolute -top-36 -right-28 w-[26rem] h-[26rem] rounded-full bg-primary-container/12 blur-[130px] pointer-events-none"></div>
+      <div class="absolute -bottom-44 -left-28 w-[26rem] h-[26rem] rounded-full bg-tertiary-container/8 blur-[130px] pointer-events-none"></div>
+
+      <div class="relative grid lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-10 xl:gap-16 p-6 md:p-10 xl:p-12">
+        <!-- identity -->
+        <div class="flex flex-col items-center lg:items-start">
+          <div class="relative">
+            <div class="absolute -inset-6 rounded-full bg-primary-container/20 blur-2xl pointer-events-none"></div>
+            <div class="relative rounded-full p-[3px] bg-gradient-to-br from-primary-container via-tertiary-container/70 to-secondary-container/60 shadow-[0_24px_70px_-18px_rgba(0,224,84,.4)]">
+              <div class="rounded-full p-1.5 bg-surface">
+                <div id="profile-avatar-fallback" class="w-48 h-48 md:w-56 md:h-56 xl:w-[264px] xl:h-[264px] rounded-full bg-surface-container flex items-center justify-center text-primary-container font-display-lg text-[56px] xl:text-[78px] leading-none"></div>
+                <img id="profile-avatar" class="hidden w-48 h-48 md:w-56 md:h-56 xl:w-[264px] xl:h-[264px] rounded-full object-cover" alt=""/>
+              </div>
+            </div>
+            <span class="absolute bottom-4 right-5 w-5 h-5 rounded-full bg-primary-container border-4 border-surface shadow-[0_0_18px_rgba(0,224,84,.8)]" title="Profil aktif"></span>
+          </div>
+
+          <div class="mt-7 w-full text-center lg:text-left">
+            <h1 id="profile-display-name" class="font-headline-lg text-[30px] xl:text-[38px] leading-[1.05] tracking-[-.04em] text-on-surface break-words"></h1>
+            <p id="profile-username" class="mt-2 font-label-md text-label-md text-on-surface-variant"></p>
+
+            <div class="mt-5 flex flex-col gap-2.5">
+              <div class="flex items-center gap-2.5 justify-center lg:justify-start">
+                <span class="material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings:'FILL' 1">verified</span>
+                <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">Letterboxd profili bağlı</span>
+              </div>
+              <div id="profile-last-sync" class="flex items-center gap-2.5 justify-center lg:justify-start font-label-sm text-label-sm text-on-surface-variant/60"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- taste analysis -->
+        <div class="min-w-0 lg:border-l lg:border-outline-variant/15 lg:pl-10 xl:pl-16">
+          <div class="flex flex-wrap items-center justify-between gap-5">
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik DNA</span>
+            <div class="flex items-center gap-3">
+              <div class="relative w-[72px] h-[72px] shrink-0">
+                <svg viewBox="0 0 72 72" class="w-full h-full -rotate-90">
+                  <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/>
+                  <circle id="profile-confidence-ring" cx="36" cy="36" r="28" fill="none" stroke="#00e054" stroke-width="6" stroke-linecap="round" stroke-dasharray="175.93" stroke-dashoffset="175.93" style="transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1),stroke .4s ease"/>
+                </svg>
+                <span id="profile-confidence-score" class="absolute inset-0 flex items-center justify-center font-headline-md text-[16px] text-on-surface">—</span>
+              </div>
+              <div class="text-left">
+                <span id="profile-confidence" class="block font-label-md text-label-md uppercase tracking-wide text-primary-container">Analiz bekleniyor</span>
+                <span class="block font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/55">Veri güveni</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="relative mt-6 pl-5">
+            <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-gradient-to-b from-primary-container via-tertiary-container/60 to-transparent"></span>
+            <p id="profile-taste-summary" class="font-headline-md text-[23px] md:text-[29px] xl:text-[33px] leading-[1.28] tracking-[-.025em] text-on-surface">Zevk profili hazırlanıyor…</p>
+          </div>
+
+          <div id="profile-genres" class="mt-6 flex flex-wrap gap-2.5"></div>
+
+          <div class="grid grid-cols-3 gap-3 md:gap-4 mt-8">
+            <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
+              <span class="material-symbols-outlined text-on-surface-variant/45 text-[20px]">movie</span>
+              <strong id="profile-sample-size" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-on-surface">—</strong>
+              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Analiz edilen film</span>
+            </div>
+            <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
+              <span class="material-symbols-outlined text-tertiary-container/60 text-[20px]">star_rate</span>
+              <strong id="profile-rated-count" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-tertiary-container">—</strong>
+              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Puanlanan film</span>
+            </div>
+            <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
+              <span class="material-symbols-outlined text-secondary-container/70 text-[20px]">dataset</span>
+              <strong id="profile-metadata-coverage" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-secondary-container">—</strong>
+              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Veri kapsamı</span>
+            </div>
+          </div>
+
+          <div id="profile-sync-error" class="hidden mt-5 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── En sevilen yönetmenler + Favori dört film ──────────────────── -->
+    <div class="profile-rise grid lg:grid-cols-[minmax(300px,340px)_1fr] gap-6 mt-6" style="animation-delay:.08s">
+      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
+        <div class="flex items-start justify-between gap-4 mb-7">
+          <div>
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Auteur radar</span>
+            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">En sevilen<br/>yönetmenler</h2>
+          </div>
+          <span class="material-symbols-outlined text-tertiary-container/40 text-[28px]">movie_edit</span>
+        </div>
+        <div id="profile-directors" class="flex flex-col gap-4"></div>
+      </section>
+
+      <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
+        <div class="flex items-end justify-between gap-4 mb-7">
+          <div>
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Kişisel seçki</span>
+            <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Favori dört film</h2>
+          </div>
+          <span class="font-label-sm text-label-sm text-on-surface-variant/50 uppercase tracking-wide">Letterboxd Fav 4</span>
+        </div>
+        <div id="profile-favorites" class="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-5"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
 <!-- ═══════════════════════════  VIEW: IDLE  ═══════════════════════════ -->
 <div id="view-idle" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <!-- Ambient glows -->
@@ -437,24 +573,6 @@ tailwind.config = {
   <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-tertiary-container/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
 
   <div class="relative z-10 w-full max-w-[800px] flex flex-col items-center text-center">
-    <section id="profile-card" class="hidden w-full glass-panel rounded-xl p-4 md:p-5 mb-7 text-left items-center gap-4">
-      <div id="profile-avatar-fallback" class="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full bg-surface-container flex items-center justify-center text-primary-container font-headline-lg text-headline-lg border border-outline-variant/30"></div>
-      <img id="profile-avatar" class="hidden w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full object-cover border border-outline-variant/30" alt=""/>
-      <div class="min-w-0 flex-grow">
-        <div class="flex flex-wrap items-center gap-2 mb-1">
-          <strong id="profile-display-name" class="font-headline-md text-headline-md text-on-surface"></strong>
-          <span id="profile-confidence" class="px-2 py-1 rounded-full bg-primary-container/10 text-primary-container font-label-sm text-label-sm uppercase"></span>
-        </div>
-        <p id="profile-taste-summary" class="font-body-md text-body-md text-on-surface-variant">Zevk profili hazırlanıyor…</p>
-        <p id="profile-director" class="hidden mt-1 font-label-md text-label-md text-tertiary-container"></p>
-        <p id="profile-last-sync" class="hidden mt-1 font-label-sm text-label-sm text-on-surface-variant/60"></p>
-        <div id="profile-favorites" class="hidden mt-3 gap-2"></div>
-      </div>
-      <button id="btn-profile-sync" class="shrink-0 p-2 text-on-surface-variant hover:text-primary transition-colors" title="Profili yenile" aria-label="Profili yenile">
-        <span class="material-symbols-outlined">sync</span>
-      </button>
-    </section>
-
     <!-- Headline -->
     <h1 id="idle-headline" class="font-display-lg text-display-lg text-on-surface mb-stack-md leading-tight">
       İzleme listende<br/>
@@ -1195,7 +1313,7 @@ function setAuthHeaderLinks(visible) {
 }
 
 function showView(name) {
-  ['auth', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
+  ['auth', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'loading', 'blend-loading'].includes(name));
@@ -1241,6 +1359,7 @@ async function loadHealth() {
 // ── Account & persisted profile ───────────────────────────────────────────
 let _authEnabled = false;
 let _account = null;
+let _persistedProfile = null;
 let _verification = null;
 let _resetChallenge = null;
 
@@ -1430,11 +1549,10 @@ function applyAccount(account) {
   $('header-account').classList.add('flex');
   $('header-username').textContent = '@' + account.username;
   $('profile-display-name').textContent = account.display_name || account.username;
+  $('profile-username').textContent = '@' + account.username;
   $('profile-avatar-fallback').textContent = (account.display_name || account.username)[0].toUpperCase();
   setImage($('header-avatar'), null, account.avatar_url, account.display_name);
   setImage($('profile-avatar'), $('profile-avatar-fallback'), account.avatar_url, account.display_name);
-  $('profile-card').classList.remove('hidden');
-  $('profile-card').classList.add('flex');
   $('btn-delete-data').classList.add('hidden');
   $('btn-mode-blend').disabled = false;
   $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
@@ -1443,34 +1561,93 @@ function applyAccount(account) {
 
 function renderPersistedProfile(data) {
   if (!data) return;
+  _persistedProfile = data;
   if (data.account) applyAccount(data.account);
   const taste = data.taste;
   if (taste) {
     $('profile-taste-summary').textContent = taste.summary || 'Zevk analizi hazır.';
     const confidenceNames = { low: 'Düşük veri güveni', medium: 'Orta veri güveni', high: 'Yüksek veri güveni' };
-    $('profile-confidence').textContent = `${confidenceNames[taste.confidence_level] || 'Düşük veri güveni'} · %${taste.confidence_score || 0}`;
-    if (taste.favorite_director) {
-      $('profile-director').textContent = `Favori yönetmen · ${taste.favorite_director}`;
-      $('profile-director').classList.remove('hidden');
-    }
+    const confidenceColors = { low: '#ff8000', medium: '#6ccdff', high: '#00e054' };
+    const confidenceScore = Math.max(0, Math.min(100, Math.round(taste.confidence_score || 0)));
+    const confidenceTone = confidenceColors[taste.confidence_level] || '#ff8000';
+    $('profile-confidence').textContent = confidenceNames[taste.confidence_level] || 'Düşük veri güveni';
+    $('profile-confidence').style.color = confidenceTone;
+    $('profile-confidence-score').textContent = `%${confidenceScore}`;
+    const confidenceRing = $('profile-confidence-ring');
+    const ringCircumference = 2 * Math.PI * 28;
+    confidenceRing.style.stroke = confidenceTone;
+    confidenceRing.style.strokeDashoffset = String(ringCircumference * (1 - confidenceScore / 100));
+    $('profile-sample-size').textContent = String(taste.sample_size || 0);
+    $('profile-rated-count').textContent = String(taste.rated_count || 0);
+    $('profile-metadata-coverage').textContent = `%${taste.metadata_coverage || 0}`;
+    const genres = taste.top_genres || [];
+    $('profile-genres').innerHTML = genres.length
+      ? genres.slice(0, 4).map(genre => `<span class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-primary-container/20 bg-primary-container/5 text-on-surface font-label-md text-label-md"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>${escapeHTML(genre)}</span>`).join('')
+      : '<span class="text-on-surface-variant/60 text-sm">Tür sinyali henüz yeterli değil.</span>';
+    const directors = (taste.top_directors?.length ? taste.top_directors : [taste.favorite_director]).filter(Boolean).slice(0, 3);
+    const directorRanks = [
+      { tone: '#00e054', ghost: 'rgba(0,224,84,0.09)', chip: 'rgba(0,224,84,0.10)', ring: 'rgba(0,224,84,0.30)', label: 'En güçlü sinyal' },
+      { tone: '#6ccdff', ghost: 'rgba(108,205,255,0.09)', chip: 'rgba(108,205,255,0.10)', ring: 'rgba(108,205,255,0.30)', label: '2. sıra' },
+      { tone: '#ff8000', ghost: 'rgba(255,128,0,0.10)', chip: 'rgba(255,128,0,0.12)', ring: 'rgba(255,128,0,0.32)', label: '3. sıra' },
+    ];
+    $('profile-directors').innerHTML = directors.length
+      ? directors.map((director, index) => {
+          const rank = directorRanks[index] || directorRanks[0];
+          const ordinal = String(index + 1).padStart(2, '0');
+          const initial = escapeHTML((director.trim()[0] || '?').toUpperCase());
+          return `
+          <div class="group relative overflow-hidden rounded-2xl border border-outline-variant/20 bg-surface-container/45 p-5 md:p-6 transition-colors hover:bg-surface-container/70">
+            <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[118px] leading-none select-none" style="color:${rank.ghost}">${ordinal}</span>
+            <div class="relative flex items-center gap-4">
+              <span class="font-display-lg text-[26px] leading-none shrink-0" style="color:${rank.tone}">${ordinal}</span>
+              <span class="w-11 h-11 shrink-0 rounded-full flex items-center justify-center font-headline-md text-[17px]" style="color:${rank.tone};background:${rank.chip};border:1px solid ${rank.ring}">${initial}</span>
+              <div class="min-w-0">
+                <strong class="block font-headline-md text-[18px] md:text-[19px] text-on-surface truncate">${escapeHTML(director)}</strong>
+                <span class="font-label-sm text-label-sm text-on-surface-variant/55 uppercase tracking-wide">${rank.label} · puan ağırlıklı</span>
+              </div>
+            </div>
+          </div>`;
+        }).join('')
+      : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için daha fazla metadata gerekiyor.</div>';
     const syncedAt = taste.updated_at || taste.generated_at;
     if (syncedAt) {
-      $('profile-last-sync').textContent = `Son güncelleme · ${new Date(syncedAt).toLocaleString('tr-TR')}`;
-      $('profile-last-sync').classList.remove('hidden');
+      $('profile-last-sync').innerHTML = `<span class="material-symbols-outlined text-[16px]">schedule</span>Son güncelleme · ${escapeHTML(new Date(syncedAt).toLocaleString('tr-TR'))}`;
     }
+  } else {
+    $('profile-confidence').textContent = 'Analiz bekleniyor';
+    $('profile-confidence').style.color = '';
+    $('profile-confidence-score').textContent = '—';
+    $('profile-confidence-ring').style.strokeDashoffset = String(2 * Math.PI * 28);
+    $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
   }
   const favorites = data.favorite_films || [];
-  if (favorites.length) {
-    $('profile-favorites').innerHTML = favorites.slice(0, 4).map(film => {
+  $('profile-favorites').innerHTML = favorites.length
+    ? favorites.slice(0, 4).map((film, index) => {
       const title = escapeHTML(film.title);
+      const year = film.release_year ? escapeHTML(String(film.release_year)) : '';
       const poster = safeImageURL(film.poster_url);
+      const badge = `<span class="absolute top-2.5 left-2.5 w-7 h-7 rounded-full bg-black/65 backdrop-blur flex items-center justify-center text-xs font-bold text-primary-container border border-white/10">${index + 1}</span>`;
+      const heart = index === 0
+        ? `<span class="absolute top-2.5 right-2.5 material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings:'FILL' 1">favorite</span>`
+        : '';
       return poster
-        ? `<img src="${poster}" alt="${title}" title="${title}" class="w-10 h-14 rounded object-cover border border-outline-variant/30"/>`
-        : `<div title="${title}" class="w-10 h-14 rounded bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30 text-[16px]">movie</span></div>`;
-    }).join('');
-    $('profile-favorites').classList.remove('hidden');
-    $('profile-favorites').classList.add('flex');
-  }
+        ? `<article class="group relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25 shadow-[0_26px_60px_-20px_rgba(0,0,0,.65)] transition-transform duration-300 hover:-translate-y-1.5">
+             <img src="${poster}" alt="${title}" class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]" loading="lazy"/>
+             <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
+             ${badge}${heart}
+             <div class="absolute inset-x-0 bottom-0 p-3.5">
+               <strong class="block font-headline-md text-[14px] md:text-[15px] text-white leading-tight line-clamp-2">${title}</strong>
+               ${year ? `<span class="mt-0.5 block font-label-sm text-label-sm text-white/55">${year}</span>` : ''}
+             </div>
+           </article>`
+        : `<article class="relative aspect-[2/3] rounded-2xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25 flex flex-col items-center justify-center p-4 text-center">
+             ${badge}
+             <span class="material-symbols-outlined text-on-surface-variant/25 text-[44px]">movie</span>
+             <strong class="mt-3 font-label-md text-label-md text-on-surface-variant">${title}</strong>
+             ${year ? `<span class="mt-1 font-label-sm text-label-sm text-on-surface-variant/50">${year}</span>` : ''}
+           </article>`;
+    }).join('')
+    : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 }
 
 let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
@@ -1686,6 +1863,7 @@ async function syncProfile(force = false) {
   const button = $('btn-profile-sync');
   button.disabled = true;
   button.querySelector('span').classList.add('animate-spin');
+  $('profile-sync-error').classList.add('hidden');
   $('profile-taste-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
   try {
     const data = await apiJSON(`/api/profile/sync?force=${force ? 'true' : 'false'}`, {
@@ -1696,7 +1874,8 @@ async function syncProfile(force = false) {
     renderPersistedProfile(data);
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
-    setIdleError(error.message || 'Profil senkronu tamamlanamadı.');
+    $('profile-sync-error').textContent = error.message || 'Profil senkronu tamamlanamadı.';
+    $('profile-sync-error').classList.remove('hidden');
   } finally {
     button.disabled = false;
     button.querySelector('span').classList.remove('animate-spin');
@@ -1707,10 +1886,17 @@ async function loadProfile() {
   try {
     const profile = await apiJSON('/api/profile/me');
     renderPersistedProfile(profile);
-    if (_account?.profile_sync_status === 'pending') syncProfile();
+    if (_account?.profile_sync_status === 'pending' || profile.needs_refresh) syncProfile();
   } catch (_) {
     if (_account?.profile_sync_status === 'pending') syncProfile();
   }
+}
+
+function openProfile() {
+  toggleAccountMenu(false);
+  showView('profile');
+  if (_persistedProfile) renderPersistedProfile(_persistedProfile);
+  else loadProfile();
 }
 
 function enterApp(account) {
@@ -2678,11 +2864,10 @@ async function logoutAccount() {
     await apiJSON('/api/auth/logout', { method: 'POST', headers: csrfHeaders() });
   } catch (_) {}
   _account = null;
+  _persistedProfile = null;
   _feedbackFilms.clear();
   $('header-account').classList.add('hidden');
   $('header-account').classList.remove('flex');
-  $('profile-card').classList.add('hidden');
-  $('profile-card').classList.remove('flex');
   $('primary-username-field').classList.remove('hidden');
   $('username-input').value = '';
   $('inbox-badge').classList.add('hidden');
@@ -2762,11 +2947,7 @@ $('btn-account-menu').addEventListener('click', event => {
   toggleAccountMenu();
 });
 $('account-menu').addEventListener('click', event => event.stopPropagation());
-$('menu-profile-sync').addEventListener('click', () => {
-  toggleAccountMenu(false);
-  showView('idle');
-  syncProfile(true);
-});
+$('menu-profile-view').addEventListener('click', openProfile);
 $('menu-feedback-history').addEventListener('click', () => {
   toggleAccountMenu(false);
   loadFeedbackHistory();
@@ -2777,6 +2958,7 @@ $('menu-delete-data').addEventListener('click', () => {
 });
 document.addEventListener('click', () => toggleAccountMenu(false));
 $('btn-profile-sync').addEventListener('click', () => syncProfile(true));
+$('btn-profile-back').addEventListener('click', () => showView('idle'));
 $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView('idle'));
