@@ -494,7 +494,12 @@ tailwind.config = {
         <!-- taste analysis -->
         <div class="min-w-0 lg:border-l lg:border-outline-variant/15 lg:pl-10 xl:pl-16">
           <div class="flex flex-wrap items-center justify-between gap-5">
-            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik DNA</span>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik DNA</span>
+              <span id="profile-scope-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary-container/25 bg-primary-container/10 text-primary-container font-label-sm text-label-sm uppercase tracking-wide">
+                <span class="material-symbols-outlined text-[13px]" style="font-variation-settings:'FILL' 1">verified</span><span id="profile-scope-badge-text">Tüm geçmiş</span>
+              </span>
+            </div>
             <div class="flex items-center gap-3">
               <div class="relative w-[72px] h-[72px] shrink-0">
                 <svg viewBox="0 0 72 72" class="w-full h-full -rotate-90">
@@ -536,6 +541,20 @@ tailwind.config = {
           </div>
 
           <div id="profile-sync-error" class="hidden mt-5 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
+
+          <div id="profile-sweep" class="hidden mt-5 rounded-xl border border-primary-container/20 bg-primary-container/[0.06] p-4">
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <span class="flex items-center gap-2 font-label-md text-label-md text-primary-container uppercase tracking-wide">
+                <span class="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                <span id="profile-sweep-label">Tüm izleme geçmişin analiz ediliyor</span>
+              </span>
+              <span id="profile-sweep-count" class="font-label-sm text-label-sm text-on-surface-variant shrink-0"></span>
+            </div>
+            <div class="h-1.5 rounded-full bg-surface-container overflow-hidden">
+              <div id="profile-sweep-bar" class="h-full rounded-full bg-gradient-to-r from-primary-container to-tertiary-container transition-[width] duration-700" style="width:0%"></div>
+            </div>
+            <p class="mt-2 font-label-sm text-label-sm text-on-surface-variant/60">Şu an geçici bir analiz gösteriliyor; tüm geçmiş tamamlanınca otomatik güncellenir.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -1791,6 +1810,61 @@ function renderPersistedProfile(data) {
            </article>`;
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
+
+  applySyncJob(data.sync_job);
+}
+
+// ── Full watched-history sweep progress ──────────────────────────────────
+let _sweepPollTimer = null;
+const _SWEEP_PHASE_LABEL = {
+  diary: 'İzleme geçmişin taranıyor',
+  enrich: 'Film verileri zenginleştiriliyor',
+  aggregate: 'Zevk analizi hesaplanıyor',
+};
+
+function applySyncJob(job) {
+  const badge = $('profile-scope-badge');
+  const strip = $('profile-sweep');
+  const active = job && (job.state === 'queued' || job.state === 'running');
+
+  if (job && job.state === 'done' && job.scope === 'full') {
+    $('profile-scope-badge-text').textContent = job.total
+      ? `Tüm geçmiş · ${job.total.toLocaleString('tr-TR')} film`
+      : 'Tüm geçmiş analiz edildi';
+    badge.classList.remove('hidden');
+    badge.classList.add('inline-flex');
+  } else {
+    badge.classList.add('hidden');
+    badge.classList.remove('inline-flex');
+  }
+
+  if (active) {
+    strip.classList.remove('hidden');
+    $('profile-sweep-label').textContent = _SWEEP_PHASE_LABEL[job.phase] || 'Tüm izleme geçmişin analiz ediliyor';
+    $('profile-sweep-count').textContent = job.total
+      ? `${job.processed.toLocaleString('tr-TR')} / ${job.total.toLocaleString('tr-TR')} film`
+      : `${(job.processed || 0).toLocaleString('tr-TR')} film`;
+    $('profile-sweep-bar').style.width = `${Math.max(4, job.percent || 0)}%`;
+    startSweepPoll();
+  } else {
+    strip.classList.add('hidden');
+    stopSweepPoll();
+  }
+}
+
+function startSweepPoll() {
+  if (_sweepPollTimer) return;
+  _sweepPollTimer = setInterval(async () => {
+    if ($('view-profile').classList.contains('hidden')) { stopSweepPoll(); return; }
+    try {
+      const profile = await apiJSON('/api/profile/me');
+      renderPersistedProfile(profile);
+    } catch (_) { /* transient; keep polling */ }
+  }, 7000);
+}
+
+function stopSweepPoll() {
+  if (_sweepPollTimer) { clearInterval(_sweepPollTimer); _sweepPollTimer = null; }
 }
 
 let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
@@ -2038,7 +2112,9 @@ async function loadProfile() {
 function openProfile() {
   toggleAccountMenu(false);
   showView('profile');
-  if (_persistedProfile) renderPersistedProfile(_persistedProfile);
+  const job = _persistedProfile && _persistedProfile.sync_job;
+  const sweepActive = job && job.state !== 'done';
+  if (_persistedProfile && !sweepActive) renderPersistedProfile(_persistedProfile);
   else loadProfile();
 }
 
