@@ -6,11 +6,121 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
 
 ## Değişmez ürün ve teknik ilkeler
 
-- Kullanıcının tek zorunlu girdisi Letterboxd kullanıcı adıdır.
+- Temel kimlik Letterboxd kullanıcı adıdır; export/import istenmez.
+- Hesap oluştururken Letterboxd kullanıcı adına ek olarak parola ve parola tekrarı
+  alınır; öneri araçları giriş yapılmış profile bağlanır.
 - Export ZIP/CSV yükleme veya manuel veri import akışı yapılmayacaktır.
 - Ücretli/harici scraping servisi ve ücretli Letterboxd API kullanılmayacaktır.
 - Önce kendi doğrudan scraper'ımız iyileştirilir. Açık kaynak Letterboxd
   kütüphaneleri ancak ölçülmüş bir güvenilirlik avantajı sunarsa değerlendirilir.
+
+## Hesap tabanlı ürün yol haritası — 2026-08-30
+
+Bu bölüm anonim username aracından kalıcı kullanıcı profili ürününe geçişin
+uygulama sırasıdır. Güvenlik veya ürün davranışını değiştiren maddeler ürün sahibi
+onayı gelmeden uygulanmaz.
+
+### P0.1 — Kimlik, sahiplik ve güvenlik temeli
+
+- [x] Login/register ekranını mevcut görsel dil ve responsive yapıyı bozmadan ayrı
+  bir başlangıç view'u olarak oluştur.
+- [x] Kayıtta `Letterboxd username + parola + parola tekrarı` al; iki parolanın
+  eşleşmesini hem client hem API sınırında doğrula.
+- [x] **KARAR ONAYLANDI — AUTH:** Username-only UX'i koruyup arka planda Supabase
+  Auth sentetik kimliği + backend HttpOnly/Secure/SameSite session cookie kullan.
+  Custom parola hash tablosu oluşturma.
+- [x] Parola politikası, brute-force limiti, generic auth hataları,
+  session rotation, logout ve CSRF koruması ekle.
+- [x] **KARAR ONAYLANDI — SAHİPLİK:** Başkasının Letterboxd username'ini sahiplenmeyi
+  engellemek için kayıt ve parola kurtarmada profile bio doğrulama kodu zorunlu yap.
+- [x] **KARAR ONAYLANDI — ERİŞİM:** Taste/Random'ı yalnız giriş yapmış
+  kullanıcılara aç; mevcut anonim endpoint'leri kapat veya read-only demo olarak tut.
+- [x] Parola kurtarma tasarla. Email/telefon alınmayacaksa Letterboxd bio doğrulama
+  kodunu tek güvenli self-service kurtarma yöntemi olarak kullan.
+- [x] Mevcut anonim “Verimi Sil” akışını login sonrası yalnız kendi hesabını
+  silebilen authenticated akışa geçir.
+- [x] Auth audit log'u ekle; parola, token, session veya bio doğrulama kodunu loglama.
+
+### P0.2 — Veri modeli ve RLS migrasyonu
+
+- [x] `users` tablosunu auth kimliğine bağla: `auth_user_id`, normalize username,
+  display name, avatar URL, profil senkron durumu ve timestamp alanları.
+- [x] `taste_profiles` oluştur: zevk özeti, favori yönetmen, örneklem/puan/metadata
+  kapsamı, güven seviyesi, algoritma sürümü ve son hesaplanma zamanı.
+- [x] `profile_favorites` oluştur: sıralı Fav 4 slug/TMDb/poster metadata'sı.
+- [x] `blend_requests` oluştur: requester, recipient, pending/accepted/rejected/
+  cancelled/expired durumları ve karar timestamp'leri.
+- [x] `blend_results` oluştur: kabul edilen request, kalibre skor, güven seviyesi,
+  ortak filmler/watchlist ve algoritma sürümü.
+- [x] Inbox sorguları için `(recipient_id, status, created_at)`; geçmiş için kullanıcı
+  ve tarih indeksleri ekle.
+- [x] Tüm yeni tablolarda RLS ve browser erişim reddi: yeni tablolar yalnız backend
+  service role üzerinden erişilebilir; kullanıcı yetkisi API oturumunda uygulanır.
+- [x] Migration'ı idempotent SQL olarak hazırla; mevcut cache tablolarını ve deploy'u
+  kırmadan rollout/backfill planı ekle.
+
+### P0.3 — Letterboxd profil senkronizasyonu
+
+- [x] Public profil sayfasından display name ve profil fotoğrafını doğrudan çek.
+- [x] `#favourites` alanından sıralı Fav 4 title/year/slug bilgisini çek; posterleri
+  mevcut TMDb enrichment/cache üzerinden tamamla.
+- [x] İlk girişte watched + ratings + profil metadata'yı çek; profil
+  eksik/private/blokluysa hesabı bozuk yarım state'e bırakma.
+- [x] Favori yönetmeni yüksek puan verilen izlenmiş filmlerden rating-aware hesapla;
+  puansız profilde tekrar sayısı + yakın dönem ağırlıklı fallback kullan.
+- [x] Zevk analizini ilk profil senkronunda hesapla ve `taste_profiles` içine atomik yaz.
+- [x] Profil snapshot fingerprint'i değişmediyse analizi yeniden üretme; değiştiğinde
+  eski sağlam snapshot'ı yeni atomik yazım tamamlanana kadar koru.
+- [x] Profil senkronu için `pending/ready/stale/failed` durumları, retry ve son sağlam
+  snapshot davranışı ekle.
+
+### P1 — Kalıcı profil deneyimi
+
+- [x] Giriş sonrası dashboard header'ında profil fotoğrafını solda; güncel zevk
+  analizini hemen sağında göster.
+- [x] Aynı profil kartında favori yönetmen, veri güveni ve Fav 4 posterlerini göster.
+- [x] Profil kartına son başarılı güncelleme zamanını ekle.
+- [x] Taste, Random ve Blend modlarını profil dashboard'ının altında mevcut tasarım
+  diliyle koru; username'i tekrar isteme.
+- [x] “Profili yenile” aksiyonu ekle; rate limit ve fingerprint short-circuit uygula.
+- [x] İlk senkron uzun sürerse progress durumu göster; account creation request'ini
+  proxy timeout'una bağlı bırakma.
+- [ ] Kullanıcı verisi silme ve logout akışını profil menüsüne taşı.
+
+### P1 — Onaylı Blend ve inbox
+
+- [x] Blend aramasında yalnız kayıtlı Movieboxd kullanıcılarını bul; self-request,
+  duplicate pending request ve bloklanmış kullanıcı durumlarını engelle.
+- [x] Blend isteği oluşturulduğunda alıcının inbox'ına `pending` kayıt düşür; henüz
+  skor veya karşı tarafın taste detayını açığa çıkarma.
+- [x] Inbox badge/listesi, gönderen profil özeti, kabul/reddet aksiyonları ve generic
+  hata/boş durum ekranları ekle.
+- [x] Yalnız alıcı kabul/reddedebilsin; karar endpoint'lerini idempotent ve yarış
+  koşullarına dayanıklı yap.
+- [x] Kabul sonrası mevcut kalibre Blend motorunu snapshot'lar üzerinde çalıştır ve
+  sonucu `blend_results` içine kaydet.
+- [x] Blend geçmişini iki taraf için listele; skor, güven, ortak filmler ve sonuç
+  tarihini göster.
+- [x] Profil yeniden hesaplanınca eski Blend sonucunu tarihsel snapshot olarak koru;
+  kullanıcı isterse yeni Blend isteği gönderebilsin.
+- [x] Inbox IP limiti, kişi başına 10 pending kota ve 14 günlük expiry politikası ekle.
+- [ ] Block/report hazırlığı ekle.
+
+### P1 — Test, gözlemlenebilirlik ve rollout
+
+- [x] Auth password/identity/login cookie/CSRF sınırı testleri.
+- [ ] Sahiplik doğrulama, parola kurtarma ve account deletion güvenlik testleri.
+- [x] Gerçek profil HTML'inden anonimleştirilmiş avatar/Fav 4 fixture testleri.
+- [x] Taste profil hesaplama golden testleri: rating-aware favori yönetmen, Fav 4 ve
+  düşük veri güveni senaryoları.
+- [x] Blend request API izin sınırı, kabul/ret, persisted result, single-flight ve SQL
+  consent guard contract testleri.
+- [ ] Gerçek Supabase üzerinde iki kullanıcılı RLS/state-machine entegrasyon testi.
+- [ ] Login → profil senkronu → inbox → Blend kabulü browser E2E testi.
+- [ ] Eski anonim endpoint'ler için rollout flag'i, migration telemetry'si ve geri
+  dönüş planı ekle.
+- [ ] Hedefler: warm profile p95 <500 ms, inbox p95 <300 ms, accepted Blend sonucu
+  cache-hit'te <2 sn, auth error ve sync failure oranları dashboard'u.
 
 ### Açık kaynak araştırma notu — 2026-08-30
 
@@ -49,7 +159,7 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   - [x] Ücretsiz/doğrudan `python -m scripts.check_scraper <username>` canary komutu
     ekle ve güncel DOM üzerinde doğrula.
   - [ ] Düşük frekanslı (günde bir) çalıştırmayı CI/cron'a bağla.
-- [ ] Gerçek Letterboxd HTML örneklerinden anonimleştirilmiş parser fixture seti kur.
+- [x] Gerçek Letterboxd HTML örneklerinden anonimleştirilmiş parser fixture seti kur.
 - [x] Sayfa/list fingerprint'i ile değişmeyen profillerde gereksiz tam crawl ve
   TMDb enrichment işini atla.
 
@@ -131,7 +241,7 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   - [x] Temel parser markup ve single-flight testleri.
   - [x] Cache TTL, stale refresh, fingerprint, concurrency ve TMDb retry testleri.
   - [x] Rating-aware ve MMR ranking testleri.
-  - [ ] Gerçek HTML parser fixture'ları.
+  - [x] Gerçek HTML parser fixture'ları.
 - [x] Integration test: SSE success, scraper error code ve modlar arası ortak rate
   limit senaryoları.
 - [x] Beş public gerçek profil üzerinde izole cold pipeline testi: watched/watchlist

@@ -271,17 +271,98 @@ tailwind.config = {
     <button id="btn-home" class="text-on-surface-variant hover:text-primary transition-colors active:scale-95" aria-label="Ana sayfa">
     </button>
     <div class="font-headline-md text-headline-md tracking-tighter text-gradient-green">MOVIEBOXD · AI</div>
-    <div class="w-6"></div>
+    <div id="header-account" class="hidden items-center gap-2">
+      <img id="header-avatar" class="hidden w-8 h-8 rounded-full object-cover border border-outline-variant/40" alt=""/>
+      <span id="header-username" class="hidden sm:inline font-label-md text-label-md text-on-surface-variant"></span>
+      <button id="btn-inbox" class="relative text-on-surface-variant hover:text-primary transition-colors" aria-label="Blend inbox" title="Blend inbox">
+        <span class="material-symbols-outlined text-[20px]">inbox</span>
+        <span id="inbox-badge" class="hidden absolute -top-2 -right-2 min-w-4 h-4 px-1 rounded-full bg-secondary-container text-on-secondary-container text-[9px] font-bold items-center justify-center"></span>
+      </button>
+      <button id="btn-logout" class="text-on-surface-variant hover:text-error transition-colors" aria-label="Çıkış yap" title="Çıkış yap">
+        <span class="material-symbols-outlined text-[19px]">logout</span>
+      </button>
+    </div>
   </div>
 </header>
 
+<!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
+<div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
+  <div class="absolute inset-0 pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
+  <main class="relative z-10 w-full max-w-[460px] glass-panel rounded-xl p-6 md:p-8">
+    <div class="mb-6">
+      <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Kişisel sinema profilin</span>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-2">Movieboxd’a giriş yap</h1>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-2">Yalnızca Letterboxd kullanıcı adın yeterli. Verilerini kendi doğrudan scraper’ımızla okuyoruz.</p>
+    </div>
+
+    <div id="auth-tabs" class="grid grid-cols-2 gap-2 mb-5">
+      <button id="auth-tab-login" class="py-2.5 rounded-lg bg-primary-container text-black font-label-md text-label-md uppercase">Giriş</button>
+      <button id="auth-tab-register" class="py-2.5 rounded-lg bg-surface-variant text-on-surface-variant border border-outline-variant/30 font-label-md text-label-md uppercase">Hesap oluştur</button>
+    </div>
+
+    <form id="login-form" class="flex flex-col gap-3">
+      <input id="login-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
+      <input id="login-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parola" type="password" autocomplete="current-password" required/>
+      <button id="btn-login" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Giriş yap</button>
+      <button id="btn-show-reset" type="button" class="text-on-surface-variant hover:text-primary text-sm py-1">Parolamı unuttum</button>
+    </form>
+
+    <form id="register-form" class="hidden flex-col gap-3">
+      <input id="register-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
+      <input id="register-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10" required/>
+      <input id="register-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10" required/>
+      <button id="btn-register" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Hesabı oluştur</button>
+    </form>
+
+    <div id="verify-panel" class="hidden flex-col gap-4">
+      <p class="font-body-md text-body-md text-on-surface-variant">Aşağıdaki kodu Letterboxd profilindeki <strong class="text-on-surface">bio</strong> alanına ekle. Profilin herkese açık olmalı.</p>
+      <button id="verification-code" type="button" class="w-full p-4 rounded-lg bg-surface-container text-primary-container font-mono text-lg tracking-wider border border-primary-container/30" title="Kopyalamak için tıkla"></button>
+      <button id="btn-verify" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Bio’yu kontrol et</button>
+      <button id="btn-verify-back" class="text-on-surface-variant hover:text-primary text-sm">Geri dön</button>
+    </div>
+
+    <div id="reset-panel" class="hidden flex-col gap-3">
+      <p class="font-body-md text-body-md text-on-surface-variant">Sahipliği Letterboxd bio koduyla doğrulayarak yeni parola belirle.</p>
+      <input id="reset-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username"/>
+      <button id="btn-reset-start" class="w-full bg-surface-variant text-on-surface py-3 rounded-lg border border-outline-variant/30 font-label-md text-label-md uppercase">Kod oluştur</button>
+      <div id="reset-finish-fields" class="hidden flex-col gap-3">
+        <button id="reset-code-display" type="button" class="w-full p-3 rounded-lg bg-surface-container text-primary-container font-mono tracking-wider border border-primary-container/30"></button>
+        <input id="reset-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Yeni parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10"/>
+        <input id="reset-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Yeni parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10"/>
+        <button id="btn-reset-finish" class="w-full bg-primary-container text-black py-3 rounded-lg font-label-md text-label-md uppercase">Parolayı değiştir</button>
+      </div>
+      <button id="btn-reset-back" class="text-on-surface-variant hover:text-primary text-sm py-1">Girişe dön</button>
+    </div>
+
+    <div id="auth-message" class="hidden mt-4 rounded-lg px-4 py-3 font-body-md text-body-md"></div>
+  </main>
+</div>
+
 <!-- ═══════════════════════════  VIEW: IDLE  ═══════════════════════════ -->
-<div id="view-idle" class="flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
+<div id="view-idle" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <!-- Ambient glows -->
   <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] bg-primary-container/10 blur-[120px] rounded-full pointer-events-none z-0"></div>
   <div class="absolute top-0 right-0 w-[400px] h-[400px] bg-tertiary-container/5 blur-[100px] rounded-full pointer-events-none z-0"></div>
 
   <div class="relative z-10 w-full max-w-[800px] flex flex-col items-center text-center">
+    <section id="profile-card" class="hidden w-full glass-panel rounded-xl p-4 md:p-5 mb-7 text-left items-center gap-4">
+      <div id="profile-avatar-fallback" class="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full bg-surface-container flex items-center justify-center text-primary-container font-headline-lg text-headline-lg border border-outline-variant/30"></div>
+      <img id="profile-avatar" class="hidden w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-full object-cover border border-outline-variant/30" alt=""/>
+      <div class="min-w-0 flex-grow">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <strong id="profile-display-name" class="font-headline-md text-headline-md text-on-surface"></strong>
+          <span id="profile-confidence" class="px-2 py-1 rounded-full bg-primary-container/10 text-primary-container font-label-sm text-label-sm uppercase"></span>
+        </div>
+        <p id="profile-taste-summary" class="font-body-md text-body-md text-on-surface-variant">Zevk profili hazırlanıyor…</p>
+        <p id="profile-director" class="hidden mt-1 font-label-md text-label-md text-tertiary-container"></p>
+        <p id="profile-last-sync" class="hidden mt-1 font-label-sm text-label-sm text-on-surface-variant/60"></p>
+        <div id="profile-favorites" class="hidden mt-3 gap-2"></div>
+      </div>
+      <button id="btn-profile-sync" class="shrink-0 p-2 text-on-surface-variant hover:text-primary transition-colors" title="Profili yenile" aria-label="Profili yenile">
+        <span class="material-symbols-outlined">sync</span>
+      </button>
+    </section>
+
     <!-- Headline -->
     <h1 id="idle-headline" class="font-display-lg text-display-lg text-on-surface mb-stack-md leading-tight">
       İzleme listende<br/>
@@ -297,7 +378,7 @@ tailwind.config = {
     <div class="w-full max-w-[540px] flex flex-col gap-3 mb-stack-lg">
 
       <!-- Kullanıcı adı 1 -->
-      <div class="relative w-full flex shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-lg overflow-hidden border border-outline-variant/30 bg-surface focus-within:border-primary-container/60 transition-colors duration-300">
+      <div id="primary-username-field" class="relative w-full flex shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-lg overflow-hidden border border-outline-variant/30 bg-surface focus-within:border-primary-container/60 transition-colors duration-300">
         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/40 pointer-events-none">
           <span class="material-symbols-outlined" style="font-size:20px">search</span>
         </span>
@@ -307,13 +388,14 @@ tailwind.config = {
       </div>
 
       <!-- Kullanıcı adı 2 — sadece blend modunda -->
-      <div id="blend-second-input" class="hidden relative w-full flex shadow-[0_4px_16px_rgba(0,0,0,0.25)] rounded-lg overflow-hidden border border-outline-variant/30 bg-surface focus-within:border-tertiary-container/60 transition-colors duration-300">
+      <div id="blend-second-input" class="hidden relative w-full flex shadow-[0_4px_16px_rgba(0,0,0,0.25)] rounded-lg overflow-visible border border-outline-variant/30 bg-surface focus-within:border-tertiary-container/60 transition-colors duration-300">
         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-tertiary-container/40 pointer-events-none">
           <span class="material-symbols-outlined" style="font-size:20px">person_add</span>
         </span>
         <input id="username2-input"
           class="w-full bg-transparent border-none py-4 pl-12 pr-4 text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant/40 focus:ring-0 outline-none"
           placeholder="ikinci letterboxd kullanıcı adı" type="text" autocomplete="off" spellcheck="false"/>
+        <div id="blend-user-suggestions" class="hidden absolute top-full inset-x-0 z-30 mt-1 rounded-lg overflow-hidden bg-surface-container border border-outline-variant/30 shadow-xl text-left"></div>
       </div>
 
       <!-- Öner butonu — tam genişlik -->
@@ -694,8 +776,38 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ═══════════════════════════  VIEW: BLEND INBOX  ═══════════════════════════ -->
+<div id="view-inbox" class="hidden flex-grow pt-20">
+  <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
+    <div class="flex items-center justify-between mt-stack-md">
+      <button id="btn-inbox-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
+      </button>
+      <button id="btn-inbox-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
+    </div>
+    <div>
+      <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Karşılıklı onay</span>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Blend Inbox</h1>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Film zevkleri yalnızca alıcı kabul ettikten sonra karşılaştırılır.</p>
+    </div>
+    <div id="inbox-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gelen istekler</h2>
+      <div id="inbox-incoming" class="flex flex-col gap-3"></div>
+    </section>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gönderilenler</h2>
+      <div id="inbox-outgoing" class="flex flex-col gap-3"></div>
+    </section>
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Blend geçmişi</h2>
+      <div id="inbox-history" class="flex flex-col gap-3"></div>
+    </section>
+  </div>
+</div>
+
 <!-- ═══════════════════════════  FOOTER  ═══════════════════════════ -->
-<footer id="main-footer" class="w-full py-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
+<footer id="main-footer" class="hidden w-full py-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
   <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto">
     <div class="font-label-md text-label-md text-on-surface">© 2025 Movieboxd AI · Yapay Zeka Film Motoru</div>
     <div class="flex items-center gap-gutter font-label-md text-label-md">
@@ -926,7 +1038,9 @@ function setMode(mode) {
   const isBlend = mode === 'blend';
   $('blend-second-input').classList.toggle('hidden', !isBlend);
 
-  const { icon, label } = _RECOMMEND_LABELS[mode] || _RECOMMEND_LABELS.taste;
+  const selected = _RECOMMEND_LABELS[mode] || _RECOMMEND_LABELS.taste;
+  const icon = selected.icon;
+  const label = mode === 'blend' && _authEnabled ? 'Blend İsteği Gönder' : selected.label;
   $('btn-recommend-icon').textContent = icon;
   $('btn-recommend-label').textContent = label;
 
@@ -942,7 +1056,7 @@ function setMode(mode) {
   const headlines = {
     taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-gradient-green',  desc: 'Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.' },
     random: { line1: 'Watchlist\'inden',        accent: 'sürpriz bir film.',     accentColor: 'text-gradient-blue', desc: 'Watchlist\'inden rastgele bir film seç — maksimum 3 kez şansını dene.' },
-    blend:  { line1: 'İki sinefilin',          accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
+    blend:  { line1: 'İki sinefilin',          accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: _authEnabled ? 'Kayıtlı bir kullanıcıya istek gönder. Zevkleriniz yalnızca o kabul ederse karşılaştırılır.' : 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
   };
   const h = headlines[mode] || headlines.taste;
   $('idle-headline').childNodes[0].textContent = h.line1 + '\n';
@@ -952,10 +1066,10 @@ function setMode(mode) {
 }
 
 function showView(name) {
-  ['idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result'].forEach(v => {
+  ['auth', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
-  $('main-footer').classList.toggle('hidden', name === 'loading' || name === 'blend-loading');
+  $('main-footer').classList.toggle('hidden', ['auth', 'loading', 'blend-loading'].includes(name));
 }
 
 function setIdleError(msg) {
@@ -984,13 +1098,317 @@ function setIdleNotice(msg) {
 async function loadHealth() {
   try {
     const r = await fetch(`${API_BASE}/api/health`);
-    if (!r.ok) return;
+    if (!r.ok) return null;
     const h = await r.json();
 
     $('dot-catalog').className = `w-2 h-2 rounded-full transition-all duration-500 ${h.tmdb_enabled  ? 'dot-orange' : 'dot-off'}`;
     $('dot-tmdb').className    = `w-2 h-2 rounded-full transition-all duration-500 ${h.tmdb_enabled  ? 'dot-green'  : 'dot-off'}`;
     $('dot-llm').className     = `w-2 h-2 rounded-full transition-all duration-500 ${h.llm_enabled   ? 'dot-blue'   : 'dot-off'}`;
-  } catch (_) {}
+    return h;
+  } catch (_) { return null; }
+}
+
+// ── Account & persisted profile ───────────────────────────────────────────
+let _authEnabled = false;
+let _account = null;
+let _verification = null;
+let _resetChallenge = null;
+
+function cookieValue(name) {
+  const prefix = `${name}=`;
+  const item = document.cookie.split('; ').find(part => part.startsWith(prefix));
+  return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+}
+
+function csrfHeaders(extra = {}) {
+  const token = cookieValue('mb_csrf');
+  return token ? { ...extra, 'X-CSRF-Token': token } : extra;
+}
+
+async function apiJSON(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, options);
+  let payload = {};
+  try { payload = await response.json(); } catch (_) {}
+  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  return payload;
+}
+
+function setAuthMessage(message, isError = false) {
+  const el = $('auth-message');
+  if (!message) { el.classList.add('hidden'); return; }
+  el.textContent = message;
+  el.className = `mt-4 rounded-lg px-4 py-3 font-body-md text-body-md ${isError ? 'bg-error-container/30 text-error' : 'bg-primary-container/10 text-primary-container'}`;
+}
+
+function setAuthMode(mode) {
+  const login = mode === 'login';
+  $('login-form').classList.toggle('hidden', !login);
+  $('register-form').classList.toggle('hidden', login);
+  $('register-form').classList.toggle('flex', !login);
+  $('verify-panel').classList.add('hidden');
+  $('verify-panel').classList.remove('flex');
+  $('reset-panel').classList.add('hidden');
+  $('reset-panel').classList.remove('flex');
+  $('auth-tabs').classList.remove('hidden');
+  $('auth-tab-login').className = `py-2.5 rounded-lg font-label-md text-label-md uppercase ${login ? 'bg-primary-container text-black' : 'bg-surface-variant text-on-surface-variant border border-outline-variant/30'}`;
+  $('auth-tab-register').className = `py-2.5 rounded-lg font-label-md text-label-md uppercase ${!login ? 'bg-primary-container text-black' : 'bg-surface-variant text-on-surface-variant border border-outline-variant/30'}`;
+  setAuthMessage(null);
+}
+
+function setImage(img, fallback, value, alt) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:') throw new Error('unsafe image');
+    img.src = url.href;
+    img.alt = alt || '';
+    img.classList.remove('hidden');
+    fallback?.classList.add('hidden');
+  } catch (_) {
+    img.removeAttribute('src');
+    img.classList.add('hidden');
+    fallback?.classList.remove('hidden');
+  }
+}
+
+function applyAccount(account) {
+  _account = account;
+  $('username-input').value = account.username;
+  $('primary-username-field').classList.add('hidden');
+  $('header-account').classList.remove('hidden');
+  $('header-account').classList.add('flex');
+  $('header-username').textContent = '@' + account.username;
+  $('profile-display-name').textContent = account.display_name || account.username;
+  $('profile-avatar-fallback').textContent = (account.display_name || account.username)[0].toUpperCase();
+  setImage($('header-avatar'), null, account.avatar_url, account.display_name);
+  setImage($('profile-avatar'), $('profile-avatar-fallback'), account.avatar_url, account.display_name);
+  $('profile-card').classList.remove('hidden');
+  $('profile-card').classList.add('flex');
+  $('btn-mode-blend').disabled = false;
+  $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
+  $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
+}
+
+function renderPersistedProfile(data) {
+  if (!data) return;
+  if (data.account) applyAccount(data.account);
+  const taste = data.taste;
+  if (taste) {
+    $('profile-taste-summary').textContent = taste.summary || 'Zevk analizi hazır.';
+    const confidenceNames = { low: 'Düşük veri güveni', medium: 'Orta veri güveni', high: 'Yüksek veri güveni' };
+    $('profile-confidence').textContent = `${confidenceNames[taste.confidence_level] || 'Düşük veri güveni'} · %${taste.confidence_score || 0}`;
+    if (taste.favorite_director) {
+      $('profile-director').textContent = `Favori yönetmen · ${taste.favorite_director}`;
+      $('profile-director').classList.remove('hidden');
+    }
+    const syncedAt = taste.updated_at || taste.generated_at;
+    if (syncedAt) {
+      $('profile-last-sync').textContent = `Son güncelleme · ${new Date(syncedAt).toLocaleString('tr-TR')}`;
+      $('profile-last-sync').classList.remove('hidden');
+    }
+  }
+  const favorites = data.favorite_films || [];
+  if (favorites.length) {
+    $('profile-favorites').innerHTML = favorites.slice(0, 4).map(film => {
+      const title = escapeHTML(film.title);
+      const poster = safeImageURL(film.poster_url);
+      return poster
+        ? `<img src="${poster}" alt="${title}" title="${title}" class="w-10 h-14 rounded object-cover border border-outline-variant/30"/>`
+        : `<div title="${title}" class="w-10 h-14 rounded bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30 text-[16px]">movie</span></div>`;
+    }).join('');
+    $('profile-favorites').classList.remove('hidden');
+    $('profile-favorites').classList.add('flex');
+  }
+}
+
+let _blendInbox = { incoming: [], outgoing: [], history: [] };
+
+function peerAvatar(peer) {
+  const poster = safeImageURL(peer?.avatar_url);
+  const name = escapeHTML(peer?.display_name || peer?.username || '?');
+  return poster
+    ? `<img src="${poster}" alt="${name}" class="w-11 h-11 rounded-full object-cover border border-outline-variant/30"/>`
+    : `<div class="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center text-primary-container font-bold">${name[0] || '?'}</div>`;
+}
+
+function blendRequestCard(item, kind) {
+  const peer = item.peer || {};
+  const username = escapeHTML(peer.username || 'bilinmeyen');
+  const displayName = escapeHTML(peer.display_name || peer.username || 'Bilinmeyen kullanıcı');
+  const id = escapeHTML(item.id);
+  let actions = '';
+  if (kind === 'incoming') {
+    actions = `<div class="flex gap-2 ml-auto">
+      <button data-blend-action="rejected" data-request-id="${id}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">Reddet</button>
+      <button data-blend-action="accepted" data-request-id="${id}" class="px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Kabul et</button>
+    </div>`;
+  } else if (kind === 'outgoing') {
+    actions = `<button data-blend-action="cancel" data-request-id="${id}" class="ml-auto px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">İptal et</button>`;
+  }
+  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
+    ${peerAvatar(peer)}
+    <div class="min-w-0"><strong class="text-on-surface block truncate">${displayName}</strong><span class="text-on-surface-variant text-sm">@${username}</span></div>
+    ${actions}
+  </article>`;
+}
+
+function blendHistoryCard(item) {
+  const peer = item.peer || {};
+  const result = item.blend_result;
+  const score = result ? `<strong class="text-primary-container text-xl">${Number(result.score) || 0}</strong>` : '';
+  const labels = { accepted: 'Kabul edildi', rejected: 'Reddedildi', cancelled: 'İptal edildi', expired: 'Süresi doldu' };
+  const dateValue = result?.created_at || item.decided_at || item.created_at;
+  const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
+  const button = result
+    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="ml-auto px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
+    : item.status === 'accepted'
+      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="ml-auto px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
+      : '';
+  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
+    ${peerAvatar(peer)}
+    <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(peer.display_name || peer.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm">${labels[item.status] || item.status}${dateLabel ? ` · ${escapeHTML(dateLabel)}` : ''}</span></div>
+    ${score}${button}
+  </article>`;
+}
+
+function emptyInbox(text) {
+  return `<div class="rounded-xl border border-dashed border-outline-variant/30 p-5 text-center text-on-surface-variant text-sm">${escapeHTML(text)}</div>`;
+}
+
+function renderBlendInbox(data) {
+  _blendInbox = data;
+  $('inbox-incoming').innerHTML = data.incoming?.length
+    ? data.incoming.map(item => blendRequestCard(item, 'incoming')).join('')
+    : emptyInbox('Bekleyen gelen isteğin yok.');
+  $('inbox-outgoing').innerHTML = data.outgoing?.length
+    ? data.outgoing.map(item => blendRequestCard(item, 'outgoing')).join('')
+    : emptyInbox('Bekleyen gönderilmiş isteğin yok.');
+  $('inbox-history').innerHTML = data.history?.length
+    ? data.history.map(blendHistoryCard).join('')
+    : emptyInbox('Henüz tamamlanmış bir Blend yok.');
+  const count = data.incoming?.length || 0;
+  $('inbox-badge').textContent = count > 9 ? '9+' : String(count);
+  $('inbox-badge').classList.toggle('hidden', count === 0);
+  $('inbox-badge').classList.toggle('flex', count > 0);
+}
+
+async function loadBlendInbox(show = true) {
+  if (!_account) return;
+  if (show) showView('inbox');
+  $('inbox-error').classList.add('hidden');
+  try {
+    renderBlendInbox(await apiJSON('/api/blends'));
+  } catch (error) {
+    if (show) {
+      $('inbox-error').textContent = error.message || 'Inbox yüklenemedi.';
+      $('inbox-error').classList.remove('hidden');
+    }
+  }
+}
+
+async function handleBlendInboxAction(event) {
+  const button = event.target.closest('[data-blend-action]');
+  if (!button) return;
+  const action = button.dataset.blendAction;
+  const requestId = button.dataset.requestId;
+  if (action === 'view') {
+    const item = _blendInbox.history.find(entry => entry.id === requestId);
+    if (item?.blend_result?.result) renderBlendResult(item.blend_result.result);
+    return;
+  }
+  button.disabled = true;
+  const oldText = button.textContent;
+  button.textContent = ['accepted', 'retry'].includes(action) ? 'Blend hazırlanıyor…' : 'İşleniyor…';
+  try {
+    if (action === 'cancel') {
+      await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}`, {
+        method: 'DELETE', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      return;
+    }
+    if (action === 'retry') {
+      const data = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`, {
+        method: 'POST', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      if (data.result) await renderBlendResult(data.result);
+      return;
+    }
+    const data = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/decision`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ decision: action }),
+    });
+    await loadBlendInbox(false);
+    if (action === 'accepted' && data.result) await renderBlendResult(data.result);
+  } catch (error) {
+    $('inbox-error').textContent = error.message || 'İşlem tamamlanamadı.';
+    $('inbox-error').classList.remove('hidden');
+  } finally {
+    button.disabled = false;
+    button.textContent = oldText;
+  }
+}
+
+async function syncProfile(force = false) {
+  if (!_account) return;
+  const button = $('btn-profile-sync');
+  button.disabled = true;
+  button.querySelector('span').classList.add('animate-spin');
+  $('profile-taste-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
+  try {
+    const data = await apiJSON(`/api/profile/sync?force=${force ? 'true' : 'false'}`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+    });
+    if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
+    renderPersistedProfile(data);
+  } catch (error) {
+    $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
+    setIdleError(error.message || 'Profil senkronu tamamlanamadı.');
+  } finally {
+    button.disabled = false;
+    button.querySelector('span').classList.remove('animate-spin');
+  }
+}
+
+async function loadProfile() {
+  try {
+    const profile = await apiJSON('/api/profile/me');
+    renderPersistedProfile(profile);
+    if (_account?.profile_sync_status === 'pending') syncProfile();
+  } catch (_) {
+    if (_account?.profile_sync_status === 'pending') syncProfile();
+  }
+}
+
+function enterApp(account) {
+  applyAccount(account);
+  showView('idle');
+  loadProfile();
+  loadBlendInbox(false);
+}
+
+async function boot() {
+  const health = await loadHealth();
+  _authEnabled = Boolean(health?.auth_enabled);
+  if (!_authEnabled) { showView('idle'); return; }
+  try {
+    const me = await apiJSON('/api/auth/me');
+    enterApp(me.account);
+    return;
+  } catch (_) {
+    if (cookieValue('mb_csrf')) {
+      try {
+        const refreshed = await apiJSON('/api/auth/refresh', {
+          method: 'POST', headers: csrfHeaders(),
+        });
+        enterApp(refreshed.account);
+        return;
+      } catch (_) {}
+    }
+  }
+  showView('auth');
 }
 
 // ── Loading steps ──────────────────────────────────────────────────────────
@@ -1381,6 +1799,49 @@ function renderBlendWatchlist({ common_watchlist_films = [], watchlist_public = 
 }
 
 // ── Blend SSE flow ──────────────────────────────────────────────────────────
+let _blendSearchTimer = null;
+
+async function searchBlendUsers() {
+  if (!_authEnabled) return;
+  const query = $('username2-input').value.trim().replace(/^@/, '').toLowerCase();
+  if (query.length < 2) {
+    $('blend-user-suggestions').classList.add('hidden');
+    return;
+  }
+  try {
+    const data = await apiJSON(`/api/users/search?q=${encodeURIComponent(query)}`);
+    const users = data.users || [];
+    $('blend-user-suggestions').innerHTML = users.length
+      ? users.map(user => `<button type="button" data-blend-user="${escapeHTML(user.username)}" class="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-variant text-left border-b border-outline-variant/20 last:border-0"><strong class="text-on-surface">${escapeHTML(user.display_name || user.username)}</strong><span class="text-on-surface-variant text-sm">@${escapeHTML(user.username)}</span></button>`).join('')
+      : `<div class="px-4 py-3 text-on-surface-variant text-sm">Kayıtlı kullanıcı bulunamadı.</div>`;
+    $('blend-user-suggestions').classList.remove('hidden');
+  } catch (_) {
+    $('blend-user-suggestions').classList.add('hidden');
+  }
+}
+
+async function blendRequestFlow() {
+  const recipient = $('username2-input').value.trim();
+  if (!recipient) { $('username2-input').focus(); return; }
+  setIdleError(null);
+  setIdleNotice(null);
+  const button = $('btn-recommend');
+  button.disabled = true;
+  try {
+    const data = await apiJSON('/api/blends/requests', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ recipient_username: recipient }),
+    });
+    $('username2-input').value = '';
+    $('blend-user-suggestions').classList.add('hidden');
+    setIdleNotice(`@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
+    loadBlendInbox(false);
+  } catch (error) {
+    setIdleError(error.message || 'Blend isteği gönderilemedi.');
+  } finally { button.disabled = false; }
+}
+
 async function blendFlow() {
   const u1 = $('username-input').value.trim();
   const u2 = $('username2-input').value.trim();
@@ -1425,7 +1886,7 @@ async function blendFlow() {
     try {
       const resp = await fetch(`${API_BASE}/api/blend`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ username1: u1, username2: u2 }),
         signal: apiRequest.controller.signal,
       });
@@ -1532,7 +1993,7 @@ async function randomFlow() {
   try {
     const resp = await fetch(`${API_BASE}/api/random`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ username }),
       signal: apiRequest.controller.signal,
     });
@@ -1616,7 +2077,7 @@ async function tasteFlow() {
   try {
     const resp = await fetch(`${API_BASE}/api/recommend`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ username }),
       signal: apiRequest.controller.signal,
     });
@@ -1671,7 +2132,10 @@ async function tasteFlow() {
 // ── Recommend dispatcher ───────────────────────────────────────────────────
 function recommend() {
   if (currentMode === 'random') randomFlow();
-  else if (currentMode === 'blend') blendFlow();
+  else if (currentMode === 'blend') {
+    if (_authEnabled) blendRequestFlow();
+    else blendFlow();
+  }
   else tasteFlow();
 }
 
@@ -1686,8 +2150,10 @@ async function deleteMyData() {
     return;
   }
   const confirmed = window.confirm(
-    `@${username.replace(/^@/, '')} için saklanan profil ve öneri cache'i silinsin mi? ` +
-    'Yeni bir analiz başlatırsan public veriler tekrar oluşturulur.'
+    _authEnabled
+      ? `@${username.replace(/^@/, '')} hesabı ve saklanan tüm Movieboxd verileri kalıcı olarak silinsin mi?`
+      : `@${username.replace(/^@/, '')} için saklanan profil ve öneri cache'i silinsin mi? ` +
+        'Yeni bir analiz başlatırsan public veriler tekrar oluşturulur.'
   );
   if (!confirmed) return;
 
@@ -1697,7 +2163,7 @@ async function deleteMyData() {
   try {
     const response = await fetch(`${API_BASE}/api/data`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ username }),
     });
     let payload = {};
@@ -1709,7 +2175,14 @@ async function deleteMyData() {
     }
     $('username-input').value = '';
     $('username2-input').value = '';
-    setIdleNotice(`@${payload.username} için saklanan veriler silindi.`);
+    if (_authEnabled) {
+      _account = null;
+      setAuthMode('login');
+      showView('auth');
+      setAuthMessage(`@${payload.username} hesabı ve saklanan veriler silindi.`);
+    } else {
+      setIdleNotice(`@${payload.username} için saklanan veriler silindi.`);
+    }
   } catch (error) {
     setIdleError(error.message || 'Veri silinemedi. Lütfen tekrar dene.');
   } finally {
@@ -1717,7 +2190,185 @@ async function deleteMyData() {
   }
 }
 
+async function loginAccount(event) {
+  event.preventDefault();
+  const button = $('btn-login');
+  button.disabled = true;
+  setAuthMessage(null);
+  try {
+    const data = await apiJSON('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: $('login-username').value.trim(),
+        password: $('login-password').value,
+      }),
+    });
+    $('login-password').value = '';
+    enterApp(data.account);
+  } catch (error) {
+    setAuthMessage(error.message || 'Giriş yapılamadı.', true);
+  } finally { button.disabled = false; }
+}
+
+async function startRegistration(event) {
+  event.preventDefault();
+  const password = $('register-password').value;
+  if (password !== $('register-password-confirm').value) {
+    setAuthMessage('Parolalar eşleşmiyor.', true);
+    return;
+  }
+  const button = $('btn-register');
+  button.disabled = true;
+  setAuthMessage('Letterboxd profili kontrol ediliyor…');
+  try {
+    _verification = await apiJSON('/api/auth/register/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: $('register-username').value.trim(),
+        password,
+        password_confirm: $('register-password-confirm').value,
+      }),
+    });
+    $('register-password').value = '';
+    $('register-password-confirm').value = '';
+    $('register-form').classList.add('hidden');
+    $('register-form').classList.remove('flex');
+    $('auth-tabs').classList.add('hidden');
+    $('verification-code').textContent = _verification.verification_code;
+    $('verify-panel').classList.remove('hidden');
+    $('verify-panel').classList.add('flex');
+    setAuthMessage('Kod 15 dakika geçerli. Bio’yu kaydettikten sonra kontrol et.');
+  } catch (error) {
+    setAuthMessage(error.message || 'Hesap oluşturulamadı.', true);
+  } finally { button.disabled = false; }
+}
+
+async function verifyRegistration() {
+  if (!_verification) return;
+  const button = $('btn-verify');
+  button.disabled = true;
+  setAuthMessage('Letterboxd bio alanı kontrol ediliyor…');
+  try {
+    await apiJSON('/api/auth/register/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: _verification.username,
+        code: _verification.verification_code,
+      }),
+    });
+    const username = _verification.username;
+    _verification = null;
+    setAuthMode('login');
+    $('login-username').value = username;
+    setAuthMessage('Hesap doğrulandı. Şimdi parolanla giriş yapabilirsin.');
+  } catch (error) {
+    setAuthMessage(error.message || 'Bio doğrulanamadı.', true);
+  } finally { button.disabled = false; }
+}
+
+async function startPasswordReset() {
+  const button = $('btn-reset-start');
+  button.disabled = true;
+  setAuthMessage(null);
+  try {
+    _resetChallenge = await apiJSON('/api/auth/password-reset/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('reset-username').value.trim() }),
+    });
+    $('reset-code-display').textContent = _resetChallenge.verification_code;
+    $('reset-finish-fields').classList.remove('hidden');
+    $('reset-finish-fields').classList.add('flex');
+    setAuthMessage('Kodu Letterboxd bio alanına ekle, sonra yeni parolanı kaydet.');
+  } catch (error) {
+    setAuthMessage(error.message || 'Sıfırlama başlatılamadı.', true);
+  } finally { button.disabled = false; }
+}
+
+async function finishPasswordReset() {
+  if (!_resetChallenge) return;
+  const password = $('reset-password').value;
+  if (password !== $('reset-password-confirm').value) {
+    setAuthMessage('Parolalar eşleşmiyor.', true);
+    return;
+  }
+  const button = $('btn-reset-finish');
+  button.disabled = true;
+  try {
+    await apiJSON('/api/auth/password-reset/finish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: _resetChallenge.username,
+        code: _resetChallenge.verification_code,
+        new_password: password,
+        new_password_confirm: $('reset-password-confirm').value,
+      }),
+    });
+    const username = _resetChallenge.username;
+    _resetChallenge = null;
+    setAuthMode('login');
+    $('login-username').value = username;
+    setAuthMessage('Parolan değiştirildi. Yeni parolanla giriş yapabilirsin.');
+  } catch (error) {
+    setAuthMessage(error.message || 'Parola değiştirilemedi.', true);
+  } finally { button.disabled = false; }
+}
+
+async function logoutAccount() {
+  cancelActiveApiRequest();
+  try {
+    await apiJSON('/api/auth/logout', { method: 'POST', headers: csrfHeaders() });
+  } catch (_) {}
+  _account = null;
+  $('header-account').classList.add('hidden');
+  $('header-account').classList.remove('flex');
+  $('profile-card').classList.add('hidden');
+  $('profile-card').classList.remove('flex');
+  $('primary-username-field').classList.remove('hidden');
+  $('username-input').value = '';
+  $('inbox-badge').classList.add('hidden');
+  $('inbox-badge').classList.remove('flex');
+  setAuthMode('login');
+  showView('auth');
+}
+
+function copyCode(element) {
+  const code = element.textContent.trim();
+  if (!code) return;
+  navigator.clipboard?.writeText(code);
+  setAuthMessage('Kod panoya kopyalandı.');
+}
+
 // ── Event listeners ────────────────────────────────────────────────────────
+$('login-form').addEventListener('submit', loginAccount);
+$('register-form').addEventListener('submit', startRegistration);
+$('auth-tab-login').addEventListener('click', () => setAuthMode('login'));
+$('auth-tab-register').addEventListener('click', () => setAuthMode('register'));
+$('btn-verify').addEventListener('click', verifyRegistration);
+$('btn-verify-back').addEventListener('click', () => setAuthMode('register'));
+$('verification-code').addEventListener('click', () => copyCode($('verification-code')));
+$('reset-code-display').addEventListener('click', () => copyCode($('reset-code-display')));
+$('btn-show-reset').addEventListener('click', () => {
+  $('login-form').classList.add('hidden');
+  $('auth-tabs').classList.add('hidden');
+  $('reset-panel').classList.remove('hidden');
+  $('reset-panel').classList.add('flex');
+  $('reset-username').value = $('login-username').value;
+  setAuthMessage(null);
+});
+$('btn-reset-back').addEventListener('click', () => setAuthMode('login'));
+$('btn-reset-start').addEventListener('click', startPasswordReset);
+$('btn-reset-finish').addEventListener('click', finishPasswordReset);
+$('btn-logout').addEventListener('click', logoutAccount);
+$('btn-profile-sync').addEventListener('click', () => syncProfile(true));
+$('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
+$('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
+$('btn-inbox-back').addEventListener('click', () => showView('idle'));
+$('view-inbox').addEventListener('click', handleBlendInboxAction);
 $('btn-recommend').addEventListener('click', recommend);
 $('btn-delete-data').addEventListener('click', deleteMyData);
 $('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
@@ -1726,6 +2377,16 @@ $('btn-mode-taste').addEventListener('click', () => setMode('taste'));
 $('btn-mode-random').addEventListener('click', () => setMode('random'));
 $('btn-mode-blend').addEventListener('click', () => setMode('blend'));
 $('username2-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
+$('username2-input').addEventListener('input', () => {
+  clearTimeout(_blendSearchTimer);
+  _blendSearchTimer = setTimeout(searchBlendUsers, 250);
+});
+$('blend-user-suggestions').addEventListener('click', event => {
+  const button = event.target.closest('[data-blend-user]');
+  if (!button) return;
+  $('username2-input').value = button.dataset.blendUser;
+  $('blend-user-suggestions').classList.add('hidden');
+});
 
 $('btn-home').addEventListener('click', () => {
   cancelActiveApiRequest();
@@ -1763,8 +2424,7 @@ $('btn-blend-back').addEventListener('click', () => {
 });
 
 // ── Boot ───────────────────────────────────────────────────────────────────
-showView('idle');
-loadHealth();
+boot();
 </script>
 </body>
 </html>

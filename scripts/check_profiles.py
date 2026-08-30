@@ -20,7 +20,8 @@ from app.config import get_settings
 from app.enrich import Enricher, close_tmdb_client
 from app.main import _detail_sample, _load_user_films
 from app.recommender import rank_watchlist
-from app.scraper import ScrapeError
+from app.scraper import ScrapeError, scrape_profile
+from app.taste_profile import build_taste_profile
 
 
 async def _check_user(username: str, *, settings, enricher, cache) -> dict:
@@ -41,7 +42,7 @@ async def _check_user(username: str, *, settings, enricher, cache) -> dict:
     before_hits = getattr(enricher, "_cache_hits", 0)
 
     try:
-        (watched, _), (watchlist, _) = await asyncio.gather(
+        (watched, _), (watchlist, _), profile = await asyncio.gather(
             _load_user_films(
                 username,
                 "watched",
@@ -60,12 +61,17 @@ async def _check_user(username: str, *, settings, enricher, cache) -> dict:
                 scrape_kwargs=watchlist_kwargs,
                 force=True,
             ),
+            scrape_profile(username, max_retries=settings.scrape_max_retries),
         )
         if enricher is not None:
             await enricher.ensure_details(_detail_sample(watched, 24))
+            profile.favorite_films = await enricher.enrich(
+                profile.favorite_films, include_details=False
+            )
         candidates = rank_watchlist(watched, watchlist, n=10)
         if enricher is not None:
             await enricher.ensure_details(candidates)
+        taste = build_taste_profile(watched)
     except ScrapeError as exc:
         return {
             "ok": False,
@@ -81,6 +87,11 @@ async def _check_user(username: str, *, settings, enricher, cache) -> dict:
         "watched_count": len(watched),
         "watchlist_count": len(watchlist),
         "rated_count": sum(film.user_rating is not None for film in watched),
+        "display_name": profile.display_name,
+        "avatar_found": bool(profile.avatar_url),
+        "favorite_four": [film.slug for film in profile.favorite_films],
+        "favorite_director": taste.favorite_director,
+        "taste_confidence": taste.confidence_level,
         "recommendations": [film.slug or film.title for film in candidates[:5]],
         "tmdb_api_calls": getattr(enricher, "_api_calls", 0) - before_api,
         "tmdb_cache_hits": getattr(enricher, "_cache_hits", 0) - before_hits,

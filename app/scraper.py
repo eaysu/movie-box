@@ -10,7 +10,7 @@ import logging
 import random
 import re
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 from curl_cffi.requests import AsyncSession
@@ -229,6 +229,24 @@ class ScrapedFilm:
         return asdict(self)
 
 
+@dataclass
+class ScrapedProfile:
+    username: str
+    display_name: str
+    avatar_url: Optional[str] = None
+    bio: str = ""
+    favorite_films: list[ScrapedFilm] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "username": self.username,
+            "display_name": self.display_name,
+            "avatar_url": self.avatar_url,
+            "bio": self.bio,
+            "favorite_films": [film.to_dict() for film in self.favorite_films],
+        }
+
+
 def _slug_to_title(slug: str) -> str:
     return slug.replace("-", " ").strip().title()
 
@@ -311,6 +329,97 @@ def _parse_page(html: str) -> list[ScrapedFilm]:
             films.append(film)
 
     return films
+
+
+def _parse_profile_page(username: str, html: str) -> ScrapedProfile:
+    """Parse public profile identity and ordered Favorite films metadata."""
+    soup = BeautifulSoup(html, "lxml")
+    summary = soup.select_one(".profile-summary")
+    if summary is None:
+        raise _empty_page_error(username, "profile", html)
+
+    display_el = summary.select_one(".person-display-name .label")
+    display_name = (
+        _html.unescape(display_el.get_text(" ", strip=True))
+        if display_el is not None
+        else username
+    )
+    avatar = summary.select_one("#avatar-large img") or summary.select_one(
+        ".profile-avatar img"
+    )
+    avatar_url = avatar.get("src", "").strip() if avatar is not None else ""
+    if not avatar_url.startswith("https://"):
+        avatar_url = ""
+
+    bio_el = summary.select_one(".js-bio-content") or summary.select_one(".js-bio")
+    bio = _html.unescape(bio_el.get_text(" ", strip=True)) if bio_el else ""
+
+    favorites_section = soup.select_one("#favourites")
+    favorite_films = (
+        _parse_page(str(favorites_section))[:4] if favorites_section is not None else []
+    )
+    return ScrapedProfile(
+        username=username,
+        display_name=display_name or username,
+        avatar_url=avatar_url or None,
+        bio=bio[:1000],
+        favorite_films=favorite_films,
+    )
+
+
+async def _scrape_profile(username: str, *, max_retries: int) -> ScrapedProfile:
+    started = time.perf_counter()
+    async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+        try:
+            await session.get(f"{BASE_URL}/", headers=_NAV_HEADERS, timeout=10)
+        except Exception:
+            pass
+        response, status = await _fetch_with_retry(
+            session,
+            f"{BASE_URL}/{username}/",
+            f"{BASE_URL}/",
+            max_retries=max_retries,
+        )
+
+    if response is None:
+        raise ScrapeNetworkError(
+            "Letterboxd'a ağ üzerinden ulaşılamadı. Lütfen tekrar dene."
+        )
+    if status == 404:
+        raise ProfileNotFoundError(
+            f"Letterboxd kullanıcısı '@{username}' bulunamadı.", status=404
+        )
+    if status in (403, 429):
+        raise AccessBlockedError(
+            f"Letterboxd erişimi engelledi (HTTP {status}).", status=status
+        )
+    if status != 200:
+        raise ScrapeError(
+            f"Letterboxd HTTP {status} döndürdü: {BASE_URL}/{username}/",
+            status=status,
+        )
+
+    profile = _parse_profile_page(username, response.text)
+    log.warning(
+        "scrape_metrics list=profile duration_ms=%d favorites=%d avatar=%s",
+        round((time.perf_counter() - started) * 1000),
+        len(profile.favorite_films),
+        bool(profile.avatar_url),
+    )
+    return profile
+
+
+async def scrape_profile(
+    username: str, *, max_retries: int = 3
+) -> ScrapedProfile:
+    """Fetch public profile identity, avatar, bio and ordered Favorite films."""
+    normalized = username.strip().lstrip("@").lower()
+    if not normalized:
+        raise ScrapeError("Empty username.")
+    return await _coalesce_scrape(
+        (normalized, "profile", max_retries),
+        lambda: _scrape_profile(normalized, max_retries=max_retries),
+    )
 
 
 async def _scrape_list(

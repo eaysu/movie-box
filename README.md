@@ -1,8 +1,9 @@
 # Letterboxd AI Recommender
 
-A username-first film recommender: give it a public Letterboxd username, it
-analyses recent watched films and ranks that user's own watchlist with a
-**TF-IDF + LLM hybrid** recommender.
+A username-first film recommender with persistent accounts. A user registers
+with a public Letterboxd username and password, proves ownership with a temporary
+bio code, then gets a stored profile, Fav 4, favorite director and rating-aware
+taste analysis. The watchlist is ranked with a **TF-IDF + LLM hybrid** recommender.
 
 ```
 username → direct scrape → enrich (TMDb) → similarity rank → LLM rerank → recommendations
@@ -47,16 +48,24 @@ Open http://localhost:8000
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/health` | Shows which integrations are configured |
+| `POST /api/auth/register/start` | Creates a pending account and bio challenge |
+| `POST /api/auth/register/verify` | Verifies Letterboxd ownership |
+| `POST /api/auth/login` | Opens an HttpOnly cookie session |
+| `GET /api/profile/me` | Returns the stored profile and taste snapshot |
+| `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
+| `GET /api/users/search?q=` | Finds active registered Movieboxd users |
+| `POST /api/blends/requests` | Sends a consent-based Blend request |
+| `GET /api/blends` | Lists inbox, sent requests and history |
+| `POST /api/blends/requests/{id}/decision` | Recipient accepts or rejects |
+| `POST /api/blends/requests/{id}/result` | Retries an accepted result safely |
 | `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
 | `POST /api/random` | Three random picks from the user's watchlist |
-| `POST /api/blend` | Two-user taste compatibility and common films |
-| `DELETE /api/data` | Deletes one username's profile and recommendation caches |
+| `POST /api/blend` | Legacy anonymous Blend; disabled in account mode |
+| `DELETE /api/data` | Deletes the signed-in account and username-scoped caches |
 
-```bash
-curl -X POST localhost:8000/api/recommend \
-  -H 'Content-Type: application/json' \
-  -d '{"username": "your-letterboxd-name"}'
-```
+The browser client handles the HttpOnly session and CSRF header. If account
+environment variables are absent, the legacy username-only endpoints remain
+available as a temporary rollout fallback.
 
 ## API keys (optional)
 
@@ -64,7 +73,8 @@ curl -X POST localhost:8000/api/recommend \
   enrichment layer (much better recommendations).
 - **OpenAI** — <https://platform.openai.com/api-keys>. Enables LLM reranking
   with taste-aware explanations.
-- **Supabase** — persists user film and recommendation caches across deploys.
+- **Supabase** — required for accounts and persists profiles/caches across deploys.
+  Run `supabase/schema.sql` once in the project SQL Editor before enabling auth.
 
 Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 
@@ -81,13 +91,12 @@ Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 - Identical concurrent scrapes are coalesced and TMDb uses a shared bounded pool.
 - TMDb metadata uses a local SQLite L1 and a batched Supabase L2, so deploys can
   reuse enrichment results without turning every film into a separate DB request.
-- Taste, Random and Blend share an anonymous per-IP budget of five heavy requests
-  per ten minutes, with at most two starting inside fifteen seconds. Health checks
-  do not consume this budget. The limiter is process-local and intended for the
-  single-instance deployment.
-- “Verimi Sil” removes username-scoped profile, refresh, recommendation and user
-  tracking rows. It is anonymous and separately IP-limited until account login is
-  added; shared TMDb film metadata is not user-specific and remains cached.
+- When auth is configured, Taste and Random require the signed-in username plus
+  a double-submit CSRF token. Blend searches only registered accounts, creates a
+  pending inbox request, and computes/persists compatibility only after recipient
+  approval. Auth and heavy routes have separate IP budgets.
+- “Verimi Sil” removes the signed-in Supabase Auth identity, profile/taste/Fav 4
+  rows and username-scoped caches. Shared TMDb metadata is non-personal and remains.
 - Blend returns a calibrated 0–100 similarity score plus an independent low,
   medium or high data-confidence indicator. The score is shown before the two
   watchlists finish loading; common watchlist titles arrive lazily.
@@ -103,10 +112,12 @@ Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
 letterboxd-recommender/
 ├── app/
 │   ├── config.py        settings / .env loading
+│   ├── auth.py          username-first Supabase Auth and ownership challenges
 │   ├── cache.py         layered SQLite/Supabase key-value cache
 │   ├── scraper.py       layer 1 — watchlist scraping
 │   ├── enrich.py        layer 2 — TMDb enrichment
 │   ├── recommender.py   layer 3 — rating-aware similarity ranking
+│   ├── taste_profile.py persisted taste summary and confidence
 │   ├── llm.py           layer 4 — LLM reranking
 │   └── main.py          FastAPI app
 ├── scripts/
@@ -118,3 +129,16 @@ letterboxd-recommender/
 ├── requirements.txt
 └── .env.example
 ```
+
+## Account rollout
+
+1. Run `supabase/schema.sql` in Supabase SQL Editor.
+2. Set `SUPABASE_URL`, service-role `SUPABASE_KEY`, `SUPABASE_ANON_KEY` and a
+   stable `AUTH_IDENTITY_SECRET` (`openssl rand -hex 32`) in Render.
+3. Deploy. `/api/health` must report `auth_enabled: true`.
+4. Register a test username, copy the challenge into its public Letterboxd bio,
+   verify, log in, and wait for the first profile sync.
+
+Never rotate `AUTH_IDENTITY_SECRET` without an identity migration: synthetic
+Supabase email mappings are derived from it. Never expose `SUPABASE_KEY` to the
+browser; only the backend uses it.

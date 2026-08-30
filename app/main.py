@@ -19,23 +19,41 @@ import logging
 import os
 import random as _random
 import re
+import secrets
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
 from .config import get_settings
+from .auth import (
+    Account,
+    AccountExistsError,
+    AuthError,
+    AuthService,
+    BlendServiceError,
+    InvalidCredentialsError,
+    VerificationError,
+    validate_password,
+)
 from .cache import Cache, LayeredCache
 from .database import delete_user, upsert_user, SupabaseCache
 from .enrich import Enricher, EnrichedFilm, close_tmdb_client
 from .llm import rank_candidates
 from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
-from .scraper import ScrapeError, scrape_diary, scrape_watchlist, scrape_watched
+from .scraper import (
+    ScrapeError,
+    scrape_diary,
+    scrape_profile,
+    scrape_watchlist,
+    scrape_watched,
+)
+from .taste_profile import build_taste_profile, taste_source_fingerprint
 
 
 @contextlib.asynccontextmanager
@@ -44,7 +62,7 @@ async def _lifespan(_app):
     await close_tmdb_client()
 
 
-app = FastAPI(title="Letterboxd AI Recommender", version="0.3.0", lifespan=_lifespan)
+app = FastAPI(title="Letterboxd AI Recommender", version="0.4.0", lifespan=_lifespan)
 log = logging.getLogger("moviebox")
 
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
@@ -52,7 +70,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
+    allow_credentials="*" not in _allowed_origins,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -76,6 +95,16 @@ _delete_rate_limiter = SlidingWindowRateLimiter(
     burst=1,
     burst_seconds=15,
 )
+_auth_rate_limiter = SlidingWindowRateLimiter(
+    limit=8,
+    window_seconds=15 * 60,
+    burst=3,
+    burst_seconds=30,
+)
+
+ACCESS_COOKIE = "mb_access"
+REFRESH_COOKIE = "mb_refresh"
+CSRF_COOKIE = "mb_csrf"
 
 
 def _client_ip(request: Request) -> str:
@@ -111,6 +140,134 @@ async def _enforce_delete_rate_limit(request: Request) -> None:
             detail="Çok fazla veri silme isteği gönderildi. Lütfen daha sonra tekrar dene.",
             headers={"Retry-After": str(retry_after)},
         )
+
+
+async def _enforce_auth_rate_limit(request: Request) -> None:
+    allowed, retry_after = await _auth_rate_limiter.check(_client_ip(request))
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Çok fazla hesap isteği gönderildi. Lütfen biraz sonra tekrar dene.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _auth_service():
+    settings = get_settings()
+    if not getattr(settings, "has_auth", False):
+        raise HTTPException(status_code=503, detail="Hesap sistemi yapılandırılmamış.")
+    return AuthService(settings)
+
+
+def _ip_hash(request: Request) -> str:
+    settings = get_settings()
+    return hashlib.sha256(
+        f"{settings.auth_identity_secret}:{_client_ip(request)}".encode("utf-8")
+    ).hexdigest()
+
+
+def _set_session_cookies(response: Response, session) -> str:
+    settings = get_settings()
+    access_age = max(60, min(int(session.expires_in), settings.auth_session_max_age))
+    shared = {
+        "secure": settings.auth_cookie_secure,
+        "samesite": "lax",
+        "path": "/",
+    }
+    response.set_cookie(
+        ACCESS_COOKIE,
+        session.access_token,
+        max_age=access_age,
+        httponly=True,
+        **shared,
+    )
+    response.set_cookie(
+        REFRESH_COOKIE,
+        session.refresh_token,
+        max_age=settings.auth_session_max_age,
+        httponly=True,
+        **shared,
+    )
+    csrf_token = secrets.token_urlsafe(32)
+    response.set_cookie(
+        CSRF_COOKIE,
+        csrf_token,
+        max_age=settings.auth_session_max_age,
+        httponly=False,
+        **shared,
+    )
+    return csrf_token
+
+
+def _clear_session_cookies(response: Response) -> None:
+    settings = get_settings()
+    for key in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
+        response.delete_cookie(
+            key,
+            path="/",
+            secure=settings.auth_cookie_secure,
+            samesite="lax",
+        )
+
+
+def _require_csrf(request: Request) -> None:
+    cookie = request.cookies.get(CSRF_COOKIE, "")
+    header = request.headers.get("x-csrf-token", "")
+    if not cookie or not header or not secrets.compare_digest(cookie, header):
+        raise HTTPException(status_code=403, detail="Güvenlik doğrulaması başarısız.")
+
+
+async def _require_account(request: Request) -> Account:
+    access_token = request.cookies.get(ACCESS_COOKIE, "")
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Oturum açman gerekiyor.")
+    try:
+        return await asyncio.to_thread(
+            _auth_service().current_account, access_token
+        )
+    except InvalidCredentialsError as exc:
+        raise HTTPException(status_code=401, detail="Oturum geçersiz.") from exc
+
+
+async def _enforce_account_username(request: Request, username: str) -> Account | None:
+    """Protect legacy username payloads once account mode is enabled."""
+    if not getattr(get_settings(), "has_auth", False):
+        return None
+    _require_csrf(request)
+    account = await _require_account(request)
+    if account.username != username:
+        raise HTTPException(status_code=403, detail="Yalnızca kendi profilini kullanabilirsin.")
+    return account
+
+
+def _raise_auth_http(exc: Exception) -> None:
+    if isinstance(exc, AccountExistsError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, InvalidCredentialsError):
+        raise HTTPException(status_code=401, detail="Kullanıcı adı veya parola hatalı.") from exc
+    if isinstance(exc, VerificationError):
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if isinstance(exc, AuthError):
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    raise exc
+
+
+def _raise_blend_http(exc: BlendServiceError) -> None:
+    code = str(exc)
+    errors = {
+        "recipient_not_found": (404, "Kayıtlı Movieboxd kullanıcısı bulunamadı."),
+        "self_request": (422, "Kendine Blend isteği gönderemezsin."),
+        "blend_request_exists": (409, "Bu iki kullanıcı arasında bekleyen bir istek var."),
+        "pending_quota_reached": (429, "Bekleyen Blend isteği kotasına ulaştın."),
+        "request_not_found": (404, "Blend isteği bulunamadı."),
+        "forbidden": (403, "Bu Blend isteği için yetkin yok."),
+        "request_already_decided": (409, "Bu Blend isteği daha önce sonuçlandırılmış."),
+        "request_not_cancellable": (409, "Bu Blend isteği artık iptal edilemez."),
+        "accepted_request_not_found": (409, "Kabul edilmiş Blend isteği bulunamadı."),
+        "blend_result_save_failed": (503, "Blend sonucu kaydedilemedi."),
+    }
+    status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
+    raise HTTPException(status_code=status_code, detail=detail) from exc
 
 
 def _sse(data: dict) -> str:
@@ -216,6 +373,7 @@ TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftal�
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
 RECOMMENDER_VERSION = "v2-rating-mmr"
+BLEND_VERSION = "blend-v2-calibrated"
 
 
 def _make_persistent_cache(settings, client):
@@ -536,6 +694,54 @@ class BlendRequest(BaseModel):
         return _normalize_username(value)
 
 
+class RegisterStartRequest(_UsernameRequest):
+    username: str
+    password: str
+    password_confirm: str
+
+
+class OwnershipVerifyRequest(_UsernameRequest):
+    username: str
+    code: str
+
+
+class LoginRequest(_UsernameRequest):
+    username: str
+    password: str
+
+
+class PasswordResetStartRequest(_UsernameRequest):
+    username: str
+
+
+class PasswordResetFinishRequest(_UsernameRequest):
+    username: str
+    code: str
+    new_password: str
+    new_password_confirm: str
+
+
+class CreateBlendRequest(BaseModel):
+    recipient_username: str
+
+    @field_validator("recipient_username", mode="before")
+    @classmethod
+    def validate_recipient(cls, value: str) -> str:
+        return _normalize_username(value)
+
+
+class BlendDecisionRequest(BaseModel):
+    decision: str
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def validate_decision(cls, value: str) -> str:
+        decision = str(value).strip().lower()
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("Karar accepted veya rejected olmalı.")
+        return decision
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -550,14 +756,469 @@ def health() -> dict:
         "tmdb_enabled": settings.has_tmdb,
         "llm_enabled": settings.has_openai,
         "supabase_enabled": settings.has_supabase,
+        "auth_enabled": getattr(settings, "has_auth", False),
     }
 
 
+@app.post("/api/auth/register/start")
+async def register_start(req: RegisterStartRequest, request: Request) -> dict:
+    await _enforce_auth_rate_limit(request)
+    try:
+        validate_password(req.password, req.password_confirm)
+        profile = await scrape_profile(
+            req.username, max_retries=get_settings().scrape_max_retries
+        )
+        challenge = await asyncio.to_thread(
+            _auth_service().start_registration,
+            req.username,
+            req.password,
+            profile,
+            ip_hash=_ip_hash(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ScrapeError as exc:
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+    except AuthError as exc:
+        _raise_auth_http(exc)
+    return {
+        "username": challenge.username,
+        "verification_code": challenge.verification_code,
+        "expires_at": challenge.expires_at,
+        "instruction": "Kodu Letterboxd profil bio alanına ekleyip doğrula.",
+    }
+
+
+@app.post("/api/auth/register/verify")
+async def register_verify(req: OwnershipVerifyRequest, request: Request) -> dict:
+    await _enforce_auth_rate_limit(request)
+    try:
+        profile = await scrape_profile(
+            req.username, max_retries=get_settings().scrape_max_retries
+        )
+        account = await asyncio.to_thread(
+            _auth_service().verify_ownership,
+            req.username,
+            req.code.strip(),
+            profile,
+            ip_hash=_ip_hash(request),
+        )
+    except ScrapeError as exc:
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+    except AuthError as exc:
+        _raise_auth_http(exc)
+    return {"ok": True, "account": account.__dict__}
+
+
+@app.post("/api/auth/login")
+async def login(req: LoginRequest, request: Request, response: Response) -> dict:
+    await _enforce_auth_rate_limit(request)
+    try:
+        session = await asyncio.to_thread(
+            _auth_service().login,
+            req.username,
+            req.password,
+            ip_hash=_ip_hash(request),
+        )
+    except AuthError as exc:
+        _raise_auth_http(exc)
+    _set_session_cookies(response, session)
+    return {"ok": True, "account": session.account.__dict__}
+
+
+@app.get("/api/auth/me")
+async def auth_me(request: Request) -> dict:
+    account = await _require_account(request)
+    return {"account": account.__dict__}
+
+
+@app.post("/api/auth/refresh")
+async def refresh_session(request: Request, response: Response) -> dict:
+    _require_csrf(request)
+    refresh_token = request.cookies.get(REFRESH_COOKIE, "")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Oturum yenilenemedi.")
+    try:
+        session = await asyncio.to_thread(_auth_service().refresh, refresh_token)
+    except AuthError as exc:
+        _clear_session_cookies(response)
+        _raise_auth_http(exc)
+    _set_session_cookies(response, session)
+    return {"ok": True, "account": session.account.__dict__}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response) -> dict:
+    _require_csrf(request)
+    access_token = request.cookies.get(ACCESS_COOKIE, "")
+    refresh_token = request.cookies.get(REFRESH_COOKIE, "")
+    if access_token and refresh_token:
+        await asyncio.to_thread(
+            _auth_service().revoke, access_token, refresh_token
+        )
+    _clear_session_cookies(response)
+    return {"ok": True}
+
+
+@app.post("/api/auth/password-reset/start")
+async def password_reset_start(
+    req: PasswordResetStartRequest, request: Request
+) -> dict:
+    await _enforce_auth_rate_limit(request)
+    try:
+        challenge = await asyncio.to_thread(
+            _auth_service().start_password_reset,
+            req.username,
+            ip_hash=_ip_hash(request),
+        )
+    except AuthError as exc:
+        _raise_auth_http(exc)
+    return {
+        "username": challenge.username,
+        "verification_code": challenge.verification_code,
+        "expires_at": challenge.expires_at,
+        "instruction": "Kodu Letterboxd profil bio alanına ekleyip yeni parolanı belirle.",
+    }
+
+
+@app.post("/api/auth/password-reset/finish")
+async def password_reset_finish(
+    req: PasswordResetFinishRequest, request: Request
+) -> dict:
+    await _enforce_auth_rate_limit(request)
+    try:
+        validate_password(req.new_password, req.new_password_confirm)
+        profile = await scrape_profile(
+            req.username, max_retries=get_settings().scrape_max_retries
+        )
+        await asyncio.to_thread(
+            _auth_service().finish_password_reset,
+            req.username,
+            req.code.strip(),
+            req.new_password,
+            profile,
+            ip_hash=_ip_hash(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ScrapeError as exc:
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+    except AuthError as exc:
+        _raise_auth_http(exc)
+    return {"ok": True}
+
+
+@app.get("/api/profile/me")
+async def profile_me(request: Request) -> dict:
+    account = await _require_account(request)
+    return await asyncio.to_thread(_auth_service().get_profile, account)
+
+
+@app.post("/api/profile/sync")
+async def sync_my_profile(request: Request, force: bool = False) -> dict:
+    _require_csrf(request)
+    await _enforce_heavy_rate_limit(request)
+    account = await _require_account(request)
+    settings = get_settings()
+    service = _auth_service()
+    await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
+    try:
+        profile = await scrape_profile(
+            account.username, max_retries=settings.scrape_max_retries
+        )
+        supabase_client, cache = _make_cache(settings)
+        pcache = _make_persistent_cache(settings, supabase_client)
+        enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+        watched, _from_cache = await _load_user_films(
+            account.username,
+            "watched",
+            settings=settings,
+            enricher=enricher,
+            pcache=pcache,
+            scrape_kwargs={
+                "delay": settings.scrape_delay,
+                "max_pages": settings.watched_max_pages,
+                "film_limit": settings.watched_film_limit,
+                "max_retries": settings.scrape_max_retries,
+            },
+            force=force,
+        )
+        source_fingerprint = taste_source_fingerprint(profile, watched)
+        stored = await asyncio.to_thread(service.get_profile, account)
+        if (
+            stored.get("taste")
+            and stored["taste"].get("source_fingerprint") == source_fingerprint
+        ):
+            await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
+            account.profile_sync_status = "ready"
+            stored["account"] = account.__dict__
+            return stored
+        if enricher is not None:
+            await enricher.ensure_details(_detail_sample(watched, 40))
+            favorites = await enricher.enrich(
+                profile.favorite_films, include_details=False
+            )
+        else:
+            favorites = [
+                EnrichedFilm(
+                    title=film.title,
+                    year=film.year,
+                    slug=film.slug,
+                    poster_url=film.poster_url,
+                )
+                for film in profile.favorite_films
+            ]
+        taste = build_taste_profile(watched)
+        taste.source_fingerprint = source_fingerprint
+        await asyncio.to_thread(
+            service.save_profile_snapshot,
+            account,
+            profile,
+            favorites,
+            taste,
+        )
+        account.display_name = profile.display_name
+        account.avatar_url = profile.avatar_url or ""
+        account.profile_sync_status = "ready"
+        return {
+            "account": account.__dict__,
+            "taste": taste.to_dict(),
+            "favorite_films": [film.to_dict() for film in favorites[:4]],
+        }
+    except ScrapeError as exc:
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(service.mark_sync_status, account.id, "failed")
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+    except Exception as exc:
+        log.warning("profile sync failed username=%s: %s", account.username, exc)
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(service.mark_sync_status, account.id, "failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Profil senkronu tamamlanamadı. Son sağlam analiz korunuyor.",
+        ) from exc
+
+
+@app.get("/api/users/search")
+async def search_registered_users(q: str, request: Request) -> dict:
+    account = await _require_account(request)
+    try:
+        query = _normalize_username(q)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    users = await asyncio.to_thread(
+        _auth_service().search_accounts, account, query
+    )
+    return {"users": users}
+
+
+@app.post("/api/blends/requests")
+async def create_blend_invite(req: CreateBlendRequest, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_auth_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        request_id = await asyncio.to_thread(
+            _auth_service().create_blend_request,
+            account,
+            req.recipient_username,
+            ip_hash=_ip_hash(request),
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {
+        "ok": True,
+        "request_id": request_id,
+        "recipient_username": req.recipient_username,
+        "status": "pending",
+    }
+
+
+@app.get("/api/blends")
+async def list_my_blends(request: Request) -> dict:
+    account = await _require_account(request)
+    return await asyncio.to_thread(_auth_service().list_blends, account)
+
+
+@app.delete("/api/blends/requests/{request_id}")
+async def cancel_blend_invite(request_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        await asyncio.to_thread(
+            _auth_service().cancel_blend_request, account, request_id
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True, "request_id": request_id, "status": "cancelled"}
+
+
+async def _compute_accepted_blend(
+    account: Account, request_id: str, service: AuthService
+) -> dict:
+    stored = await asyncio.to_thread(service.get_blend_result, request_id)
+    if stored is not None:
+        return {**stored["result"], "request_id": request_id, "cached": True}
+
+    _request, first, second = await asyncio.to_thread(
+        service.get_blend_participants, account, request_id
+    )
+    settings = get_settings()
+    supabase_client, cache = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    enricher = Enricher(settings.tmdb_api_key, cache) if settings.has_tmdb else None
+    watched_kwargs = {
+        "delay": settings.scrape_delay,
+        "max_pages": settings.watched_max_pages,
+        "film_limit": settings.watched_film_limit,
+        "max_retries": settings.scrape_max_retries,
+    }
+    watchlist_kwargs = {
+        "delay": settings.scrape_delay,
+        "max_pages": settings.scrape_max_pages,
+        "film_limit": settings.watchlist_film_limit,
+        "max_retries": settings.scrape_max_retries,
+    }
+
+    def load(username, list_type, kwargs):
+        return _load_user_films(
+            username,
+            list_type,
+            settings=settings,
+            enricher=enricher,
+            pcache=pcache,
+            scrape_kwargs=kwargs,
+        )
+
+    (watched1, _), (watched2, _), (watchlist1, _), (watchlist2, _) = (
+        await asyncio.gather(
+            load(first.username, "watched", watched_kwargs),
+            load(second.username, "watched", watched_kwargs),
+            load(first.username, "watchlist", watchlist_kwargs),
+            load(second.username, "watchlist", watchlist_kwargs),
+        )
+    )
+    if not watched1 or not watched2:
+        raise ScrapeError("Blend için iki profilde de izlenen film verisi gerekli.")
+    if enricher is not None:
+        await asyncio.gather(
+            enricher.ensure_details(_detail_sample(watched1, 40)),
+            enricher.ensure_details(_detail_sample(watched2, 40)),
+        )
+    blend_result = _calculate_blend(watched1, watched2, top_n=20)
+    common_watchlist = _common_watchlist_films(watchlist1, watchlist2)
+    payload = {
+        "username1": first.username,
+        "username2": second.username,
+        "score": blend_result["score"],
+        "confidence": blend_result["confidence"],
+        "watched_count1": len(watched1),
+        "watched_count2": len(watched2),
+        "common_count": blend_result["common_count"],
+        "top_director": blend_result["top_director"],
+        "top_director_count1": blend_result["top_director_count1"],
+        "top_director_count2": blend_result["top_director_count2"],
+        "films": [film.to_dict() for film in blend_result["films"]],
+        "common_watchlist_films": [film.to_dict() for film in common_watchlist],
+        "watchlist_public": bool(watchlist1) and bool(watchlist2),
+        "watchlist_pending": False,
+    }
+    result_id = await asyncio.to_thread(
+        service.save_blend_result,
+        account,
+        request_id,
+        payload,
+        algorithm_version=BLEND_VERSION,
+    )
+    return {
+        **payload,
+        "request_id": request_id,
+        "result_id": result_id,
+        "cached": False,
+    }
+
+
+_accepted_blend_flights: dict[str, asyncio.Task] = {}
+_accepted_blend_lock = asyncio.Lock()
+
+
+async def _accepted_blend_single_flight(
+    account: Account, request_id: str, service: AuthService
+) -> dict:
+    async with _accepted_blend_lock:
+        task = _accepted_blend_flights.get(request_id)
+        if task is None:
+            task = asyncio.create_task(
+                _compute_accepted_blend(account, request_id, service)
+            )
+            _accepted_blend_flights[request_id] = task
+
+            def clear(done_task, key=request_id):
+                if _accepted_blend_flights.get(key) is done_task:
+                    _accepted_blend_flights.pop(key, None)
+                with contextlib.suppress(asyncio.CancelledError):
+                    done_task.exception()
+
+            task.add_done_callback(clear)
+    return await asyncio.shield(task)
+
+
+@app.post("/api/blends/requests/{request_id}/decision")
+async def decide_blend_invite(
+    request_id: str, req: BlendDecisionRequest, request: Request
+) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    if req.decision == "accepted":
+        await _enforce_heavy_rate_limit(request)
+    service = _auth_service()
+    try:
+        decision = await asyncio.to_thread(
+            service.decide_blend_request,
+            account,
+            request_id,
+            req.decision,
+            ip_hash=_ip_hash(request),
+        )
+        if decision.get("status") == "expired":
+            return {"request_id": request_id, "status": "expired"}
+        if req.decision == "rejected":
+            return {"request_id": request_id, "status": "rejected"}
+        async with _sem:
+            result = await _accepted_blend_single_flight(
+                account, request_id, service
+            )
+        return {"status": "accepted", "result": result}
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    except ScrapeError as exc:
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+
+
+@app.post("/api/blends/requests/{request_id}/result")
+async def retry_blend_result(request_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_heavy_rate_limit(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    try:
+        async with _sem:
+            result = await _accepted_blend_single_flight(
+                account, request_id, service
+            )
+        return {"status": "accepted", "result": result}
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    except ScrapeError as exc:
+        raise HTTPException(status_code=exc.status or 503, detail=str(exc)) from exc
+
+
 @app.delete("/api/data")
-async def delete_data(req: DeleteDataRequest, request: Request) -> dict:
+async def delete_data(req: DeleteDataRequest, request: Request, response: Response) -> dict:
     """Delete a username's regenerable profile and recommendation caches."""
     await _enforce_delete_rate_limit(request)
     settings = get_settings()
+    account = await _enforce_account_username(request, req.username)
 
     # Stop this process from completing a stale profile refresh after deletion.
     async with _film_load_lock:
@@ -576,23 +1237,31 @@ async def delete_data(req: DeleteDataRequest, request: Request) -> dict:
         _delete_cached_user_data, local_cache, req.username
     )
     remote_ok = True
-    user_row_ok = True
+    account_ok = True
     if settings.has_supabase:
         from supabase import create_client
 
         client = create_client(settings.supabase_url, settings.supabase_key)
         remote_cache = SupabaseCache(client)
-        remote_ok, user_row_ok = await asyncio.gather(
-            asyncio.to_thread(_delete_cached_user_data, remote_cache, req.username),
-            asyncio.to_thread(delete_user, client, req.username),
+        remote_ok = await asyncio.to_thread(
+            _delete_cached_user_data, remote_cache, req.username
         )
+        if getattr(settings, "has_auth", False) and account is not None and local_ok and remote_ok:
+            try:
+                await asyncio.to_thread(_auth_service().delete_account, account)
+            except Exception:
+                account_ok = False
+        elif not getattr(settings, "has_auth", False):
+            account_ok = await asyncio.to_thread(delete_user, client, req.username)
 
-    if not (local_ok and remote_ok and user_row_ok):
+    if not (local_ok and remote_ok and account_ok):
         raise HTTPException(
             status_code=503,
             detail="Verinin tamamı silinemedi. Lütfen biraz sonra tekrar dene.",
         )
     log.warning("user data deleted username=%s", req.username)
+    if getattr(settings, "has_auth", False):
+        _clear_session_cookies(response)
     return {
         "ok": True,
         "username": req.username,
@@ -604,6 +1273,7 @@ async def delete_data(req: DeleteDataRequest, request: Request) -> dict:
 async def recommend(req: RecommendRequest, request: Request):
     """SSE stream: queued? → scraping → enriching → ranking → llm → result."""
     global _q_waiting, _q_active
+    await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
 
     async def generate():
@@ -798,6 +1468,7 @@ async def recommend(req: RecommendRequest, request: Request):
 @app.post("/api/random")
 async def random_pick(req: RandomRequest, request: Request):
     """SSE stream: watchlist'ten 3 rastgele film seç ve zenginleştir."""
+    await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
 
     async def generate():
@@ -1102,6 +1773,12 @@ def _common_watchlist_films(first: list, second: list, limit: int = 3) -> list:
 @app.post("/api/blend")
 async def blend(req: BlendRequest, request: Request):
     """SSE stream: iki kullanıcının film zevkini harmanlayıp uyum skoru hesapla."""
+    await _enforce_account_username(request, req.username1)
+    if getattr(get_settings(), "has_auth", False):
+        raise HTTPException(
+            status_code=409,
+            detail="Blend için karşı taraf onayı gerekir. Inbox akışı P1 ile açılacak.",
+        )
     await _enforce_heavy_rate_limit(request)
     log.warning("blend request: %s / %s", req.username1, req.username2)
 

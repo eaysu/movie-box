@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5-mini-2025-08-07"
     supabase_url: str = ""
     supabase_key: str = ""
+    supabase_anon_key: str = ""
+    auth_identity_secret: str = ""
+    auth_cookie_secure: bool = True
+    auth_session_max_age: int = 60 * 60 * 24 * 7
 
     # --- Recommender tuning ---
     num_recommendations: int = 5
@@ -60,6 +64,14 @@ class Settings(BaseSettings):
     @property
     def has_supabase(self) -> bool:
         return bool(self.supabase_url.strip() and self.supabase_key.strip())
+
+    @property
+    def has_auth(self) -> bool:
+        return bool(
+            self.has_supabase
+            and self.supabase_anon_key.strip()
+            and self.auth_identity_secret.strip()
+        )
 
 
 @lru_cache
