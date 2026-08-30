@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     scrape_max_pages: int = 8       # watchlist için max sayfa
     watched_max_pages: int = 8      # izlenen filmler için max sayfa
     watched_film_limit: int = 100   # hard limit — en son izlenen N film (taste profili)
+    provisional_watched_film_limit: int = 250  # onboarding hızlı geçişi — daha geniş örnek (tam sweep bunu geçersiz kılar)
     watchlist_film_limit: int = 150 # candidate havuzu — en son eklenen N film (varsayılan sıra: en yeni önce)
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
 

@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260831.1"/>
+<link rel="stylesheet" href="/static/app.css?v=20260831.3"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -48,7 +48,6 @@
       </button>
       <div id="account-menu" class="hidden absolute top-11 right-0 w-52 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1">
         <button id="menu-profile-view" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">person</span>Profilim</button>
-        <button id="menu-feedback-history" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">history</span>Öneri geçmişi</button>
         <button id="menu-delete-data" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
         <button id="btn-logout" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
       </div>
@@ -443,7 +442,7 @@
 
   <div class="relative z-10 mt-8 w-full max-w-[560px] flex flex-col items-center gap-3">
     <div id="ob-dots" class="flex items-center gap-1.5"></div>
-    <button id="ob-skip" type="button" class="w-full max-w-[320px] bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
+    <button id="ob-skip" type="button" class="hidden w-full max-w-[320px] bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
       <span class="material-symbols-outlined text-[18px]">arrow_forward</span><span id="ob-skip-label">Uygulamaya geç</span>
     </button>
     <p id="ob-bg-note" class="font-label-sm text-label-sm text-on-surface-variant/45">Zevk analizin arka planda hazırlanıyor…</p>
@@ -870,32 +869,6 @@
   </div>
 </div>
 
-<!-- ═══════════════════════════  VIEW: RECOMMENDATION HISTORY  ═══════════════════════════ -->
-<div id="view-feedback-history" class="hidden flex-grow pt-20">
-  <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
-    <div class="flex items-center justify-between mt-stack-md">
-      <button id="btn-feedback-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
-      </button>
-      <button id="btn-feedback-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile" aria-label="Öneri geçmişini yenile"><span class="material-symbols-outlined">refresh</span></button>
-    </div>
-    <div>
-      <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Kişisel tercihler</span>
-      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Öneri Geçmişi</h1>
-      <p class="font-body-md text-body-md text-on-surface-variant mt-1">“Şimdilik geç” 7 gün, diğer tercihler geri alınana kadar önerilerini etkiler.</p>
-    </div>
-    <div id="feedback-history-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
-    <section>
-      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Aktif tercihler</h2>
-      <div id="feedback-current" class="flex flex-col gap-3"></div>
-    </section>
-    <section>
-      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">İşlem geçmişi</h2>
-      <div id="feedback-events" class="flex flex-col gap-2"></div>
-    </section>
-  </div>
-</div>
-
 <!-- ═══════════════════════════  VIEW: BLEND INBOX  ═══════════════════════════ -->
 <div id="view-inbox" class="hidden flex-grow pt-20">
   <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
@@ -943,6 +916,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260831.1"></script>
+<script type="module" src="/static/js/app.js?v=20260831.3"></script>
 </body>
 </html>

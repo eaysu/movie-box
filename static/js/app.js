@@ -75,6 +75,14 @@ const CINEMA_ITEMS = [
   { type: 'fact', text: 'The Dark Knight\'taki Joker\'in "kalem numarası" sahnesi senaryoda yoktu — Heath Ledger o an doğaçlama yaptı.' },
   { type: 'fact', text: 'Pixar\'ın ilk tam uzun metrajlı animasyonu Toy Story (1995), tamamıyla bilgisayarla üretilen ilk feature film olma özelliğini taşıyor.' },
   { type: 'fact', text: 'Alfred Hitchcock, Psycho\'da kendi filminin fragmanını bizzat anlatarak tanıttı — bu tanıtım biçimi döneminde benzersizdi.' },
+  { type: 'fact', text: 'Bilinen en eski film "Roundhay Garden Scene" (1888) yalnızca ~2 saniye sürer.' },
+  { type: 'fact', text: 'Boyhood, aynı oyuncularla 12 yıl boyunca, yılda birkaç gün çekilerek tamamlandı.' },
+  { type: 'fact', text: 'Whiplash\'in tamamı yalnızca 19 günde çekildi.' },
+  { type: 'fact', text: 'İlk Godzilla (1954) kostümü yaklaşık 100 kilogramdı.' },
+  { type: 'fact', text: 'Yüzüklerin Efendisi üçlemesi tek seferde, yaklaşık 438 gün süren bir çekimle tamamlandı.' },
+  { type: 'fact', text: 'Toy Story 2 yanlış bir silme komutuyla sunuculardan neredeyse yok oldu; bir çalışanın evindeki yedek kopya kurtardı.' },
+  { type: 'fact', text: 'Citizen Kane\'de tavanlar görünsün diye Orson Welles kamerayı yere gömdürdü.' },
+  { type: 'fact', text: 'Alien\'ın meşhur sahnesinde oyuncular o kadar kan geleceğini bilmiyordu; şaşkınlıkları gerçek.' },
 ];
 
 let _factTimer = null;
@@ -125,7 +133,6 @@ const RANK_COLORS = [
 let currentMode = 'taste';
 let _randomFilms = [];
 let _randomAttempt = 0;
-const _feedbackFilms = new Map();
 
 const _MODE_BTN_BASE = 'flex-1 flex items-center justify-center gap-1.5 py-3 rounded-lg font-label-md text-label-md uppercase tracking-wider transition-all duration-200 border';
 const _MODE_BTN_OFF  = `${_MODE_BTN_BASE} border-outline-variant/30 bg-surface-variant text-on-surface-variant`;
@@ -369,7 +376,6 @@ async function startInlineReco(mode) {
 }
 
 function renderInlineTaste(data) {
-  _feedbackFilms.clear();
   const all = data.recommendations || [];
   const hero = all[0];
   const alts = all.slice(1, 5);
@@ -381,7 +387,6 @@ function renderInlineTaste(data) {
 }
 
 function renderInlineRandom(data) {
-  _feedbackFilms.clear();
   const films = data.films || [];
   if (!films.length) {
     $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Watchlist boş veya film bilgisi alınamadı.</div>${_recoResetBtn()}`;
@@ -487,7 +492,7 @@ function setAuthHeaderLinks(visible) {
 }
 
 function showView(name) {
-  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
@@ -536,110 +541,9 @@ let _account = null;
 let _persistedProfile = null;
 let _verification = null;
 let _resetChallenge = null;
-
-const FEEDBACK_LABELS = {
-  watch: 'İzleyeceğim',
-  skip: 'Şimdilik geçtim',
-  block: 'Bir daha önerme',
-  undo: 'Geri alındı',
-};
-
-function formatFeedbackDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('tr-TR', {
-    dateStyle: 'medium', timeStyle: 'short',
-  }).format(date);
-}
-
-async function saveRecommendationFeedback(button) {
-  const slug = button.dataset.filmSlug;
-  const action = button.dataset.feedbackAction;
-  const film = _feedbackFilms.get(slug);
-  const controls = button.closest('[data-feedback-controls]');
-  if (!film || !controls) return;
-  controls.querySelectorAll('button').forEach(item => { item.disabled = true; });
-  try {
-    await apiJSON('/api/recommendations/feedback', {
-      method: 'POST',
-      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        slug: film.slug,
-        title: film.title,
-        tmdb_id: film.tmdb_id || null,
-        poster_url: film.poster_url || null,
-        action,
-      }),
-    });
-    controls.innerHTML = `<span class="font-label-sm text-label-sm text-primary-container">${escapeHTML(FEEDBACK_LABELS[action])} · Yeni aramalarda gizlenecek.</span>`;
-  } catch (error) {
-    controls.querySelectorAll('button').forEach(item => { item.disabled = false; });
-    const status = controls.querySelector('[data-feedback-status]');
-    status.textContent = error.message || 'Tercih kaydedilemedi.';
-    status.classList.remove('hidden');
-  }
-}
-
-function renderFeedbackHistory(data) {
-  const now = Date.now();
-  const current = (data.current || []).filter(item => {
-    if (item.action !== 'skip') return true;
-    const expires = new Date(item.suppress_until).getTime();
-    return Number.isFinite(expires) && expires > now;
-  });
-  $('feedback-current').innerHTML = current.length ? current.map(item => {
-    const poster = safeImageURL(item.poster_url);
-    const expiry = item.action === 'skip' && item.suppress_until
-      ? `${formatFeedbackDate(item.suppress_until)} tarihine kadar gizli`
-      : 'Geri alınana kadar gizli';
-    return `
-      <article class="glass-panel rounded-xl p-3 flex items-center gap-3">
-        ${poster ? `<img src="${poster}" alt="" class="w-12 h-16 rounded-md object-cover shrink-0" loading="lazy"/>` : '<div class="w-12 h-16 rounded-md bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30">movie</span></div>'}
-        <div class="min-w-0 flex-grow">
-          <h3 class="font-label-md text-label-md text-on-surface truncate">${escapeHTML(item.title)}</h3>
-          <p class="font-label-sm text-label-sm text-primary-container">${escapeHTML(FEEDBACK_LABELS[item.action] || item.action)}</p>
-          <p class="font-label-sm text-label-sm text-on-surface-variant/60">${escapeHTML(expiry)}</p>
-        </div>
-        <button type="button" data-feedback-undo="${escapeHTML(item.film_slug)}" class="shrink-0 px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs">Geri al</button>
-      </article>`;
-  }).join('') : '<div class="glass-panel rounded-xl p-5 text-on-surface-variant">Aktif öneri tercihin yok.</div>';
-
-  const events = data.events || [];
-  $('feedback-events').innerHTML = events.length ? events.map(item => `
-    <div class="px-3 py-2 rounded-lg bg-surface-container flex items-center justify-between gap-3">
-      <span class="font-body-md text-body-md text-on-surface-variant truncate"><span class="text-on-surface">${escapeHTML(item.title)}</span> · ${escapeHTML(FEEDBACK_LABELS[item.action] || item.action)}</span>
-      <time class="font-label-sm text-label-sm text-on-surface-variant/50 shrink-0">${escapeHTML(formatFeedbackDate(item.created_at))}</time>
-    </div>`).join('') : '<div class="text-on-surface-variant">Henüz işlem yok.</div>';
-}
-
-async function loadFeedbackHistory() {
-  showView('feedback-history');
-  $('feedback-history-error').classList.add('hidden');
-  $('feedback-current').innerHTML = '<div class="glass-panel rounded-xl p-5 text-on-surface-variant animate-pulse">Tercihler yükleniyor…</div>';
-  $('feedback-events').innerHTML = '';
-  try {
-    renderFeedbackHistory(await apiJSON('/api/recommendations/history'));
-  } catch (error) {
-    $('feedback-current').innerHTML = '';
-    $('feedback-history-error').textContent = error.message || 'Öneri geçmişi yüklenemedi.';
-    $('feedback-history-error').classList.remove('hidden');
-  }
-}
-
-async function undoRecommendationFeedback(button) {
-  const slug = button.dataset.feedbackUndo;
-  button.disabled = true;
-  try {
-    await apiJSON(`/api/recommendations/feedback/${encodeURIComponent(slug)}`, {
-      method: 'DELETE', headers: csrfHeaders(),
-    });
-    await loadFeedbackHistory();
-  } catch (error) {
-    button.disabled = false;
-    $('feedback-history-error').textContent = error.message || 'Tercih geri alınamadı.';
-    $('feedback-history-error').classList.remove('hidden');
-  }
-}
+// Parola, kayıt sırasında girildiği haliyle bio doğrulaması bitene kadar
+// bellekte tutulur; doğrulama başarılıysa oturum otomatik açılır, sonra silinir.
+let _pendingRegPassword = null;
 
 function setImage(img, fallback, value, alt) {
   try {
@@ -1129,6 +1033,9 @@ async function loadProfile() {
 
 function openProfile() {
   toggleAccountMenu(false);
+  _obToken += 1;              // onboarding sürüyorsa akışını durdur
+  _obClearTimers();
+  $('ob-skip').classList.add('hidden');
   showView('profile');
   const job = _persistedProfile && _persistedProfile.sync_job;
   const sweepActive = job && job.state !== 'done';
@@ -1151,14 +1058,69 @@ function enterApp(account) {
 }
 
 // ── Onboarding reveal ──────────────────────────────────────────────────
-let _obTimer = null;
-let _obIndex = 0;
-let _obSlides = [];
+// Akış veriye bağlı: her aşama ilgili veri hazır olduğunda görünür. Tam
+// izleme geçmişi taranmadan "Sinematik kişiliğin"/"Favori yönetmenin"
+// slaytları gösterilmez; bu sırada film bilgileri akan bir bekleme ekranı
+// çalışır. "Uygulamaya geç" butonu yalnızca en sonda (S8) belirir.
+let _obToken = 0;             // her yeni çalışma bu sayacı artırır — async iptal kontrolü
+let _obSlideTimer = null;     // aşamalar arası bekleme
+let _obFactTimer = null;      // bilgi kartı rotasyonu (4 sn)
+let _obPollTimer = null;      // tam tarama job yoklaması
 const OB_SLIDE_MS = 5000;
+const OB_FACT_MS = 4000;
+const OB_POLL_MS = 5000;
+const OB_MAX_WAIT_MS = 5 * 60 * 1000;   // "derin analiz" beklemesi için üst sınır
+const OB_STEPS = 6;                      // ilerleme noktası sayısı
+
+const OB_BUCKETS = [
+  { max: 250,      text: 'Kısa ve tatlı bir geçmişin var. Analizin birazdan hazır, daha esnemeye fırsat bulamadan döneriz.' },
+  { max: 500,      text: 'Dolu dolu bir arşiv! Filmleri tek tek okuyoruz, yalnızca bir-iki dakika. Sen keyfine bak.' },
+  { max: 750,      text: 'Bu ciddi bir koleksiyon. Yüzlerce filmi tarıyoruz, birkaç dakika sürebilir; bu arada aşağıdaki sinema bilgileriyle vakit geçir.' },
+  { max: 1000,     text: 'Kocaman bir sinema geçmişin var ve hepsini hakkıyla analiz etmek istiyoruz. Kahveni tazele, birkaç dakikaya buradayız.' },
+  { max: Infinity, text: 'Binden fazla film… Sen gerçek bir sinefilsin. Bu arşivi satır satır okumak birkaç dakika alacak ama sonucu görünce ‘iyi ki beklemişim’ diyeceksin.' },
+];
+function _obBucketText(total) {
+  return (OB_BUCKETS.find(b => (total || 0) <= b.max) || OB_BUCKETS[OB_BUCKETS.length - 1]).text;
+}
+
+const OB_MILESTONES = [
+  { at: 250,  text: '250 filmi geride bıraktık…' },
+  { at: 500,  text: '500 film tamam, tempo yerinde.' },
+  { at: 750,  text: '750 film oldu, hâlâ okuyoruz.' },
+  { at: 1000, text: '1000 filmi de devirdik — amma izlemişsin!' },
+  { at: 1500, text: 'Son düzlükteyiz, analiz derleniyor…' },
+];
+function _obMilestoneText(processed) {
+  let hit = '';
+  for (const m of OB_MILESTONES) if ((processed || 0) >= m.at) hit = m.text;
+  return hit;
+}
+
+function _obClearTimers() {
+  if (_obSlideTimer) { clearTimeout(_obSlideTimer); _obSlideTimer = null; }
+  if (_obFactTimer)  { clearInterval(_obFactTimer); _obFactTimer = null; }
+  if (_obPollTimer)  { clearInterval(_obPollTimer); _obPollTimer = null; }
+}
+
+// Bu onboarding çalışması hâlâ geçerli mi? Değilse timer'ları da temizler.
+function _obLive(token) {
+  const ok = token === _obToken && !$('view-onboarding').classList.contains('hidden');
+  if (!ok) _obClearTimers();
+  return ok;
+}
+
+function _obWait(ms) {
+  return new Promise(resolve => {
+    if (_obSlideTimer) clearTimeout(_obSlideTimer);
+    _obSlideTimer = setTimeout(() => { _obSlideTimer = null; resolve(); }, ms);
+  });
+}
 
 function finishOnboarding() {
-  if (_obTimer) { clearTimeout(_obTimer); _obTimer = null; }
+  _obToken += 1;
+  _obClearTimers();
   sessionStorage.setItem('mb_onboarded', '1');
+  $('ob-skip').classList.add('hidden');
   showView('profile');
   openProfilePanel('watch');
   if (_persistedProfile) renderPersistedProfile(_persistedProfile);
@@ -1166,12 +1128,11 @@ function finishOnboarding() {
 }
 
 function _obStage(html) {
-  const stage = $('ob-stage');
-  stage.innerHTML = `<div class="ob-in">${html}</div>`;
+  $('ob-stage').innerHTML = `<div class="ob-in">${html}</div>`;
 }
 
-function _obDots(total, active) {
-  $('ob-dots').innerHTML = Array.from({ length: total }, (_, i) =>
+function _obDots(active) {
+  $('ob-dots').innerHTML = Array.from({ length: OB_STEPS }, (_, i) =>
     `<i class="${i === active ? 'on' : ''}"></i>`).join('');
 }
 
@@ -1186,70 +1147,48 @@ function _countUp(el, target, ms = 1100) {
   requestAnimationFrame(step);
 }
 
-function _renderObSlide() {
-  const slide = _obSlides[_obIndex];
-  const total = 1 + _obSlides.length;
-  _obDots(total, _obIndex + 1);
-  const last = _obIndex === _obSlides.length - 1;
-  $('ob-skip-label').textContent = last ? 'Uygulamaya geç' : 'Geç';
-
-  if (slide.kind === 'numbers') {
-    _obStage(`
-      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Letterboxd geçmişin</p>
-      <div class="mt-6 grid grid-cols-3 gap-3">
-        ${slide.items.map(x => `
-          <div class="rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-4">
-            <strong data-ob-count="${x.value}" class="block font-display-lg text-[26px] md:text-[30px] leading-none text-on-surface">0</strong>
-            <span class="mt-2 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">${escapeHTML(x.label)}</span>
-          </div>`).join('')}
-      </div>`);
-    $('ob-stage').querySelectorAll('[data-ob-count]').forEach(el =>
-      _countUp(el, Number(el.dataset.obCount)));
-  } else if (slide.kind === 'favs') {
-    _obStage(`
-      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Favori dörtlün</p>
-      <div class="mt-6 grid grid-cols-4 gap-2.5">
-        ${slide.favs.map((f, i) => {
-          const poster = safeImageURL(f.poster_url);
-          const title = escapeHTML(f.title || '');
-          return `<div class="line-rise" style="animation-delay:${i * 140}ms">
-            <div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25">
-              ${poster ? `<img src="${poster}" alt="${title}" class="absolute inset-0 w-full h-full object-cover"/>` : `<div class="absolute inset-0 flex items-center justify-center p-2 text-center text-[9px] text-on-surface-variant/70">${title}</div>`}
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`);
-  } else if (slide.kind === 'personality') {
-    _obStage(`
-      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
-      <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
-    streamText($('ob-personality'), slide.text);
-  } else if (slide.kind === 'director') {
-    const d = slide.dir;
-    _obStage(`
-      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Favori yönetmenin</p>
-      <div class="mt-6 flex flex-col items-center gap-4">
-        ${directorAvatar(d, 'w-28 h-28 text-[36px]')}
-        <div>
-          <h2 class="font-headline-lg text-[26px] text-on-surface">${escapeHTML(d.name)}</h2>
-          <p class="mt-1 font-body-md text-body-md text-on-surface-variant">${Number(d.count) || 0} filmini izledin${d.avg_rating ? ` · ortalaman ${Number(d.avg_rating).toFixed(1)}★` : ''}</p>
-        </div>
-      </div>`);
-  }
-
-  if (_obTimer) clearTimeout(_obTimer);
-  if (!last) {
-    _obTimer = setTimeout(() => { _obIndex += 1; _renderObSlide(); }, OB_SLIDE_MS);
+// Bekleme ekranındaki bilgi/alıntı kartı — 4 sn'de bir yumuşak geçişle akar.
+function _obPaintFact() {
+  const item = _nextFact();
+  const t = $('ob-fact-text');
+  if (!t) return;
+  const a = $('ob-fact-author');
+  const b = $('ob-fact-badge');
+  const swap = () => {
+    if (b) b.textContent = item.type === 'quote' ? '❝ Söz' : '🎬 Bilgi';
+    t.textContent = item.text;
+    if (a) a.textContent = item.author ? `— ${item.author}` : '';
+  };
+  const card = $('ob-fact-card');
+  if (card && !_reduceMotion) {
+    card.style.opacity = '0';
+    setTimeout(() => { swap(); card.style.opacity = '1'; }, 220);
   } else {
-    $('ob-bg-note').textContent = 'Hazır olduğunda uygulamaya geçebilirsin.';
+    swap();
   }
 }
 
-async function startOnboarding() {
-  _obSlides = [];
-  _obIndex = 0;
-  showView('onboarding');
+function _obRenderWaiting(heading, withProgress) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">${escapeHTML(heading)}</p>
+    ${withProgress ? `
+      <p id="ob-progress-line" class="mt-2 font-body-md text-body-md text-on-surface-variant/80"></p>
+      <p id="ob-milestone-line" class="mt-1 font-label-sm text-label-sm text-primary-container/90 min-h-[1.25em]"></p>` : ''}
+    <div id="ob-fact-card" style="transition:opacity .3s ease" class="mt-6 rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-5 text-left">
+      <span id="ob-fact-badge" class="font-label-sm text-label-sm text-on-surface-variant/60"></span>
+      <p id="ob-fact-text" class="mt-2 font-body-md text-body-md text-on-surface/90 leading-relaxed"></p>
+      <p id="ob-fact-author" class="mt-2 font-label-sm text-label-sm text-on-surface-variant/60"></p>
+    </div>`);
+  _obPaintFact();
+  if (_obFactTimer) clearInterval(_obFactTimer);
+  _obFactTimer = setInterval(_obPaintFact, OB_FACT_MS);
+}
 
+function _obStopFacts() {
+  if (_obFactTimer) { clearInterval(_obFactTimer); _obFactTimer = null; }
+}
+
+function _obRenderWelcome() {
   const name = escapeHTML(((_account.display_name || _account.username || '').split(' ')[0]) || _account.username || '');
   const avatar = safeImageURL(_account.avatar_url);
   _obStage(`
@@ -1263,36 +1202,193 @@ async function startOnboarding() {
         <p class="mt-3 font-body-md text-body-md text-on-surface-variant/70">İzleme geçmişin okunuyor…</p>
       </div>
     </div>`);
-  _obDots(2, 0);
+}
 
-  const data = await syncProfile();
-  if (!data || $('view-onboarding').classList.contains('hidden')) {
-    if (data) finishOnboarding();
-    return;
-  }
+function _obRenderNumbers(items) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Letterboxd geçmişin</p>
+    <div class="mt-6 grid grid-cols-3 gap-3">
+      ${items.map(x => `
+        <div class="rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-4">
+          <strong data-ob-count="${x.value}" class="block font-display-lg text-[26px] md:text-[30px] leading-none text-on-surface">0</strong>
+          <span class="mt-2 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">${escapeHTML(x.label)}</span>
+        </div>`).join('')}
+    </div>`);
+  $('ob-stage').querySelectorAll('[data-ob-count]').forEach(el =>
+    _countUp(el, Number(el.dataset.obCount)));
+}
 
-  const taste = data.taste || {};
+function _obRenderFavs(favs) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Favori dörtlün</p>
+    <div class="mt-6 grid grid-cols-4 gap-2.5">
+      ${favs.map((f, i) => {
+        const poster = safeImageURL(f.poster_url);
+        const title = escapeHTML(f.title || '');
+        return `<div class="line-rise" style="animation-delay:${i * 140}ms">
+          <div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25">
+            ${poster ? `<img src="${poster}" alt="${title}" class="absolute inset-0 w-full h-full object-cover"/>` : `<div class="absolute inset-0 flex items-center justify-center p-2 text-center text-[9px] text-on-surface-variant/70">${title}</div>`}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`);
+}
+
+function _obRenderDirector(d) {
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Favori yönetmenin</p>
+    <div class="mt-6 flex flex-col items-center gap-4">
+      ${directorAvatar(d, 'w-28 h-28 text-[36px]')}
+      <div>
+        <h2 class="font-headline-lg text-[26px] text-on-surface">${escapeHTML(d.name)}</h2>
+        <p class="mt-1 font-body-md text-body-md text-on-surface-variant">${Number(d.count) || 0} filmini izledin${d.avg_rating ? ` · ortalaman ${Number(d.avg_rating).toFixed(1)}★` : ''}</p>
+      </div>
+    </div>`);
+}
+
+// Tam izleme geçmişi taraması bitene (ya da OB_MAX_WAIT_MS dolana) kadar bekler.
+// Döner: taze profil (job 'done') | null (süre doldu / iptal edildi).
+function _obAwaitFullSweep(token, provisional) {
+  return new Promise(resolve => {
+    const job0 = provisional && provisional.sync_job;
+    if (job0 && job0.state === 'done') {
+      apiJSON('/api/profile/me').then(resolve).catch(() => resolve(provisional));
+      return;
+    }
+    _obRenderWaiting('Zevk analizin derinleşiyor', true);
+    const deadline = Date.now() + OB_MAX_WAIT_MS;
+    let lastMilestone = '';
+
+    const tick = async () => {
+      if (!_obLive(token)) { resolve(null); return; }
+      let profile = null;
+      try { profile = await apiJSON('/api/profile/me'); } catch (_) { /* geçici; yoklamaya devam */ }
+      if (!_obLive(token)) { resolve(null); return; }
+      if (profile) _persistedProfile = profile;
+      const job = profile && profile.sync_job;
+      if (job) {
+        const pl = $('ob-progress-line');
+        if (pl) {
+          pl.textContent = job.total
+            ? `${(job.processed || 0).toLocaleString('tr-TR')} / ${job.total.toLocaleString('tr-TR')} film tarandı`
+            : `${(job.processed || 0).toLocaleString('tr-TR')} film tarandı`;
+        }
+        const mt = _obMilestoneText(job.processed || 0);
+        const ml = $('ob-milestone-line');
+        if (ml && mt && mt !== lastMilestone) { ml.textContent = mt; lastMilestone = mt; }
+      }
+      if (job && job.state === 'done') {
+        if (_obPollTimer) { clearInterval(_obPollTimer); _obPollTimer = null; }
+        _obStopFacts();
+        resolve(profile);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        if (_obPollTimer) { clearInterval(_obPollTimer); _obPollTimer = null; }
+        _obStopFacts();
+        resolve(null);
+      }
+    };
+
+    tick();
+    if (_obPollTimer) clearInterval(_obPollTimer);
+    if (_obLive(token)) _obPollTimer = setInterval(tick, OB_POLL_MS);
+  });
+}
+
+async function startOnboarding() {
+  const token = ++_obToken;
+  _obClearTimers();
+  showView('onboarding');
+  $('ob-skip').classList.add('hidden');
+  $('ob-skip-label').textContent = 'Uygulamaya geç';
+  $('ob-bg-note').textContent = 'Zevk analizin arka planda hazırlanıyor…';
+
+  // S0 — karşılama (avatar önce belirir)
+  _obRenderWelcome();
+  _obDots(0);
+
+  // S1 — provisional beklenirken film bilgileri akar
+  const syncP = syncProfile();
+  await _obWait(1600);
+  if (!_obLive(token)) return;
+  _obRenderWaiting('İzleme geçmişin okunuyor', false);
+  const data = await syncP;
+  _obStopFacts();
+  if (!_obLive(token)) return;
+  if (!data) { finishOnboarding(); return; }
+
+  const taste0 = data.taste || {};
   const stats = data.letterboxd_stats || {};
-  const favs = data.favorite_films || [];
-  const dir = (taste.top_directors_detail || [])[0];
-  const swept = (data.sync_job && data.sync_job.total) || 0;
+  const favs = (data.favorite_films || []).slice(0, 4);
+  const total = Math.max(
+    stats.films || 0, taste0.sample_size || 0, (data.sync_job && data.sync_job.total) || 0,
+  );
 
+  // S2 — kişiye özel karşılama (film sayısına göre)
+  _obDots(0);
+  _obStage(`<p class="font-body-lg text-body-lg leading-[1.7] text-on-surface px-2">${escapeHTML(_obBucketText(total))}</p>`);
+  await _obWait(4500);
+  if (!_obLive(token)) return;
+
+  // S3 — rakamlar (profil sayfasından; tam sweep bunu değiştirmez)
   const numbers = [
-    { label: 'İzlediğin filmler', value: Math.max(stats.films || 0, taste.sample_size || 0, swept) },
-    { label: 'Puanladıkların', value: taste.rated_count || 0 },
+    { label: 'İzlediğin filmler', value: total },
+    { label: 'Puanladıkların', value: taste0.rated_count || 0 },
     { label: 'Bu yıl', value: stats.this_year || 0 },
   ].filter(x => x.value > 0);
+  if (numbers.length) {
+    _obDots(1);
+    _obRenderNumbers(numbers);
+    await _obWait(OB_SLIDE_MS);
+    if (!_obLive(token)) return;
+  }
 
-  _obSlides = [
-    numbers.length ? { kind: 'numbers', items: numbers } : null,
-    favs.length ? { kind: 'favs', favs: favs.slice(0, 4) } : null,
-    (taste.personality || '').trim() ? { kind: 'personality', text: taste.personality.trim() } : null,
-    dir && dir.name ? { kind: 'director', dir } : null,
-  ].filter(Boolean);
+  // S4 — favori dörtlü
+  if (favs.length) {
+    _obDots(2);
+    _obRenderFavs(favs);
+    await _obWait(OB_SLIDE_MS);
+    if (!_obLive(token)) return;
+  }
 
-  if (!_obSlides.length) { finishOnboarding(); return; }
-  _obIndex = 0;
-  _renderObSlide();
+  // S5 — tüm izleme geçmişi taranırken bekleme ekranı
+  const full = await _obAwaitFullSweep(token, data);
+  if (!_obLive(token)) return;
+
+  const finalProfile = full || _persistedProfile || data;
+  const taste = finalProfile.taste || taste0;
+  const dir = (taste.top_directors_detail || [])[0];
+
+  // S6 — sinematik kişilik (gerçek LLM metni)
+  if ((taste.personality || '').trim()) {
+    _obDots(3);
+    _obStage(`
+      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
+      <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
+    streamText($('ob-personality'), taste.personality.trim());
+    await _obWait(Math.max(OB_SLIDE_MS, 6500));
+    if (!_obLive(token)) return;
+  }
+
+  // S7 — favori yönetmen (tüm geçmişten)
+  if (dir && dir.name) {
+    _obDots(4);
+    _obRenderDirector(dir);
+    await _obWait(OB_SLIDE_MS);
+    if (!_obLive(token)) return;
+  }
+
+  // S8 — bitiş: "Uygulamaya geç" butonu ilk kez burada belirir
+  _obDots(5);
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
+    <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevk profilin hazır</h2>
+    <p class="mt-3 font-body-md text-body-md text-on-surface-variant/80">${full
+      ? 'Tüm izleme geçmişin tarandı. İçeri girip bu geceye bir film seçelim.'
+      : 'Analizin derinleşmeye devam ediyor, birazdan profilinde güncellenecek. Sen içeri geçebilirsin.'}</p>`);
+  $('ob-skip').classList.remove('hidden');
+  $('ob-bg-note').textContent = 'Hazır olduğunda uygulamaya geçebilirsin.';
 }
 
 async function boot() {
@@ -1369,29 +1465,9 @@ function hideQueueInfo() {
   $('queue-info').classList.remove('flex');
 }
 
-// ── Hero card builder ──────────────────────────────────────────────────────
-function rememberFeedbackFilm(film) {
-  if (film?.slug) _feedbackFilms.set(String(film.slug), film);
-}
-
-function buildFeedbackActions(film, compact = false) {
-  if (!_authEnabled || !film?.slug) return '';
-  rememberFeedbackFilm(film);
-  const slug = escapeHTML(film.slug);
-  const base = compact
-    ? 'px-2 py-1.5 text-[10px]'
-    : 'px-3 py-2 text-xs';
-  return `
-    <div class="flex flex-wrap gap-2 mt-2" data-feedback-controls="${slug}">
-      <button type="button" data-feedback-action="watch" data-film-slug="${slug}" class="${base} rounded-lg border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 transition-colors">Bunu izleyeceğim</button>
-      <button type="button" data-feedback-action="skip" data-film-slug="${slug}" class="${base} rounded-lg border border-tertiary-container/30 bg-tertiary-container/10 text-tertiary-container hover:bg-tertiary-container/20 transition-colors">Şimdilik geç</button>
-      <button type="button" data-feedback-action="block" data-film-slug="${slug}" class="${base} rounded-lg border border-outline-variant/30 bg-surface-variant text-on-surface-variant hover:text-error transition-colors">Bunu önerme</button>
-      <span class="hidden w-full font-label-sm text-label-sm text-error" data-feedback-status></span>
-    </div>`;
-}
-
+// ── Recommendation card builders ──────────────────────────────────────────
 const { buildHeroCard, buildAltCard, buildRandomCard } =
-  createRecommendationCards(buildFeedbackActions);
+  createRecommendationCards();
 
 // ── Render results ─────────────────────────────────────────────────────────
 function renderResults(data) {
@@ -2017,6 +2093,8 @@ async function startRegistration(event) {
         password_confirm: $('register-password-confirm').value,
       }),
     });
+    // Bio doğrulaması bitince oturumu otomatik açmak için parolayı sakla.
+    _pendingRegPassword = password;
     $('register-password').value = '';
     $('register-password-confirm').value = '';
     $('register-form').classList.add('hidden');
@@ -2036,17 +2114,37 @@ async function verifyRegistration() {
   const button = $('btn-verify');
   button.disabled = true;
   setAuthMessage('Letterboxd bio alanı kontrol ediliyor…');
+  const username = _verification.username;
   try {
     await apiJSON('/api/auth/register/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: _verification.username,
+        username,
         code: _verification.verification_code,
       }),
     });
-    const username = _verification.username;
     _verification = null;
+
+    // Doğrulama tamam — kullanıcının parolayı tekrar girmesine gerek yok;
+    // oturumu aynı akışta açıp doğrudan onboarding'e geçiyoruz.
+    if (_pendingRegPassword) {
+      try {
+        setAuthMessage('Hesap doğrulandı, giriş yapılıyor…');
+        const data = await apiJSON('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password: _pendingRegPassword }),
+        });
+        _pendingRegPassword = null;
+        setAuthMessage(null);
+        enterApp(data.account);
+        return;
+      } catch (_) {
+        // Otomatik giriş tutmadıysa elle girişe düş.
+      }
+    }
+    _pendingRegPassword = null;
     setAuthMode('login');
     $('login-username').value = username;
     setAuthMessage('Hesap doğrulandı. Şimdi parolanla giriş yapabilirsin.');
@@ -2111,7 +2209,10 @@ async function logoutAccount() {
   } catch (_) {}
   _account = null;
   _persistedProfile = null;
-  _feedbackFilms.clear();
+  _pendingRegPassword = null;
+  _obToken += 1;
+  _obClearTimers();
+  $('ob-skip').classList.add('hidden');
   $('header-account').classList.add('hidden');
   $('header-account').classList.remove('flex');
   $('primary-username-field').classList.remove('hidden');
@@ -2137,16 +2238,6 @@ function copyCode(element) {
   setAuthMessage('Kod panoya kopyalandı.');
 }
 
-function handleRecommendationFeedbackClick(event) {
-  const button = event.target.closest('[data-feedback-action]');
-  if (button) saveRecommendationFeedback(button);
-}
-
-function handleFeedbackHistoryClick(event) {
-  const button = event.target.closest('[data-feedback-undo]');
-  if (button) undoRecommendationFeedback(button);
-}
-
 function openInfoDialog(id) {
   const dialog = $(id);
   if (dialog && !dialog.open) dialog.showModal();
@@ -2158,7 +2249,7 @@ $('register-form').addEventListener('submit', startRegistration);
 $('auth-tab-login').addEventListener('click', () => setAuthMode('login'));
 $('auth-tab-register').addEventListener('click', () => setAuthMode('register'));
 $('btn-verify').addEventListener('click', verifyRegistration);
-$('btn-verify-back').addEventListener('click', () => setAuthMode('register'));
+$('btn-verify-back').addEventListener('click', () => { _pendingRegPassword = null; setAuthMode('register'); });
 $('verification-code').addEventListener('click', () => copyCode($('verification-code')));
 $('reset-code-display').addEventListener('click', () => copyCode($('reset-code-display')));
 $('btn-show-reset').addEventListener('click', () => {
@@ -2196,10 +2287,6 @@ $('btn-account-menu').addEventListener('click', event => {
 });
 $('account-menu').addEventListener('click', event => event.stopPropagation());
 $('menu-profile-view').addEventListener('click', openProfile);
-$('menu-feedback-history').addEventListener('click', () => {
-  toggleAccountMenu(false);
-  loadFeedbackHistory();
-});
 $('menu-delete-data').addEventListener('click', () => {
   toggleAccountMenu(false);
   deleteMyData();
@@ -2210,7 +2297,6 @@ $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
-$('btn-feedback-back').addEventListener('click', () => showView(homeView()));
 
 $('profile-directors-more').addEventListener('click', () => {
   const open = $('profile-directors-panel').classList.toggle('open');
@@ -2278,7 +2364,6 @@ $('profile-reco-body').addEventListener('click', event => {
     if (attempt < pool.length - 1) { body.dataset.attempt = String(attempt + 1); _paintInlineRandom(); }
     return;
   }
-  handleRecommendationFeedbackClick(event);
 });
 
 // Profil ana ekranı — "Bu gece" aksiyonları
@@ -2301,11 +2386,7 @@ $('profile-blend-suggestions').addEventListener('click', event => {
   $('profile-blend-username').value = button.dataset.blendUser;
   $('profile-blend-suggestions').classList.add('hidden');
 });
-$('btn-feedback-refresh').addEventListener('click', loadFeedbackHistory);
 $('view-inbox').addEventListener('click', handleBlendInboxAction);
-$('view-results').addEventListener('click', handleRecommendationFeedbackClick);
-$('view-random-result').addEventListener('click', handleRecommendationFeedbackClick);
-$('view-feedback-history').addEventListener('click', handleFeedbackHistoryClick);
 $('btn-recommend').addEventListener('click', recommend);
 $('btn-delete-data').addEventListener('click', deleteMyData);
 $('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });

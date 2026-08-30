@@ -1,6 +1,6 @@
 import { escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
 
-export function createRecommendationCards(buildFeedbackActions) {
+export function createRecommendationCards() {
 // Make a poster clickable through to its Letterboxd page.
 function posterLink(inner, film) {
   const href = letterboxdFilmURL(film && film.slug);
@@ -48,7 +48,6 @@ function buildHeroCard(film) {
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
         ${reason}
-        ${buildFeedbackActions(film)}
       </div>
     </article>`;
 }
@@ -82,7 +81,6 @@ function buildAltCard(film, idx) {
         <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
         ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
         ${shortReason}
-        ${buildFeedbackActions(film, true)}
       </div>
     </article>`;
 }
@@ -136,7 +134,6 @@ function buildRandomCard(film) {
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
         ${overview}
-        ${buildFeedbackActions(film)}
       </div>
     </article>`;
 }

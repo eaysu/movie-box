@@ -1256,8 +1256,10 @@ async def _provisional_profile_sync(
             pcache=pcache,
             scrape_kwargs={
                 "delay": settings.scrape_delay,
-                "max_pages": settings.watched_max_pages,
-                "film_limit": settings.watched_film_limit,
+                "max_pages": max(settings.watched_max_pages, 10),
+                "film_limit": getattr(
+                    settings, "provisional_watched_film_limit", settings.watched_film_limit
+                ),
                 "max_retries": settings.scrape_max_retries,
             },
             force=force,
