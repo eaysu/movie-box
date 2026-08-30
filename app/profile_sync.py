@@ -67,14 +67,18 @@ def job_needs_full_sweep(job: dict | None) -> bool:
 
 
 def job_is_resumable(job: dict | None, *, now: datetime | None = None) -> bool:
-    """True when a queued/running job should be (re)started in this process."""
-    if not job or job.get("state") not in ("queued", "running"):
+    """True when a job should be (re)started in this process now."""
+    if not job:
+        return False
+    state = job.get("state")
+    if state not in ("queued", "running", "failed"):
         return False
     now = now or _now()
     backoff = _parse_ts(job.get("backoff_until"))
     if backoff and backoff > now:
         return False
-    if job.get("state") == "queued":
+    if state in ("queued", "failed"):
+        # `failed` only reaches here once its 30-minute cooldown has elapsed.
         return True
     heartbeat = _parse_ts(job.get("heartbeat_at"))
     return (
@@ -133,7 +137,7 @@ async def ensure_started(
     ):
         return job  # a full sweep already finished
 
-    if force or job is None or job.get("state") in ("done", "failed"):
+    if force or job is None or job.get("state") == "done":
         job = await asyncio.to_thread(
             service.upsert_sync_job,
             account.id,
@@ -144,6 +148,15 @@ async def ensure_started(
             films_processed=0,
             films_total=0,
             attempts=0,
+            last_error="",
+            backoff_until=None,
+        )
+    elif job.get("state") == "failed":
+        # Resume from the checkpoint rather than recrawling from page 1.
+        job = await asyncio.to_thread(
+            service.upsert_sync_job,
+            account.id,
+            state="queued",
             last_error="",
             backoff_until=None,
         )
@@ -229,6 +242,20 @@ async def _crawl(pipeline, service, account) -> None:
         if processed >= FULL_MAX_FILMS:
             phase = "enrich"
 
+    # Interim aggregate: the profile should jump to the full film count as soon
+    # as the crawl is done, without waiting on (or depending on) the detail pass.
+    if phase == "enrich":
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
+            interim_total = await pipeline.rebuild_snapshot(account, use_llm=False)
+            await asyncio.to_thread(
+                service.touch_sync_job,
+                uid,
+                phase="enrich",
+                films_total=interim_total,
+                films_processed=interim_total,
+            )
+
     # ── Phase 2 · director/keyword details for rows still missing them ─────
     await asyncio.to_thread(service.touch_sync_job, uid, phase="enrich")
     rows = await asyncio.to_thread(service.get_watched_films, uid)
@@ -261,7 +288,7 @@ async def _incremental(pipeline, service, account) -> None:
 
     New films are enriched and prepended (negative watched_rank keeps them
     ahead of the existing history); changed ratings are patched in place. The
-    snapshot is only rebuilt when something actually changed.
+    snapshot is re-aggregated every run (LLM prose only when something changed).
     """
     uid = account.id
     await asyncio.to_thread(
@@ -294,11 +321,10 @@ async def _incremental(pipeline, service, account) -> None:
     if rating_updates:
         await asyncio.to_thread(service.save_watched_films, uid, rating_updates)
 
-    if new_films or rating_updates:
-        await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
-        total = await pipeline.rebuild_snapshot(account)
-    else:
-        total = len(known)
+    # Always re-aggregate so the snapshot can never drift behind
+    # user_watched_films; only spend an LLM call when something changed.
+    await asyncio.to_thread(service.touch_sync_job, uid, phase="aggregate")
+    total = await pipeline.rebuild_snapshot(account, use_llm=bool(new_films))
 
     await asyncio.to_thread(
         service.touch_sync_job,

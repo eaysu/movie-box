@@ -1380,7 +1380,7 @@ class _SyncPipeline:
             if film.slug
         ]
 
-    async def rebuild_snapshot(self, account: Account) -> int:
+    async def rebuild_snapshot(self, account: Account, *, use_llm: bool = True) -> int:
         service = _auth_service()
         rows = await asyncio.to_thread(service.get_watched_films, account.id)
         rows.sort(
@@ -1397,6 +1397,7 @@ class _SyncPipeline:
                 genres=row.get("genres") or [],
                 director=row.get("director") or "",
                 keywords=row.get("keywords") or [],
+                poster_url=row.get("poster_url") or None,
                 details_loaded=bool(row.get("details_loaded")),
                 user_rating=row.get("user_rating"),
             )
@@ -1424,12 +1425,13 @@ class _SyncPipeline:
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
         taste.personality = personality_from_favorites(favorites)
         # Background pass: upgrade the deterministic prose with an LLM read.
-        with contextlib.suppress(Exception):
-            extra = await analyze_taste(self.settings, watched, favorites)
-            if extra.get("analysis"):
-                taste.analysis = extra["analysis"]
-            if extra.get("personality"):
-                taste.personality = extra["personality"]
+        if use_llm:
+            with contextlib.suppress(Exception):
+                extra = await analyze_taste(self.settings, watched, favorites)
+                if extra.get("analysis"):
+                    taste.analysis = extra["analysis"]
+                if extra.get("personality"):
+                    taste.personality = extra["personality"]
         await asyncio.to_thread(
             service.save_profile_snapshot, account, profile, favorites, taste
         )
@@ -1457,13 +1459,34 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
     except Exception:
         full_sync_available = False
 
-    # Once the full history has been analysed once, never regress to the
-    # 100-film in-request pass — just serve the stored snapshot.
+    # Once the full history has been crawled once, never regress to the 100-film
+    # in-request pass — serve the stored snapshot and self-heal if it fell behind.
     if full_sync_available and not force:
         job = await asyncio.to_thread(service.get_sync_job, account.id)
-        if job and job.get("state") == "done" and job.get("scope") == "full":
+        crawled = int(job.get("films_processed") or 0) if job else 0
+        already_swept = bool(
+            job and job.get("scope") == "full" and crawled >= 100
+        )
+        if already_swept:
             stored = await asyncio.to_thread(service.get_profile, account)
             stored["account"] = account.__dict__
+            with contextlib.suppress(Exception):
+                swept_total = await asyncio.to_thread(
+                    service.count_watched_films, account.id
+                )
+                sample = int((stored.get("taste") or {}).get("sample_size") or 0)
+                snapshot_behind = swept_total and sample < swept_total * 0.9
+                if (
+                    not profile_sync.is_running(account.id)
+                    and (
+                        snapshot_behind
+                        or job.get("state") != "done"
+                        or profile_sync.job_is_resumable(job)
+                    )
+                ):
+                    job = await profile_sync.ensure_started(
+                        _SyncPipeline(settings), service, account, scope="incremental"
+                    )
             stored["sync_job"] = profile_sync.progress_of(job)
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(service.mark_sync_status, account.id, "ready")

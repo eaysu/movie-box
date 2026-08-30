@@ -106,18 +106,21 @@ class TasteProfileTests(unittest.TestCase):
             "https://img/shining.jpg",
         )
 
-    def test_personality_from_favorites_reads_shared_genres_and_director(self):
+    def test_personality_from_favorites_names_no_films_or_people(self):
         from app.taste_profile import personality_from_favorites
 
         self.assertEqual(personality_from_favorites([]), "")
         favs = [
-            EnrichedFilm(title="2001", genres=["Sci-Fi", "Drama"], director="Stanley Kubrick"),
-            EnrichedFilm(title="A Clockwork Orange", genres=["Sci-Fi", "Crime"], director="Stanley Kubrick"),
+            EnrichedFilm(title="2001", genres=["Science Fiction", "Drama"], director="Stanley Kubrick"),
+            EnrichedFilm(title="A Clockwork Orange", genres=["Science Fiction", "Crime"], director="Stanley Kubrick"),
         ]
         text = personality_from_favorites(favs)
-        self.assertIn("2001", text)
-        self.assertIn("Sci-Fi", text)
-        self.assertIn("Stanley Kubrick", text)
+        self.assertTrue(text.endswith("."))
+        self.assertNotIn("2001", text)
+        self.assertNotIn("Stanley Kubrick", text)
+        self.assertNotIn("Science Fiction", text)
+        # Single shared director → the "one director's world" phrasing.
+        self.assertIn("tek bir yönetmenin", text)
 
     def test_analysis_is_a_multi_line_deterministic_read(self):
         watched = [

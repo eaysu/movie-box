@@ -577,27 +577,32 @@ class AuthService:
         except (TypeError, ValueError):
             return 0
 
+    def _paginate(self, table: str, columns: str, user_id: int, *, order: str | None = None):
+        service = self._service_client()
+        page = 1000
+        offset = 0
+        out: list[dict] = []
+        while True:
+            query = service.table(table).select(columns).eq("user_id", user_id)
+            if order:
+                query = query.order(order)
+            rows = (query.range(offset, offset + page - 1).execute()).data or []
+            out.extend(rows)
+            if len(rows) < page:
+                return out
+            offset += page
+
     def get_watched_films(self, user_id: int) -> list[dict]:
-        return (
-            self._service_client()
-            .table("user_watched_films")
-            .select(
-                "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
-                "user_rating,watched_rank,details_loaded"
-            )
-            .eq("user_id", user_id)
-            .order("watched_rank")
-            .execute()
-        ).data or []
+        return self._paginate(
+            "user_watched_films",
+            "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
+            "user_rating,poster_url,watched_rank,details_loaded",
+            user_id,
+            order="watched_rank",
+        )
 
     def get_watched_slugs(self, user_id: int) -> set[str]:
-        rows = (
-            self._service_client()
-            .table("user_watched_films")
-            .select("film_slug")
-            .eq("user_id", user_id)
-            .execute()
-        ).data or []
+        rows = self._paginate("user_watched_films", "film_slug", user_id)
         return {row["film_slug"] for row in rows if row.get("film_slug")}
 
     def count_watched_films(self, user_id: int) -> int:

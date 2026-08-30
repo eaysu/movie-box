@@ -103,29 +103,58 @@ def _director_detail(
     return detail
 
 
+# Dominant-genre → a human disposition it tends to signal (no genre names surfaced).
+_GENRE_TRAIT = {
+    "Drama": "insan ilişkilerinin ağırlığını ve duygusal dürüstlüğü",
+    "Science Fiction": "spekülatif fikirleri ve 'ya olsaydı' sorusunu",
+    "Comedy": "zekâ kıvraklığını ve tonun hafifliğini",
+    "Thriller": "gerilimi, tempoyu ve tetikte kalmayı",
+    "Crime": "ahlaki griliği ve suçun ardındaki psikolojiyi",
+    "Horror": "rahatsız edici olanla yüzleşmeyi",
+    "Romance": "duygusal içtenliği ve yakınlığı",
+    "Animation": "biçimsel yaratıcılığı ve el işçiliğini",
+    "Documentary": "gerçeğin kendisini, kurgusuz olanı",
+    "Mystery": "çözülecek bir bilmeceyi",
+    "Adventure": "geniş ölçekli, yol alan anlatıları",
+    "Fantasy": "kurulmuş dünyaların iç mantığını",
+    "War": "çatışmanın bireysel bedelini",
+    "History": "geçmişin dikkatle yeniden kurulmasını",
+    "Action": "kinetik enerjiyi ve fiziksel jestleri",
+    "Family": "kuşaklar arası bağı",
+    "Music": "ritmi ve sahne enerjisini",
+    "Western": "mekânın ve mitin ağırlığını",
+}
+
+
 def personality_from_favorites(favorites) -> str:
-    """Deterministic Fav-4 personality read — the LLM overrides this when available."""
+    """Deterministic Fav-4 read — the LLM overrides this. Names no films or people."""
     picks = [f for f in (favorites or [])[:4] if getattr(f, "title", "")]
-    if not picks:
+    if len(picks) < 2:
         return ""
-    genre_counts: dict[str, int] = defaultdict(int)
+    counts: dict[str, int] = defaultdict(int)
     directors: list[str] = []
     for film in picks:
         for genre in getattr(film, "genres", None) or []:
-            genre_counts[genre] += 1
+            counts[genre] += 1
         if getattr(film, "director", ""):
             directors.append(film.director)
-    top = [g for g, _ in sorted(genre_counts.items(), key=lambda x: (-x[1], x[0]))[:3]]
-    titles = ", ".join(f.title for f in picks)
-    parts = [f"Favori dörtlün ({titles})"]
-    if top:
-        parts.append(f"{', '.join(top)} tonlarında buluşuyor")
-    unique_directors = set(directors)
-    if len(unique_directors) == 1:
-        parts.append(f"ve {directors[0]} imzasına açık bir bağlılık gösteriyor")
-    elif len(unique_directors) >= 3:
-        parts.append("ve tek bir yönetmene değil güçlü auteur seslerine yöneliyor")
-    return " ".join(parts).strip() + "."
+    traits = [
+        _GENRE_TRAIT[g]
+        for g, _ in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+        if g in _GENRE_TRAIT
+    ][:2]
+    if traits:
+        sentence = (
+            "Favori seçkin, bir filmde " + " ve ".join(traits) + " önemseyen birini gösteriyor"
+        )
+    else:
+        sentence = "Favori seçkin belirgin bir ortak damar taşıyor"
+    unique = set(directors)
+    if len(unique) == 1:
+        sentence += "; ilgin dağınık değil, tek bir yönetmenin dünyasına derinlemesine dönük"
+    elif len(unique) >= 3:
+        sentence += "; bağlılığın bir isme değil, güçlü yönetmen seslerinin geneline"
+    return sentence.strip() + "."
 
 
 def _deterministic_analysis(

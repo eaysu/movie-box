@@ -47,6 +47,19 @@ class JobHelperTests(unittest.TestCase):
                 now=now,
             )
         )
+        # A failed job retries once its cooldown has elapsed, not before.
+        self.assertFalse(
+            profile_sync.job_is_resumable(
+                {"state": "failed", "backoff_until": _iso(now + timedelta(minutes=10))},
+                now=now,
+            )
+        )
+        self.assertTrue(
+            profile_sync.job_is_resumable(
+                {"state": "failed", "backoff_until": _iso(now - timedelta(minutes=1))},
+                now=now,
+            )
+        )
 
     def test_incremental_due(self):
         now = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
@@ -181,8 +194,9 @@ class FakePipeline:
             for row in rows
         ]
 
-    async def rebuild_snapshot(self, account):
+    async def rebuild_snapshot(self, account, *, use_llm=True):
         self.rebuilt_with = account.id
+        self.rebuilt_llm = use_llm
         return len(self.service.films)
 
 
@@ -287,7 +301,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.job["state"], "done")
         self.assertEqual(service.job["scope"], "full")
 
-    async def test_incremental_noop_when_nothing_changed(self):
+    async def test_incremental_reaggregates_without_llm_when_nothing_changed(self):
         service = FakeService()
         service.films = {
             "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "user_rating": 4.5},
@@ -298,7 +312,10 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
 
         await profile_sync._crawl(pipeline, service, _account())
 
-        self.assertIsNone(pipeline.rebuilt_with)
+        # The snapshot is refreshed every run so it can't drift behind the store,
+        # but an unchanged run must not spend an LLM call.
+        self.assertEqual(pipeline.rebuilt_with, 7)
+        self.assertFalse(pipeline.rebuilt_llm)
         self.assertEqual(service.job["state"], "done")
         self.assertEqual(service.job["scope"], "full")
 

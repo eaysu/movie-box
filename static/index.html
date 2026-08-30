@@ -1746,7 +1746,8 @@ function renderPersistedProfile(data) {
     const ringCircumference = 2 * Math.PI * 28;
     confidenceRing.style.stroke = confidenceTone;
     confidenceRing.style.strokeDashoffset = String(ringCircumference * (1 - confidenceScore / 100));
-    $('profile-sample-size').textContent = String(taste.sample_size || 0);
+    const sweptTotal = (data.sync_job && data.sync_job.total) || 0;
+    $('profile-sample-size').textContent = String(Math.max(taste.sample_size || 0, sweptTotal));
     $('profile-rated-count').textContent = String(taste.rated_count || 0);
     $('profile-metadata-coverage').textContent = `%${taste.metadata_coverage || 0}`;
     const genres = taste.top_genres || [];
