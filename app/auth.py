@@ -134,6 +134,21 @@ class AuthService:
             service.table(table).select(columns).limit(0).execute()
         return True
 
+    def check_sync_schema(self) -> bool:
+        """Verify the full-history sync tables exist, without reading records.
+
+        Kept separate from check_schema so the core profile flow still works on a
+        deployment where the background-sync migration has not been run yet.
+        """
+        service = self._service_client()
+        service.table("user_watched_films").select(
+            "user_id,film_slug,details_loaded,watched_rank"
+        ).limit(0).execute()
+        service.table("profile_sync_jobs").select(
+            "user_id,state,phase,cursor_page,scope"
+        ).limit(0).execute()
+        return True
+
     def _digest(self, value: str, *, purpose: str) -> str:
         return hmac.new(
             self.settings.auth_identity_secret.encode("utf-8"),
@@ -517,6 +532,84 @@ class AuthService:
             "taste": taste,
             "favorite_films": favorites,
         }
+
+    # ── Full-history background sync ──────────────────────────────────────
+    def get_sync_job(self, user_id: int) -> dict | None:
+        return self._first(
+            self._service_client()
+            .table("profile_sync_jobs")
+            .select("*")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+
+    def upsert_sync_job(self, user_id: int, **fields) -> dict:
+        payload = {
+            "user_id": user_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            **fields,
+        }
+        row = self._first(
+            self._service_client()
+            .table("profile_sync_jobs")
+            .upsert(payload)
+            .execute()
+        )
+        return row or payload
+
+    def touch_sync_job(self, user_id: int, **fields) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._service_client().table("profile_sync_jobs").update(
+            {"heartbeat_at": now, "updated_at": now, **fields}
+        ).eq("user_id", user_id).execute()
+
+    def save_watched_films(self, user_id: int, films: list[dict]) -> int:
+        """Atomic batch upsert into user_watched_films via the SQL guard."""
+        if not films:
+            return 0
+        result = self._service_client().rpc(
+            "upsert_watched_films",
+            {"p_user_id": user_id, "p_films": films},
+        ).execute()
+        try:
+            return int(result.data)
+        except (TypeError, ValueError):
+            return 0
+
+    def get_watched_films(self, user_id: int) -> list[dict]:
+        return (
+            self._service_client()
+            .table("user_watched_films")
+            .select(
+                "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
+                "user_rating,watched_rank,details_loaded"
+            )
+            .eq("user_id", user_id)
+            .order("watched_rank")
+            .execute()
+        ).data or []
+
+    def get_watched_slugs(self, user_id: int) -> set[str]:
+        rows = (
+            self._service_client()
+            .table("user_watched_films")
+            .select("film_slug")
+            .eq("user_id", user_id)
+            .execute()
+        ).data or []
+        return {row["film_slug"] for row in rows if row.get("film_slug")}
+
+    def count_watched_films(self, user_id: int) -> int:
+        result = (
+            self._service_client()
+            .table("user_watched_films")
+            .select("film_slug", count="exact")
+            .eq("user_id", user_id)
+            .limit(0)
+            .execute()
+        )
+        return int(getattr(result, "count", 0) or 0)
 
     def search_accounts(self, account: Account, query: str, limit: int = 8) -> list[dict]:
         service = self._service_client()

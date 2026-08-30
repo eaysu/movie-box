@@ -86,6 +86,57 @@ def test_feedback_schema_has_current_state_append_only_events_and_atomic_rpcs():
     assert "now() + interval '7 days'" in schema
 
 
+def test_full_history_sync_schema_is_service_role_only():
+    schema = (Path(__file__).parents[1] / "supabase" / "schema.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS public.user_watched_films (" in schema
+    assert "CREATE TABLE IF NOT EXISTS public.profile_sync_jobs (" in schema
+    assert "CREATE OR REPLACE FUNCTION public.upsert_watched_films(" in schema
+    # New tables lock out browser roles like every other user table.
+    for line in (
+        "ALTER TABLE public.user_watched_films ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE public.profile_sync_jobs ENABLE ROW LEVEL SECURITY;",
+        "REVOKE ALL ON TABLE public.user_watched_films FROM anon, authenticated;",
+        "REVOKE ALL ON TABLE public.profile_sync_jobs FROM anon, authenticated;",
+        "GRANT ALL ON TABLE public.user_watched_films TO service_role;",
+        "GRANT ALL ON TABLE public.profile_sync_jobs TO service_role;",
+        "REVOKE ALL ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)",
+        "GRANT EXECUTE ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)",
+    ):
+        assert line in schema
+
+
+class _RecordingTable:
+    def __init__(self, name, log):
+        self.name = name
+        self._log = log
+
+    def select(self, columns):
+        self._log.append((self.name, columns))
+        return self
+
+    def limit(self, _n):
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=[], count=0)
+
+
+class _RecordingClient:
+    def __init__(self):
+        self.calls = []
+
+    def table(self, name):
+        return _RecordingTable(name, self.calls)
+
+
+def test_check_sync_schema_probes_only_the_new_tables_with_zero_rows():
+    client = _RecordingClient()
+    service = AuthService(_settings(), client_factory=lambda *_args: client)
+    assert service.check_sync_schema() is True
+    probed = {name for name, _cols in client.calls}
+    assert probed == {"user_watched_films", "profile_sync_jobs"}
+
+
 def test_login_sets_http_only_session_and_readable_csrf_cookies():
     session = AuthSession(
         account=_account(),

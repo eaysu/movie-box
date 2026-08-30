@@ -72,6 +72,55 @@ CREATE TABLE IF NOT EXISTS public.profile_favorites (
   PRIMARY KEY (user_id, position)
 );
 
+-- Full watched-history store: one row per film the user has logged. This is the
+-- source of truth the taste analysis aggregates over, so an incremental sync
+-- only has to upsert the delta instead of re-scraping the whole history.
+CREATE TABLE IF NOT EXISTS public.user_watched_films (
+  user_id        BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  film_slug      TEXT NOT NULL,
+  title          TEXT NOT NULL DEFAULT '',
+  release_year   INTEGER,
+  tmdb_id        INTEGER,
+  director       TEXT NOT NULL DEFAULT '',
+  genres         JSONB NOT NULL DEFAULT '[]'::jsonb,
+  keywords       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  user_rating    REAL,
+  watched_rank   INTEGER,          -- diary position; 0 = most recent (chronological proxy)
+  details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
+  first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, film_slug)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
+  ON public.user_watched_films (user_id, watched_rank);
+
+-- Checkpointed background crawl for the one-time full history sweep. One row per
+-- user; a run advances cursor_page under a per-run time budget and can be resumed
+-- (in-process on the next visit) if the instance restarts mid-crawl.
+CREATE TABLE IF NOT EXISTS public.profile_sync_jobs (
+  user_id         BIGINT PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+  state           TEXT NOT NULL DEFAULT 'queued'
+                  CHECK (state IN ('queued', 'running', 'done', 'failed')),
+  phase           TEXT NOT NULL DEFAULT 'diary'
+                  CHECK (phase IN ('diary', 'enrich', 'aggregate', 'done')),
+  scope           TEXT NOT NULL DEFAULT 'full'
+                  CHECK (scope IN ('full', 'incremental')),
+  cursor_page     INTEGER NOT NULL DEFAULT 1,
+  films_total     INTEGER NOT NULL DEFAULT 0,
+  films_processed INTEGER NOT NULL DEFAULT 0,
+  attempts        SMALLINT NOT NULL DEFAULT 0,
+  heartbeat_at    TIMESTAMPTZ,
+  backoff_until   TIMESTAMPTZ,
+  last_error      TEXT NOT NULL DEFAULT '',
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_sync_jobs_resumable
+  ON public.profile_sync_jobs (state, heartbeat_at)
+  WHERE state IN ('queued', 'running');
+
 CREATE TABLE IF NOT EXISTS public.auth_challenges (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id       BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -280,6 +329,67 @@ $$;
 REVOKE ALL ON FUNCTION public.save_profile_snapshot(BIGINT, JSONB, JSONB, JSONB)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.save_profile_snapshot(BIGINT, JSONB, JSONB, JSONB)
+  TO service_role;
+
+-- Atomic batch upsert for the crawl/enrich pipeline. Metadata (director, genres,
+-- keywords, tmdb_id) is only overwritten when the incoming batch actually carries
+-- it, so a search-only pass never clobbers details a later enrich pass filled in.
+CREATE OR REPLACE FUNCTION public.upsert_watched_films(
+  p_user_id BIGINT,
+  p_films JSONB
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users WHERE id = p_user_id AND account_status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'active account not found';
+  END IF;
+
+  INSERT INTO public.user_watched_films (
+    user_id, film_slug, title, release_year, tmdb_id, director, genres, keywords,
+    user_rating, watched_rank, details_loaded, updated_at
+  )
+  SELECT
+    p_user_id,
+    item->>'slug',
+    COALESCE(item->>'title', ''),
+    NULLIF(item->>'release_year', '')::INTEGER,
+    NULLIF(item->>'tmdb_id', '')::INTEGER,
+    COALESCE(item->>'director', ''),
+    COALESCE(item->'genres', '[]'::jsonb),
+    COALESCE(item->'keywords', '[]'::jsonb),
+    NULLIF(item->>'user_rating', '')::REAL,
+    NULLIF(item->>'watched_rank', '')::INTEGER,
+    COALESCE((item->>'details_loaded')::BOOLEAN, FALSE),
+    now()
+  FROM jsonb_array_elements(COALESCE(p_films, '[]'::jsonb)) AS item
+  WHERE COALESCE(item->>'slug', '') <> ''
+  ON CONFLICT (user_id, film_slug) DO UPDATE SET
+    title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE public.user_watched_films.title END,
+    release_year = COALESCE(EXCLUDED.release_year, public.user_watched_films.release_year),
+    tmdb_id = COALESCE(EXCLUDED.tmdb_id, public.user_watched_films.tmdb_id),
+    director = CASE WHEN EXCLUDED.director <> '' THEN EXCLUDED.director ELSE public.user_watched_films.director END,
+    genres = CASE WHEN EXCLUDED.genres <> '[]'::jsonb THEN EXCLUDED.genres ELSE public.user_watched_films.genres END,
+    keywords = CASE WHEN EXCLUDED.keywords <> '[]'::jsonb THEN EXCLUDED.keywords ELSE public.user_watched_films.keywords END,
+    user_rating = COALESCE(EXCLUDED.user_rating, public.user_watched_films.user_rating),
+    watched_rank = COALESCE(EXCLUDED.watched_rank, public.user_watched_films.watched_rank),
+    details_loaded = public.user_watched_films.details_loaded OR EXCLUDED.details_loaded,
+    updated_at = now();
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)
   TO service_role;
 
 CREATE OR REPLACE FUNCTION public.create_blend_request(
@@ -671,6 +781,8 @@ ALTER TABLE public.users     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tmdb_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.taste_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profile_favorites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_watched_films ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profile_sync_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_challenges ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
@@ -687,6 +799,8 @@ REVOKE ALL ON TABLE public.users FROM anon, authenticated;
 REVOKE ALL ON TABLE public.tmdb_cache FROM anon, authenticated;
 REVOKE ALL ON TABLE public.taste_profiles FROM anon, authenticated;
 REVOKE ALL ON TABLE public.profile_favorites FROM anon, authenticated;
+REVOKE ALL ON TABLE public.user_watched_films FROM anon, authenticated;
+REVOKE ALL ON TABLE public.profile_sync_jobs FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_challenges FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_requests FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
@@ -703,6 +817,8 @@ GRANT ALL ON TABLE public.users TO service_role;
 GRANT ALL ON TABLE public.tmdb_cache TO service_role;
 GRANT ALL ON TABLE public.taste_profiles TO service_role;
 GRANT ALL ON TABLE public.profile_favorites TO service_role;
+GRANT ALL ON TABLE public.user_watched_films TO service_role;
+GRANT ALL ON TABLE public.profile_sync_jobs TO service_role;
 GRANT ALL ON TABLE public.auth_challenges TO service_role;
 GRANT ALL ON TABLE public.blend_requests TO service_role;
 GRANT ALL ON TABLE public.blend_results TO service_role;
