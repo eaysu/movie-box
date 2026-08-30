@@ -1316,8 +1316,18 @@ async def _resolve_favorite_posters(favorites, watched_rows, service, enricher) 
             by_slug = {g.slug: g for g in got if g.slug}
             for fav in missing:
                 hit = by_slug.get(fav.slug)
-                if hit and hit.poster_url:
-                    fav.poster_url = hit.poster_url
+                if hit:
+                    fav.tmdb_id = fav.tmdb_id or hit.tmdb_id
+                    if hit.poster_url:
+                        fav.poster_url = hit.poster_url
+
+    by_id = [f for f in favorites if not f.poster_url and f.tmdb_id]
+    if by_id and enricher is not None:
+        with contextlib.suppress(Exception):
+            resolved = await enricher.posters_by_id([f.tmdb_id for f in by_id])
+            for fav in by_id:
+                if resolved.get(fav.tmdb_id):
+                    fav.poster_url = resolved[fav.tmdb_id]
 
     await _stash_posters(
         [
@@ -1520,6 +1530,34 @@ class _SyncPipeline:
                     await asyncio.to_thread(
                         service.save_watched_films, account.id, pool_patch
                     )
+
+        # 2) direct /movie/{id} for rows that already have a tmdb_id — no
+        # search ambiguity, so this recovers the famous films a rate-limited
+        # search pass dropped.
+        by_id = [f for f in watched if not f.poster_url and f.tmdb_id]
+        if by_id and enricher is not None:
+            with contextlib.suppress(Exception):
+                resolved = await enricher.posters_by_id(
+                    [f.tmdb_id for f in by_id][:500]
+                )
+                id_patch = []
+                for film in by_id:
+                    if resolved.get(film.tmdb_id):
+                        film.poster_url = resolved[film.tmdb_id]
+                        id_patch.append(
+                            {
+                                "slug": film.slug,
+                                "poster_url": film.poster_url,
+                                "tmdb_id": film.tmdb_id,
+                                "title": film.title,
+                                "release_year": film.year,
+                            }
+                        )
+                if id_patch:
+                    await asyncio.to_thread(
+                        service.save_watched_films, account.id, id_patch
+                    )
+                    await _stash_posters(id_patch)
 
         if enricher is not None:
             from collections import Counter as _Counter

@@ -273,7 +273,39 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
             if film.director:
                 director_scores[film.director] += _recency_weight(index)
 
-    top_directors = _top_weighted(director_scores, 10)
+    # Directors are ranked by how many of their films the user has watched
+    # (not counting the ones they actively disliked); ties break on how many
+    # total films of theirs the user saw, then on the user's average rating.
+    director_positive: dict[str, int] = defaultdict(int)
+    director_counts: dict[str, int] = defaultdict(int)
+    director_rating_sum: dict[str, float] = defaultdict(float)
+    director_rating_n: dict[str, int] = defaultdict(int)
+    for film in watched:
+        if not film.director:
+            continue
+        director_counts[film.director] += 1
+        if film.user_rating is None or float(film.user_rating) >= 3.0:
+            director_positive[film.director] += 1
+        if film.user_rating is not None:
+            director_rating_sum[film.director] += float(film.user_rating)
+            director_rating_n[film.director] += 1
+
+    def _dir_avg(name: str) -> float:
+        n = director_rating_n.get(name, 0)
+        return director_rating_sum[name] / n if n else 0.0
+
+    top_directors = [
+        name
+        for name in sorted(
+            (d for d in director_counts if director_positive[d] > 0),
+            key=lambda d: (
+                -director_positive[d],
+                -director_counts[d],
+                -_dir_avg(d),
+                d.lower(),
+            ),
+        )[:10]
+    ]
     top_genres = _top_weighted(genre_scores, 3)
     top_keywords = _top_weighted(keyword_scores, 5)
     metadata_coverage = round(metadata_points / len(watched) * 100)

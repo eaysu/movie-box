@@ -348,6 +348,44 @@ class Enricher:
         )
         return result
 
+    async def posters_by_id(self, tmdb_ids: list[int]) -> dict[int, str]:
+        """Fetch posters straight from /movie/{id} — no search ambiguity."""
+        ids = [i for i in dict.fromkeys(tmdb_ids) if i]
+        if not ids:
+            return {}
+        client = await _get_tmdb_client()
+        keys = [f"poster_id:{i}" for i in ids]
+        await self._prefetch_cache(keys, SEARCH_TTL)
+        out: dict[int, str] = {}
+
+        async def worker(tmdb_id: int) -> None:
+            key = f"poster_id:{tmdb_id}"
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key, ttl=SEARCH_TTL)
+            if cached is not None:
+                self._cache_hits += 1
+                if cached.get("poster_url"):
+                    out[tmdb_id] = cached["poster_url"]
+                return
+            url = ""
+            try:
+                data = await self._get(client, f"/movie/{tmdb_id}")
+                path = data.get("poster_path") or data.get("backdrop_path") or ""
+                if data.get("poster_path"):
+                    url = f"{TMDB_IMAGE_BASE}{data['poster_path']}"
+                elif path:
+                    url = f"https://image.tmdb.org/t/p/w780{path}"
+            except httpx.HTTPError:
+                return
+            await asyncio.to_thread(self.cache.set, "tmdb", key, {"poster_url": url})
+            if url:
+                out[tmdb_id] = url
+
+        try:
+            await asyncio.gather(*(worker(i) for i in ids))
+        finally:
+            await self._flush_cache()
+        return out
+
     async def person_photos(self, names: list[str]) -> dict[str, str]:
         """Map a director name → a portrait URL via TMDb person search (cached)."""
         wanted = [n.strip() for n in names if n and n.strip()]

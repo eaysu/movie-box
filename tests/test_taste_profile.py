@@ -83,6 +83,18 @@ class TasteProfileTests(unittest.TestCase):
         self.assertEqual(profile.favorite_director, "First")
         self.assertEqual(profile.algorithm_version, "taste-v3")
 
+    def test_directors_ranked_by_watch_count_then_average_rating(self):
+        watched = (
+            [EnrichedFilm(title=f"a{i}", slug=f"a{i}", director="Most Watched", user_rating=3.5) for i in range(9)]
+            + [EnrichedFilm(title=f"b{i}", slug=f"b{i}", director="Seven Low", user_rating=3.2) for i in range(7)]
+            + [EnrichedFilm(title=f"c{i}", slug=f"c{i}", director="Seven High", user_rating=4.8) for i in range(7)]
+        )
+        profile = build_taste_profile(watched)
+        # 9 beats 7; among the 7s, the higher average wins the tie-break.
+        self.assertEqual(
+            profile.top_directors[:3], ["Most Watched", "Seven High", "Seven Low"]
+        )
+
     def test_top_directors_returns_up_to_ten_ranked(self):
         watched = [
             EnrichedFilm(title=f"f{i}", slug=f"f{i}", director=f"D{i:02d}", user_rating=4.0)
