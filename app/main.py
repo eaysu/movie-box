@@ -52,6 +52,7 @@ from .scraper import (
     ScrapeError,
     scrape_diary,
     scrape_profile,
+    scrape_recent_watched,
     scrape_watchlist,
     scrape_watched,
 )
@@ -1098,14 +1099,18 @@ async def profile_me(request: Request) -> dict:
     with contextlib.suppress(Exception):
         job = await asyncio.to_thread(service.get_sync_job, account.id)
         profile["sync_job"] = profile_sync.progress_of(job)
-        # Resume-on-visit: a job whose heartbeat went stale (instance restart)
-        # is picked up again here without any external scheduler.
-        if (
-            job
-            and profile_sync.job_is_resumable(job)
-            and not profile_sync.is_running(account.id)
-        ):
-            profile_sync.start(_SyncPipeline(get_settings()), service, account)
+        if not profile_sync.is_running(account.id):
+            if profile_sync.job_is_resumable(job):
+                # Resume-on-visit: a job whose heartbeat went stale (instance
+                # restart) is picked up here without any external scheduler.
+                profile_sync.start(_SyncPipeline(get_settings()), service, account)
+            elif profile_sync.incremental_due(job):
+                # Completed sweep gone stale → cheap "what did they watch since"
+                # refresh in the background.
+                job = await profile_sync.ensure_started(
+                    _SyncPipeline(get_settings()), service, account, scope="incremental"
+                )
+                profile["sync_job"] = profile_sync.progress_of(job)
     return profile
 
 
@@ -1275,6 +1280,21 @@ class _SyncPipeline:
             max_pages=self.window_pages,
             film_limit=self.window_pages * 60,
             max_retries=self.settings.scrape_max_retries,
+        )
+        return [
+            {
+                "slug": film.slug,
+                "title": film.title,
+                "year": film.year,
+                "user_rating": film.user_rating,
+            }
+            for film in films
+            if film.slug
+        ]
+
+    async def scrape_recent(self, username: str) -> list[dict]:
+        films = await scrape_recent_watched(
+            username, max_retries=self.settings.scrape_max_retries
         )
         return [
             {

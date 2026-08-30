@@ -680,6 +680,41 @@ async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     return films
 
 
+async def scrape_recent_watched(
+    username: str, *, max_retries: int = 3
+) -> list[ScrapedFilm]:
+    """Sadece en son ~50 diary kaydı + RSS ratings — ucuz artımlı diff için.
+
+    Diary sayfa 1 kronolojik sırayı, RSS ise kişisel puanları verir. İkisi
+    birleştirilip en yeni önce döndürülür. Blokluysa/boşsa boş liste döner.
+    """
+    rss_task = asyncio.create_task(_scrape_watched_rss(username))
+    try:
+        diary_films, _complete = await scrape_diary(
+            username, start_page=1, max_pages=1, film_limit=60, max_retries=max_retries
+        )
+    except ScrapeError:
+        diary_films = []
+    rss_films = await rss_task
+
+    by_slug: dict[str, ScrapedFilm] = {}
+    order: list[str] = []
+    for film in diary_films:
+        if film.slug and film.slug not in by_slug:
+            by_slug[film.slug] = film
+            order.append(film.slug)
+    for film in rss_films:
+        if not film.slug:
+            continue
+        if film.slug in by_slug:
+            if film.user_rating is not None:
+                by_slug[film.slug].user_rating = film.user_rating
+        else:
+            by_slug[film.slug] = film
+            order.append(film.slug)
+    return [by_slug[slug] for slug in order]
+
+
 async def scrape_watched(
     username: str,
     *,

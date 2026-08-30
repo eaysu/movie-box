@@ -48,6 +48,29 @@ class JobHelperTests(unittest.TestCase):
             )
         )
 
+    def test_incremental_due(self):
+        now = datetime(2026, 8, 30, 12, 0, tzinfo=timezone.utc)
+        self.assertFalse(profile_sync.incremental_due(None, now=now))
+        self.assertFalse(
+            profile_sync.incremental_due(
+                {"state": "running", "scope": "full"}, now=now
+            )
+        )
+        self.assertFalse(
+            profile_sync.incremental_due(
+                {"state": "done", "scope": "full",
+                 "updated_at": (now - timedelta(hours=1)).isoformat()},
+                now=now,
+            )
+        )
+        self.assertTrue(
+            profile_sync.incremental_due(
+                {"state": "done", "scope": "full",
+                 "updated_at": (now - timedelta(hours=9)).isoformat()},
+                now=now,
+            )
+        )
+
     def test_progress_of(self):
         self.assertIsNone(profile_sync.progress_of(None))
         mid = profile_sync.progress_of(
@@ -83,7 +106,9 @@ class FakeService:
     def touch_sync_job(self, uid, **fields):
         base = dict(self.job) if self.job else {"user_id": uid, "state": "running"}
         base.update(fields)
-        base["heartbeat_at"] = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        base["heartbeat_at"] = now
+        base["updated_at"] = now
         self.job = base
 
     def get_watched_slugs(self, uid):
@@ -123,6 +148,9 @@ class FakePipeline:
     async def scrape_diary_window(self, username, start_page):
         self.window_calls.append(start_page)
         return [dict(f) for f in self.pages.get(start_page, [])]
+
+    async def scrape_recent(self, username):
+        return [dict(f) for f in getattr(self, "recent", [])]
 
     async def enrich_search(self, films):
         out = []
@@ -235,6 +263,44 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pipeline.window_calls[0], resume_cursor)
         self.assertEqual(set(service.films), {"a", "b", "c", "d"})
         self.assertEqual(service.job["state"], "done")
+
+    async def test_incremental_adds_new_films_and_patches_changed_ratings(self):
+        service = FakeService()
+        service.films = {
+            "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "watched_rank": 0, "user_rating": 3.5},
+            "b": {"film_slug": "b", "tmdb_id": 2, "details_loaded": True, "watched_rank": 1, "user_rating": None},
+        }
+        service.job = {"user_id": 7, "state": "done", "phase": "done", "scope": "incremental"}
+        pipeline = FakePipeline(service, {})
+        pipeline.recent = [
+            {"slug": "d", "title": "D", "year": 2024, "user_rating": 5.0},
+            {"slug": "a", "title": "A", "year": 2020, "user_rating": 4.5},
+        ]
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertEqual(set(service.films), {"a", "b", "d"})
+        self.assertLess(service.films["d"]["watched_rank"], 0)  # ahead of the history
+        self.assertTrue(service.films["d"]["details_loaded"])
+        self.assertEqual(service.films["a"]["user_rating"], 4.5)  # patched
+        self.assertEqual(pipeline.rebuilt_with, 7)
+        self.assertEqual(service.job["state"], "done")
+        self.assertEqual(service.job["scope"], "full")
+
+    async def test_incremental_noop_when_nothing_changed(self):
+        service = FakeService()
+        service.films = {
+            "a": {"film_slug": "a", "tmdb_id": 1, "details_loaded": True, "user_rating": 4.5},
+        }
+        service.job = {"user_id": 7, "state": "done", "phase": "done", "scope": "incremental"}
+        pipeline = FakePipeline(service, {})
+        pipeline.recent = [{"slug": "a", "title": "A", "year": 2020, "user_rating": 4.5}]
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertIsNone(pipeline.rebuilt_with)
+        self.assertEqual(service.job["state"], "done")
+        self.assertEqual(service.job["scope"], "full")
 
     async def test_hard_failure_sets_failed_state_with_backoff(self):
         service = FakeService()
