@@ -295,18 +295,24 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
         n = director_rating_n.get(name, 0)
         return director_rating_sum[name] / n if n else 0.0
 
-    top_directors = [
-        name
-        for name in sorted(
-            (d for d in director_counts if director_positive[d] > 0),
-            key=lambda d: (
-                -director_positive[d],
-                -director_counts[d],
-                -_dir_avg(d),
-                d.lower(),
-            ),
-        )[:10]
+    # A director seen only once is noise (often a mis-credit on the sparse
+    # provisional sample); require at least two watched films to be a "favorite".
+    eligible = [
+        d
+        for d in director_counts
+        if director_positive[d] > 0 and director_counts[d] >= 2
     ]
+    if not eligible:  # tiny/new profile — fall back to any positively-seen director
+        eligible = [d for d in director_counts if director_positive[d] > 0]
+    top_directors = sorted(
+        eligible,
+        key=lambda d: (
+            -director_positive[d],
+            -director_counts[d],
+            -_dir_avg(d),
+            d.lower(),
+        ),
+    )[:10]
     top_genres = _top_weighted(genre_scores, 3)
     top_keywords = _top_weighted(keyword_scores, 5)
     metadata_coverage = round(metadata_points / len(watched) * 100)

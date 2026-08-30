@@ -69,18 +69,23 @@ class TasteProfileTests(unittest.TestCase):
         self.assertEqual(profile.confidence_score, 0)
 
     def test_top_three_directors_keep_rating_aware_order(self):
+        # Equal watch counts (2 each) → the tie-break is the user's own average.
         watched = [
             EnrichedFilm(title="A1", director="First", user_rating=5.0),
-            EnrichedFilm(title="A2", director="First", user_rating=4.5),
-            EnrichedFilm(title="B", director="Second", user_rating=5.0),
-            EnrichedFilm(title="C", director="Third", user_rating=4.0),
-            EnrichedFilm(title="D", director="Fourth", user_rating=3.0),
+            EnrichedFilm(title="A2", director="First", user_rating=4.6),
+            EnrichedFilm(title="B1", director="Second", user_rating=4.4),
+            EnrichedFilm(title="B2", director="Second", user_rating=4.2),
+            EnrichedFilm(title="C1", director="Third", user_rating=4.0),
+            EnrichedFilm(title="C2", director="Third", user_rating=3.6),
+            EnrichedFilm(title="D", director="Once Only", user_rating=5.0),
         ]
 
         profile = build_taste_profile(watched)
 
         self.assertEqual(profile.top_directors[:3], ["First", "Second", "Third"])
         self.assertEqual(profile.favorite_director, "First")
+        # A single watched film is not a "favorite director".
+        self.assertNotIn("Once Only", profile.top_directors)
         self.assertEqual(profile.algorithm_version, "taste-v3")
 
     def test_directors_ranked_by_watch_count_then_average_rating(self):
