@@ -447,10 +447,11 @@ tailwind.config = {
 
   <main class="relative z-10 max-w-[1240px] mx-auto w-full px-margin-mobile md:px-margin-desktop">
     <div class="flex items-center justify-between py-5">
-      <button id="btn-profile-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
+      <button id="btn-profile-back" class="hidden items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
         <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-        Ana sayfa
+        Geri
       </button>
+      <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-on-surface-variant/50">Ana ekran</span>
       <button id="btn-profile-sync" class="flex items-center gap-2 px-4 py-2.5 rounded-full border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 hover:border-primary-container/50 transition-colors font-label-md text-label-md disabled:opacity-40">
         <span class="material-symbols-outlined text-[18px]">sync</span>
         Profili yenile
@@ -537,6 +538,68 @@ tailwind.config = {
           <div id="profile-sync-error" class="hidden mt-5 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
         </div>
       </div>
+    </section>
+
+    <!-- ── BU GECE · ne izlesen? / Blend ─────────────────────────────── -->
+    <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.06s">
+      <div class="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Bu gece</span>
+          <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Ne izlesen?</h2>
+        </div>
+        <span class="material-symbols-outlined text-primary-container/40 text-[28px]">local_movies</span>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <button id="profile-act-watch" type="button" class="group relative overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container/45 p-5 text-left transition-colors hover:border-primary-container/45 hover:bg-surface-container/70">
+          <span class="material-symbols-outlined text-primary-container text-[26px]" style="font-variation-settings:'FILL' 1">auto_awesome</span>
+          <strong class="mt-3 block font-headline-md text-[18px] text-on-surface">Bu gece ne izlesem?</strong>
+          <span class="mt-1 block font-body-md text-body-md text-on-surface-variant">Watchlist'inden bu akşama en uygun filmi bul.</span>
+        </button>
+        <button id="profile-act-blend" type="button" class="group relative overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container/45 p-5 text-left transition-colors hover:border-secondary-container/45 hover:bg-surface-container/70">
+          <span class="material-symbols-outlined text-secondary-container text-[26px]" style="font-variation-settings:'FILL' 1">join_inner</span>
+          <strong class="mt-3 block font-headline-md text-[18px] text-on-surface">Blend</strong>
+          <span class="mt-1 block font-body-md text-body-md text-on-surface-variant">Kayıtlı bir kullanıcıyla film zevkinizi karşılaştır.</span>
+        </button>
+      </div>
+
+      <!-- alt panel: ne izlesem → watchlist / rastgele -->
+      <div id="profile-watch-panel" class="hidden mt-4 rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
+        <div class="grid sm:grid-cols-2 gap-3">
+          <button type="button" data-watch-mode="taste" class="profile-submode flex flex-col gap-1 rounded-xl border border-outline-variant/25 p-4 text-left transition-colors text-on-surface-variant">
+            <span class="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wide">
+              <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1">psychology</span>Watchlist'ten öner
+            </span>
+            <span class="font-body-md text-body-md text-on-surface-variant/70">Zevk analizine göre en uygun film.</span>
+          </button>
+          <button type="button" data-watch-mode="random" class="profile-submode flex flex-col gap-1 rounded-xl border border-outline-variant/25 p-4 text-left transition-colors text-on-surface-variant">
+            <span class="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wide">
+              <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1">shuffle</span>Rastgele öneri
+            </span>
+            <span class="font-body-md text-body-md text-on-surface-variant/70">Watchlist'inden sürpriz bir film.</span>
+          </button>
+        </div>
+        <button id="profile-watch-go" type="button" class="mt-4 w-full bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40">
+          <span id="profile-watch-go-icon" class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1">auto_awesome</span><span id="profile-watch-go-label">Öner</span>
+        </button>
+      </div>
+
+      <!-- alt panel: blend -->
+      <div id="profile-blend-panel" class="hidden mt-4 rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
+        <div class="relative">
+          <div class="flex rounded-xl border border-outline-variant/30 bg-surface focus-within:border-secondary-container/60 transition-colors">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-secondary-container/40 pointer-events-none"><span class="material-symbols-outlined text-[20px]">person_add</span></span>
+            <input id="profile-blend-username" class="w-full bg-transparent border-none py-3.5 pl-12 pr-4 text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant/40 focus:ring-0 outline-none" placeholder="ikinci letterboxd kullanıcı adı" type="text" autocomplete="off" spellcheck="false"/>
+          </div>
+          <div id="profile-blend-suggestions" class="hidden absolute top-full inset-x-0 z-30 mt-1 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-xl text-left"></div>
+        </div>
+        <button id="profile-blend-go" type="button" class="mt-4 w-full bg-secondary-container text-on-secondary-container py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40">
+          <span class="material-symbols-outlined text-[18px]">send</span>Blend isteği gönder
+        </button>
+      </div>
+
+      <div id="profile-action-error" class="hidden mt-4 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
+      <div id="profile-action-notice" class="hidden mt-4 rounded-xl px-4 py-3 bg-primary-container/10 text-primary-container font-body-md text-body-md"></div>
     </section>
 
     <!-- ── En sevilen yönetmenler + Favori dört film ──────────────────── -->
@@ -1307,6 +1370,86 @@ function setMode(mode) {
   $('idle-description').textContent = h.desc;
 }
 
+// ── Profile as home screen: "Bu gece" actions ────────────────────────────
+let _profileWatchMode = 'taste';
+let _profileBlendTimer = null;
+
+function homeView() {
+  return (_authEnabled && _account) ? 'profile' : 'idle';
+}
+
+function _toggleMsg(el, msg) {
+  if (msg) { el.textContent = msg; el.classList.remove('hidden'); }
+  else { el.textContent = ''; el.classList.add('hidden'); }
+}
+function profileActionNotice(msg) {
+  $('profile-action-error').classList.add('hidden');
+  _toggleMsg($('profile-action-notice'), msg);
+}
+function profileActionError(msg) {
+  $('profile-action-notice').classList.add('hidden');
+  _toggleMsg($('profile-action-error'), msg);
+}
+function showActionError(msg) {
+  if (_authEnabled && _account) {
+    showView('profile');
+    profileActionError(msg);
+    if (msg) $('profile-action-error').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  } else {
+    setIdleError(msg);
+  }
+}
+
+function openProfilePanel(which) {
+  const watch = which === 'watch';
+  const blend = which === 'blend';
+  $('profile-watch-panel').classList.toggle('hidden', !watch);
+  $('profile-blend-panel').classList.toggle('hidden', !blend);
+  $('profile-act-watch').classList.toggle('border-primary-container/60', watch);
+  $('profile-act-watch').classList.toggle('bg-surface-container/70', watch);
+  $('profile-act-watch').classList.toggle('border-outline-variant/25', !watch);
+  $('profile-act-blend').classList.toggle('border-secondary-container/60', blend);
+  $('profile-act-blend').classList.toggle('bg-surface-container/70', blend);
+  $('profile-act-blend').classList.toggle('border-outline-variant/25', !blend);
+  profileActionNotice(null);
+  profileActionError(null);
+  if (watch) setProfileWatchMode(_profileWatchMode);
+  if (blend) setTimeout(() => $('profile-blend-username').focus(), 40);
+}
+
+function setProfileWatchMode(mode) {
+  _profileWatchMode = mode;
+  document.querySelectorAll('#profile-watch-panel [data-watch-mode]').forEach(btn => {
+    const on = btn.dataset.watchMode === mode;
+    btn.classList.toggle('bg-surface-container/70', on);
+    btn.classList.toggle('text-on-surface', on);
+    btn.classList.toggle('text-on-surface-variant', !on);
+    btn.classList.toggle('border-primary-container/50', on && mode === 'taste');
+    btn.classList.toggle('border-tertiary-container/50', on && mode === 'random');
+    btn.classList.toggle('border-outline-variant/25', !on);
+  });
+  $('profile-watch-go').className = `mt-4 w-full ${mode === 'random' ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-primary-container text-black'} py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40`;
+  $('profile-watch-go-icon').textContent = mode === 'random' ? 'shuffle' : 'auto_awesome';
+  $('profile-watch-go-label').textContent = mode === 'random' ? 'Rastgele seç' : 'Öner';
+}
+
+function runProfileWatch() {
+  profileActionNotice(null);
+  profileActionError(null);
+  setMode(_profileWatchMode);
+  recommend();
+}
+
+function runProfileBlend() {
+  blendRequestFlow({
+    inputId: 'profile-blend-username',
+    suggestionsId: 'profile-blend-suggestions',
+    button: 'profile-blend-go',
+    onNotice: profileActionNotice,
+    onError: profileActionError,
+  });
+}
+
 function setAuthHeaderLinks(visible) {
   $('header-how-it-works').classList.toggle('hidden', !visible);
   $('header-privacy').classList.toggle('hidden', !visible);
@@ -1901,7 +2044,8 @@ function openProfile() {
 
 function enterApp(account) {
   applyAccount(account);
-  showView('idle');
+  showView('profile');
+  openProfilePanel('watch');
   loadProfile();
   loadBlendInbox(false);
 }
@@ -2341,45 +2485,49 @@ function renderBlendWatchlist({ common_watchlist_films = [], watchlist_public = 
 // ── Blend SSE flow ──────────────────────────────────────────────────────────
 let _blendSearchTimer = null;
 
-async function searchBlendUsers() {
+async function searchBlendUsers(inputId = 'username2-input', panelId = 'blend-user-suggestions') {
   if (!_authEnabled) return;
-  const query = $('username2-input').value.trim().replace(/^@/, '').toLowerCase();
+  const query = $(inputId).value.trim().replace(/^@/, '').toLowerCase();
   if (query.length < 2) {
-    $('blend-user-suggestions').classList.add('hidden');
+    $(panelId).classList.add('hidden');
     return;
   }
   try {
     const data = await apiJSON(`/api/users/search?q=${encodeURIComponent(query)}`);
     const users = data.users || [];
-    $('blend-user-suggestions').innerHTML = users.length
+    $(panelId).innerHTML = users.length
       ? users.map(user => `<button type="button" data-blend-user="${escapeHTML(user.username)}" class="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-variant text-left border-b border-outline-variant/20 last:border-0"><strong class="text-on-surface">${escapeHTML(user.display_name || user.username)}</strong><span class="text-on-surface-variant text-sm">@${escapeHTML(user.username)}</span></button>`).join('')
       : `<div class="px-4 py-3 text-on-surface-variant text-sm">Kayıtlı kullanıcı bulunamadı.</div>`;
-    $('blend-user-suggestions').classList.remove('hidden');
+    $(panelId).classList.remove('hidden');
   } catch (_) {
-    $('blend-user-suggestions').classList.add('hidden');
+    $(panelId).classList.add('hidden');
   }
 }
 
-async function blendRequestFlow() {
-  const recipient = $('username2-input').value.trim();
-  if (!recipient) { $('username2-input').focus(); return; }
-  setIdleError(null);
-  setIdleNotice(null);
-  const button = $('btn-recommend');
-  button.disabled = true;
+async function blendRequestFlow(opts = {}) {
+  const inputId = opts.inputId || 'username2-input';
+  const panelId = opts.suggestionsId || 'blend-user-suggestions';
+  const notify = opts.onNotice || setIdleNotice;
+  const fail = opts.onError || setIdleError;
+  const recipient = $(inputId).value.trim();
+  if (!recipient) { $(inputId).focus(); return; }
+  notify(null);
+  fail(null);
+  const button = opts.button ? $(opts.button) : $('btn-recommend');
+  if (button) button.disabled = true;
   try {
     const data = await apiJSON('/api/blends/requests', {
       method: 'POST',
       headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ recipient_username: recipient }),
     });
-    $('username2-input').value = '';
-    $('blend-user-suggestions').classList.add('hidden');
-    setIdleNotice(`@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
+    $(inputId).value = '';
+    $(panelId).classList.add('hidden');
+    notify(`@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
     loadBlendInbox(false);
   } catch (error) {
-    setIdleError(error.message || 'Blend isteği gönderilemedi.');
-  } finally { button.disabled = false; }
+    fail(error.message || 'Blend isteği gönderilemedi.');
+  } finally { if (button) button.disabled = false; }
 }
 
 async function blendFlow() {
@@ -2522,8 +2670,8 @@ async function randomFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView('idle');
-      setIdleError(errMsg);
+      showView(homeView());
+      showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
   };
@@ -2606,8 +2754,8 @@ async function tasteFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView('idle');
-      setIdleError(errMsg);
+      showView(homeView());
+      showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
   };
@@ -2681,11 +2829,13 @@ function recommend() {
 
 async function deleteMyData() {
   const username = $('username-input').value.trim();
-  showView('idle');
+  showView(homeView());
   setIdleNotice(null);
   setIdleError(null);
+  profileActionNotice(null);
+  profileActionError(null);
   if (!username) {
-    setIdleError('Silmek istediğin Letterboxd kullanıcı adını önce yukarıya yaz.');
+    showActionError('Silmek istediğin Letterboxd kullanıcı adını önce yukarıya yaz.');
     $('username-input').focus();
     return;
   }
@@ -2724,7 +2874,7 @@ async function deleteMyData() {
       setIdleNotice(`@${payload.username} için saklanan veriler silindi.`);
     }
   } catch (error) {
-    setIdleError(error.message || 'Veri silinemedi. Lütfen tekrar dene.');
+    showActionError(error.message || 'Veri silinemedi. Lütfen tekrar dene.');
   } finally {
     button.disabled = false;
   }
@@ -2958,11 +3108,32 @@ $('menu-delete-data').addEventListener('click', () => {
 });
 document.addEventListener('click', () => toggleAccountMenu(false));
 $('btn-profile-sync').addEventListener('click', () => syncProfile(true));
-$('btn-profile-back').addEventListener('click', () => showView('idle'));
+$('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
-$('btn-inbox-back').addEventListener('click', () => showView('idle'));
-$('btn-feedback-back').addEventListener('click', () => showView('idle'));
+$('btn-inbox-back').addEventListener('click', () => showView(homeView()));
+$('btn-feedback-back').addEventListener('click', () => showView(homeView()));
+
+// Profil ana ekranı — "Bu gece" aksiyonları
+$('profile-act-watch').addEventListener('click', () => openProfilePanel('watch'));
+$('profile-act-blend').addEventListener('click', () => openProfilePanel('blend'));
+$('profile-watch-panel').addEventListener('click', event => {
+  const button = event.target.closest('[data-watch-mode]');
+  if (button) setProfileWatchMode(button.dataset.watchMode);
+});
+$('profile-watch-go').addEventListener('click', runProfileWatch);
+$('profile-blend-go').addEventListener('click', runProfileBlend);
+$('profile-blend-username').addEventListener('keydown', e => { if (e.key === 'Enter') runProfileBlend(); });
+$('profile-blend-username').addEventListener('input', () => {
+  clearTimeout(_profileBlendTimer);
+  _profileBlendTimer = setTimeout(() => searchBlendUsers('profile-blend-username', 'profile-blend-suggestions'), 250);
+});
+$('profile-blend-suggestions').addEventListener('click', event => {
+  const button = event.target.closest('[data-blend-user]');
+  if (!button) return;
+  $('profile-blend-username').value = button.dataset.blendUser;
+  $('profile-blend-suggestions').classList.add('hidden');
+});
 $('btn-feedback-refresh').addEventListener('click', loadFeedbackHistory);
 $('view-inbox').addEventListener('click', handleBlendInboxAction);
 $('view-results').addEventListener('click', handleRecommendationFeedbackClick);
@@ -2989,19 +3160,19 @@ $('blend-user-suggestions').addEventListener('click', event => {
 
 $('btn-home').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(_authEnabled && !_account ? 'auth' : 'idle');
+  showView(_authEnabled && !_account ? 'auth' : homeView());
   setIdleError(null);
   setIdleNotice(null);
 });
 $('btn-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView('idle');
+  showView(homeView());
   setIdleError(null);
   setIdleNotice(null);
 });
 $('btn-random-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView('idle');
+  showView(homeView());
   setIdleError(null);
   setIdleNotice(null);
 });
@@ -3017,7 +3188,7 @@ $('btn-switch-to-taste').addEventListener('click', () => {
 });
 $('btn-blend-back').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView('idle');
+  showView(homeView());
   setIdleError(null);
   setIdleNotice(null);
 });
