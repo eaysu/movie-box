@@ -24,9 +24,10 @@ export function setPasswordVisibility(button, visible) {
   input.type = visible ? 'text' : 'password';
   button.setAttribute('aria-pressed', String(visible));
   button.setAttribute('aria-label', visible ? 'Şifreyi gizle' : 'Şifreyi göster');
+  // Eye state mirrors the field: open eye = password shown, slashed eye = hidden.
   button.querySelector('.material-symbols-outlined').textContent = visible
-    ? 'visibility_off'
-    : 'visibility';
+    ? 'visibility'
+    : 'visibility_off';
 }
 
 export function resetPasswordVisibility() {
