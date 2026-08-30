@@ -418,7 +418,67 @@ function runProfileBlend() {
     button: 'profile-blend-go',
     onNotice: profileActionNotice,
     onError: profileActionError,
+    onNotFound: (username) => openShareSheet({ notFoundUsername: username }),
   });
+}
+
+// ── Invite / share sheet ───────────────────────────────────────────────
+const SITE_URL = 'https://movie-boxd.onrender.com';
+
+function openShareSheet(opts = {}) {
+  const dialog = $('dialog-share');
+  const notFound = (opts.notFoundUsername || '').replace(/^@/, '');
+  const url = SITE_URL;
+  const message = notFound
+    ? `Movieboxd'da film zevkimizi karşılaştıralım (Blend) — kaydol: ${url}`
+    : `Letterboxd zevkine göre film öneren Movieboxd'u dene: ${url}`;
+
+  $('share-title').textContent = notFound
+    ? `@${notFound} sitemize kaydolmamış 😔`
+    : 'Bir arkadaşını davet et';
+  $('share-subtitle').textContent = notFound
+    ? 'Davet etmek ister misin? Linki kopyala ya da bir uygulamadan gönder.'
+    : 'Zevkine göre film önerileri ve Blend uyum skoru için arkadaşını çağır.';
+  $('share-link').value = url;
+
+  const enc = encodeURIComponent;
+  $('share-whatsapp').href = `https://wa.me/?text=${enc(message)}`;
+  $('share-x').href = `https://twitter.com/intent/tweet?text=${enc(message)}`;
+
+  const nativeShare = () => {
+    if (navigator.share) {
+      navigator.share({ title: 'Movieboxd', text: message, url }).catch(() => {});
+    } else {
+      copyShareLink();
+    }
+  };
+  $('share-native').onclick = nativeShare;
+  $('share-instagram').onclick = nativeShare;
+  $('share-tiktok').onclick = nativeShare;
+  $('share-copy').onclick = copyShareLink;
+
+  if (!dialog.open) dialog.showModal();
+}
+
+function copyShareLink() {
+  const value = $('share-link').value;
+  const done = () => {
+    const btn = $('share-copy');
+    const original = btn.textContent;
+    btn.textContent = 'Kopyalandı ✓';
+    setTimeout(() => { btn.textContent = original; }, 1600);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(value).then(done).catch(() => {
+      $('share-link').select();
+      document.execCommand && document.execCommand('copy');
+      done();
+    });
+  } else {
+    $('share-link').select();
+    document.execCommand && document.execCommand('copy');
+    done();
+  }
 }
 
 function setAuthHeaderLinks(visible) {
@@ -1375,9 +1435,8 @@ async function searchBlendUsers(inputId = 'username2-input', panelId = 'blend-us
   try {
     const data = await apiJSON(`/api/users/search?q=${encodeURIComponent(query)}`);
     const users = data.users || [];
-    $(panelId).innerHTML = users.length
-      ? users.map(user => `<button type="button" data-blend-user="${escapeHTML(user.username)}" class="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-variant text-left border-b border-outline-variant/20 last:border-0"><strong class="text-on-surface">${escapeHTML(user.display_name || user.username)}</strong><span class="text-on-surface-variant text-sm">@${escapeHTML(user.username)}</span></button>`).join('')
-      : `<div class="px-4 py-3 text-on-surface-variant text-sm">Kayıtlı kullanıcı bulunamadı.</div>`;
+    if (!users.length) { $(panelId).classList.add('hidden'); return; }
+    $(panelId).innerHTML = users.map(user => `<button type="button" data-blend-user="${escapeHTML(user.username)}" class="w-full px-4 py-3 flex items-center gap-3 hover:bg-surface-variant text-left border-b border-outline-variant/20 last:border-0"><strong class="text-on-surface">${escapeHTML(user.display_name || user.username)}</strong><span class="text-on-surface-variant text-sm">@${escapeHTML(user.username)}</span></button>`).join('');
     $(panelId).classList.remove('hidden');
   } catch (_) {
     $(panelId).classList.add('hidden');
@@ -1406,7 +1465,11 @@ async function blendRequestFlow(opts = {}) {
     notify(`@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
     loadBlendInbox(false);
   } catch (error) {
-    fail(error.message || 'Blend isteği gönderilemedi.');
+    if ((error.code === 'recipient_not_found' || error.status === 404) && opts.onNotFound) {
+      opts.onNotFound(recipient);
+    } else {
+      fail(error.message || 'Blend isteği gönderilemedi.');
+    }
   } finally { if (button) button.disabled = false; }
 }
 
@@ -1967,11 +2030,12 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
 });
+$('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('btn-account-menu').addEventListener('click', event => {
   event.stopPropagation();
   toggleAccountMenu();

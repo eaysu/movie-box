@@ -6,7 +6,12 @@ export async function apiJSON(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, options);
   let payload = {};
   try { payload = await response.json(); } catch (_) {}
-  if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(payload.detail || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.code = response.headers.get('X-Error-Code') || payload.code || '';
+    throw error;
+  }
   return payload;
 }
 

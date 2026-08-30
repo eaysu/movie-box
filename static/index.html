@@ -91,6 +91,48 @@
   </div>
 </dialog>
 
+<dialog id="dialog-share" class="auth-info-dialog">
+  <div class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Movieboxd</span>
+        <h2 id="share-title" class="font-headline-md text-headline-md text-on-surface mt-2">Bir arkadaşını davet et</h2>
+      </div>
+      <button type="button" data-close-dialog="dialog-share" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <p id="share-subtitle" class="mt-3 font-body-md text-body-md text-on-surface-variant">Zevkine göre film önerileri ve Blend uyum skoru için arkadaşını çağır.</p>
+
+    <div class="mt-5 flex rounded-xl border border-outline-variant/30 bg-surface overflow-hidden">
+      <input id="share-link" readonly class="w-full bg-transparent border-none py-3 px-4 text-on-surface font-body-md text-body-md focus:ring-0 outline-none" value=""/>
+      <button id="share-copy" type="button" class="shrink-0 px-4 bg-primary-container text-black font-label-md text-label-md uppercase tracking-wide hover:opacity-90 transition-opacity">Kopyala</button>
+    </div>
+
+    <div class="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <a id="share-whatsapp" target="_blank" rel="noopener" class="flex flex-col items-center gap-1.5 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 hover:bg-surface-container/70 transition-colors">
+        <svg viewBox="0 0 24 24" class="w-6 h-6" fill="#25D366"><path d="M17.47 14.38c-.3-.15-1.74-.86-2-.95-.27-.1-.47-.15-.67.15-.2.3-.77.95-.94 1.15-.17.2-.35.22-.64.07-.3-.15-1.24-.46-2.36-1.46-.87-.78-1.46-1.73-1.63-2.03-.17-.3-.02-.46.13-.61.13-.13.3-.35.44-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.6-.92-2.2-.24-.58-.49-.5-.67-.5l-.57-.01c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.88 1.22 3.08.15.2 2.1 3.2 5.08 4.49.71.3 1.26.49 1.7.63.71.23 1.36.2 1.87.12.57-.08 1.74-.71 1.98-1.4.24-.68.24-1.27.17-1.4-.07-.12-.27-.2-.57-.35zM12.05 21.5h-.01a9.44 9.44 0 01-4.81-1.32l-.35-.2-3.58.94.96-3.49-.23-.36a9.42 9.42 0 01-1.44-5.03c0-5.21 4.24-9.45 9.46-9.45 2.53 0 4.9.99 6.69 2.78a9.4 9.4 0 012.76 6.68c0 5.22-4.24 9.46-9.46 9.46zm8.05-17.5A11.36 11.36 0 0012.05.5C5.8.5.7 5.6.7 11.85c0 2.09.55 4.13 1.6 5.93L.6 23.5l5.86-1.54a11.33 11.33 0 005.58 1.42h.01c6.25 0 11.34-5.09 11.34-11.35 0-3.03-1.18-5.88-3.32-8.03z"/></svg>
+        <span class="font-label-sm text-[9px] uppercase tracking-wide text-on-surface-variant">WhatsApp</span>
+      </a>
+      <a id="share-x" target="_blank" rel="noopener" class="flex flex-col items-center gap-1.5 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 hover:bg-surface-container/70 transition-colors">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.66l-5.21-6.82-5.97 6.82H1.66l7.73-8.84L1.24 2.25h6.83l4.71 6.23 5.46-6.23zm-1.16 17.52h1.83L7.01 4.13H5.05l12.03 15.64z"/></svg>
+        <span class="font-label-sm text-[9px] uppercase tracking-wide text-on-surface-variant">X</span>
+      </a>
+      <button id="share-instagram" type="button" class="flex flex-col items-center gap-1.5 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 hover:bg-surface-container/70 transition-colors">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="#E1306C" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.5" cy="6.5" r="1.2" fill="#E1306C" stroke="none"/></svg>
+        <span class="font-label-sm text-[9px] uppercase tracking-wide text-on-surface-variant">Instagram</span>
+      </button>
+      <button id="share-tiktok" type="button" class="flex flex-col items-center gap-1.5 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 hover:bg-surface-container/70 transition-colors">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor"><path d="M16.5 3c.4 2.3 1.7 3.7 3.9 3.9v2.7c-1.3.1-2.5-.3-3.9-1v6.8c0 3.5-2.6 5.9-5.9 5.9-3.2 0-5.9-2.5-5.9-5.8 0-3.5 3-6.1 6.9-5.7v2.9c-.5-.1-1-.2-1.5-.2-1.7 0-3 1.3-3 3s1.3 3.1 3 3.1c1.8 0 3.1-1.4 3.1-3.2V3h3.2z"/></svg>
+        <span class="font-label-sm text-[9px] uppercase tracking-wide text-on-surface-variant">TikTok</span>
+      </button>
+      <button id="share-native" type="button" class="flex flex-col items-center gap-1.5 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 hover:bg-primary-container/20 transition-colors">
+        <span class="material-symbols-outlined text-primary-container text-[22px]">ios_share</span>
+        <span class="font-label-sm text-[9px] uppercase tracking-wide text-primary-container">Paylaş</span>
+      </button>
+    </div>
+    <p id="share-hint" class="mt-3 font-label-sm text-label-sm text-on-surface-variant/50">Instagram ve TikTok: linki kopyalayıp DM'den gönderebilirsin.</p>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
 <div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <div class="absolute inset-0 z-[2] pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
@@ -207,6 +249,10 @@
               </div>
               <div id="profile-last-sync" class="flex items-center gap-2.5 justify-center lg:justify-start font-label-sm text-label-sm text-on-surface-variant/60"></div>
             </div>
+
+            <button id="profile-invite-friend" type="button" class="mt-4 inline-flex items-center gap-2 rounded-full border border-primary-container/30 bg-primary-container/10 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
+              <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1">group_add</span>Bir arkadaşına öner
+            </button>
           </div>
         </div>
 

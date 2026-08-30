@@ -305,7 +305,9 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "report_failed": (400, "Bildirim gönderilemedi."),
     }
     status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
-    raise HTTPException(status_code=status_code, detail=detail) from exc
+    raise HTTPException(
+        status_code=status_code, detail=detail, headers={"X-Error-Code": code}
+    ) from exc
 
 
 def _raise_feedback_http(exc: RecommendationFeedbackError) -> None:
