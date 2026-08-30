@@ -1178,12 +1178,12 @@ function _obPaintFact() {
   }
 }
 
-function _obRenderWaiting(heading, withProgress) {
+function _obRenderWaiting(heading) {
   _obStage(`
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">${escapeHTML(heading)}</p>
-    ${withProgress ? `
-      <p id="ob-progress-line" class="mt-2 font-body-md text-body-md text-on-surface-variant/80"></p>
-      <p id="ob-milestone-line" class="mt-1 font-label-sm text-label-sm text-primary-container/90 min-h-[1.25em]"></p>` : ''}
+    <p id="ob-bucket-line" class="mt-3 font-body-md text-body-md text-on-surface/90 leading-relaxed min-h-[1.5em]"></p>
+    <p id="ob-progress-line" class="mt-3 font-label-sm text-label-sm text-on-surface-variant/80"></p>
+    <p id="ob-milestone-line" class="mt-1 font-label-sm text-label-sm text-primary-container/90 min-h-[1.25em]"></p>
     <div id="ob-fact-card" style="transition:opacity .3s ease" class="mt-6 rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-5 text-left">
       <span id="ob-fact-badge" class="font-label-sm text-label-sm text-on-surface-variant/60"></span>
       <p id="ob-fact-text" class="mt-2 font-body-md text-body-md text-on-surface/90 leading-relaxed"></p>
@@ -1209,7 +1209,7 @@ function _obRenderWelcome() {
       <div>
         <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Letterboxd profilin bağlandı</p>
         <h2 class="mt-2 font-headline-lg text-[30px] text-on-surface">Merhaba ${name}</h2>
-        <p class="mt-3 font-body-md text-body-md text-on-surface-variant/70">İzleme geçmişin okunuyor…</p>
+        <p class="mt-3 font-body-md text-body-md text-on-surface-variant/70">Zevk profilini çıkardık — birlikte bakalım.</p>
       </div>
     </div>`);
 }
@@ -1262,10 +1262,11 @@ function _obAwaitFullSweep(token, provisional) {
   return new Promise(resolve => {
     const job0 = provisional && provisional.sync_job;
     if (job0 && job0.state === 'done') {
-      apiJSON('/api/profile/me').then(resolve).catch(() => resolve(provisional));
+      apiJSON('/api/profile/me')
+        .then(p => { if (p) _persistedProfile = p; resolve(p); })
+        .catch(() => resolve(provisional));
       return;
     }
-    _obRenderWaiting('Zevk analizin derinleşiyor', true);
     const deadline = Date.now() + OB_MAX_WAIT_MS;
     let lastMilestone = '';
 
@@ -1313,38 +1314,51 @@ async function startOnboarding() {
   $('ob-skip').classList.add('hidden');
   $('ob-skip-label').textContent = 'Uygulamaya geç';
   $('ob-bg-note').textContent = 'Zevk analizin arka planda hazırlanıyor…';
+  $('ob-dots').innerHTML = '';
 
-  // S0 — karşılama (avatar önce belirir)
-  _obRenderWelcome();
-  _obDots(0);
+  // ── Bekleme: provisional + tüm izleme geçmişi taraması bitene kadar tek ekran.
+  //    Slaytlar (Merhaba, rakamlar, favori 4, kişilik, yönetmen) tarama
+  //    tamamlandıktan sonra sırayla sunulur.
+  _obRenderWaiting('Zevk profilin hazırlanıyor');
 
-  // S1 — provisional beklenirken film bilgileri akar
-  const syncP = syncProfile();
-  await _obWait(1600);
-  if (!_obLive(token)) return;
-  _obRenderWaiting('İzleme geçmişin okunuyor', false);
-  const data = await syncP;
-  _obStopFacts();
+  const data = await syncProfile();       // provisional: stats + tam sweep'i başlatır
   if (!_obLive(token)) return;
   if (!data) { finishOnboarding(); return; }
 
-  const taste0 = data.taste || {};
+  const total0 = Math.max(
+    (data.letterboxd_stats || {}).films || 0,
+    (data.taste || {}).sample_size || 0,
+    (data.sync_job && data.sync_job.total) || 0,
+  );
+  const bl = $('ob-bucket-line');
+  if (bl) bl.textContent = _obBucketText(total0);
+
+  const full = await _obAwaitFullSweep(token, data);
+  if (!_obLive(token)) return;
+  _obStopFacts();
+
+  // ── Tarama bitti — sırayla sun ──
+  const profile = full || _persistedProfile || data;
+  const taste = profile.taste || data.taste || {};
   const stats = data.letterboxd_stats || {};
-  const favs = (data.favorite_films || []).slice(0, 4);
+  const favs = (profile.favorite_films || data.favorite_films || []).slice(0, 4);
+  const dir = (taste.top_directors_detail || [])[0];
   const total = Math.max(
-    stats.films || 0, taste0.sample_size || 0, (data.sync_job && data.sync_job.total) || 0,
+    stats.films || 0, taste.sample_size || 0,
+    (profile.sync_job && profile.sync_job.total)
+      || (data.sync_job && data.sync_job.total) || 0,
   );
 
-  // S2 — kişiye özel karşılama (film sayısına göre)
+  // S1 — Merhaba
   _obDots(0);
-  _obStage(`<p class="font-body-lg text-body-lg leading-[1.7] text-on-surface px-2">${escapeHTML(_obBucketText(total))}</p>`);
-  await _obWait(4500);
+  _obRenderWelcome();
+  await _obWait(3200);
   if (!_obLive(token)) return;
 
-  // S3 — rakamlar (profil sayfasından; tam sweep bunu değiştirmez)
+  // S2 — rakamlar
   const numbers = [
     { label: 'İzlediğin filmler', value: total },
-    { label: 'Puanladıkların', value: taste0.rated_count || 0 },
+    { label: 'Puanladıkların', value: taste.rated_count || 0 },
     { label: 'Bu yıl', value: stats.this_year || 0 },
   ].filter(x => x.value > 0);
   if (numbers.length) {
@@ -1354,7 +1368,7 @@ async function startOnboarding() {
     if (!_obLive(token)) return;
   }
 
-  // S4 — favori dörtlü
+  // S3 — favori dörtlü
   if (favs.length) {
     _obDots(2);
     _obRenderFavs(favs);
@@ -1362,15 +1376,7 @@ async function startOnboarding() {
     if (!_obLive(token)) return;
   }
 
-  // S5 — tüm izleme geçmişi taranırken bekleme ekranı
-  const full = await _obAwaitFullSweep(token, data);
-  if (!_obLive(token)) return;
-
-  const finalProfile = full || _persistedProfile || data;
-  const taste = finalProfile.taste || taste0;
-  const dir = (taste.top_directors_detail || [])[0];
-
-  // S6 — sinematik kişilik (gerçek LLM metni)
+  // S4 — sinematik kişilik (gerçek LLM metni)
   if ((taste.personality || '').trim()) {
     _obDots(3);
     _obStage(`
@@ -1381,7 +1387,7 @@ async function startOnboarding() {
     if (!_obLive(token)) return;
   }
 
-  // S7 — favori yönetmen (tüm geçmişten)
+  // S5 — favori yönetmen (tüm geçmişten)
   if (dir && dir.name) {
     _obDots(4);
     _obRenderDirector(dir);
@@ -1389,7 +1395,7 @@ async function startOnboarding() {
     if (!_obLive(token)) return;
   }
 
-  // S8 — bitiş: "Uygulamaya geç" butonu ilk kez burada belirir
+  // S6 — bitiş: "Uygulamaya geç" butonu ilk kez burada belirir
   _obDots(5);
   _obStage(`
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
