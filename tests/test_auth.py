@@ -101,6 +101,12 @@ def test_full_history_sync_schema_is_service_role_only():
         "GRANT ALL ON TABLE public.profile_sync_jobs TO service_role;",
         "REVOKE ALL ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)",
         "GRANT EXECUTE ON FUNCTION public.upsert_watched_films(BIGINT, JSONB)",
+        "CREATE TABLE IF NOT EXISTS public.film_posters (",
+        "CREATE OR REPLACE FUNCTION public.upsert_film_posters(",
+        "ALTER TABLE public.film_posters ENABLE ROW LEVEL SECURITY;",
+        "REVOKE ALL ON TABLE public.film_posters FROM anon, authenticated;",
+        "GRANT ALL ON TABLE public.film_posters TO service_role;",
+        "GRANT EXECUTE ON FUNCTION public.upsert_film_posters(JSONB) TO service_role;",
     ):
         assert line in schema
 

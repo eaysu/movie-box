@@ -347,3 +347,49 @@ class Enricher:
             self._api_calls - before_calls,
         )
         return result
+
+    async def person_photos(self, names: list[str]) -> dict[str, str]:
+        """Map a director name → a portrait URL via TMDb person search (cached)."""
+        wanted = [n.strip() for n in names if n and n.strip()]
+        if not wanted:
+            return {}
+        client = await _get_tmdb_client()
+        keys = [f"person:{n.lower()}" for n in wanted]
+        await self._prefetch_cache(keys, SEARCH_TTL)
+        out: dict[str, str] = {}
+
+        async def worker(name: str) -> None:
+            key = f"person:{name.lower()}"
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key, ttl=SEARCH_TTL)
+            if cached is not None:
+                self._cache_hits += 1
+                if cached.get("photo_url"):
+                    out[name] = cached["photo_url"]
+                return
+            photo = ""
+            try:
+                data = await self._get(client, "/search/person", query=name)
+                results = data.get("results", []) or []
+                best = max(
+                    results,
+                    key=lambda r: (
+                        1000.0 if r.get("name", "").lower() == name.lower() else 0.0
+                    )
+                    + float(r.get("popularity", 0.0) or 0.0),
+                    default=None,
+                )
+                if best and best.get("profile_path"):
+                    photo = f"https://image.tmdb.org/t/p/w185{best['profile_path']}"
+            except httpx.HTTPError:
+                return  # transient — don't cache, retry next time
+            await asyncio.to_thread(
+                self.cache.set, "tmdb", key, {"photo_url": photo}
+            )
+            if photo:
+                out[name] = photo
+
+        try:
+            await asyncio.gather(*(worker(n) for n in wanted))
+        finally:
+            await self._flush_cache()
+        return out

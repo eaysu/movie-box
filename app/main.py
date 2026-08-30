@@ -1224,9 +1224,16 @@ async def _provisional_profile_sync(
                 )
                 for film in profile.favorite_films
             ]
+        await _resolve_favorite_posters(
+            favorites,
+            [{"film_slug": f.slug, "poster_url": f.poster_url} for f in watched],
+            service,
+            enricher,
+        )
         taste = build_taste_profile(watched)
         taste.source_fingerprint = source_fingerprint
         taste.personality = personality_from_favorites(favorites)
+        await _apply_director_photos(taste, enricher, service)
         await asyncio.to_thread(
             service.save_profile_snapshot,
             account,
@@ -1256,6 +1263,87 @@ async def _provisional_profile_sync(
             status_code=503,
             detail="Profil senkronu tamamlanamadı. Son sağlam analiz korunuyor.",
         ) from exc
+
+
+async def _stash_posters(films: list[dict]) -> None:
+    """Persist resolved posters into the shared film_posters pool (best effort)."""
+    rows = [
+        {
+            "slug": f.get("slug"),
+            "poster_url": f.get("poster_url"),
+            "tmdb_id": f.get("tmdb_id"),
+            "title": f.get("title"),
+            "release_year": f.get("release_year"),
+        }
+        for f in films
+        if f.get("slug") and f.get("poster_url")
+    ]
+    if not rows:
+        return
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(_auth_service().save_film_posters, rows)
+
+
+async def _resolve_favorite_posters(favorites, watched_rows, service, enricher) -> None:
+    """Best-effort Fav 4 posters: watched rows → shared pool → a fresh enrich."""
+    row_poster = {
+        row.get("film_slug"): row.get("poster_url")
+        for row in (watched_rows or [])
+        if row.get("poster_url")
+    }
+    for fav in favorites:
+        if not fav.poster_url and row_poster.get(fav.slug):
+            fav.poster_url = row_poster[fav.slug]
+
+    missing = [f for f in favorites if not f.poster_url and f.slug]
+    if not missing:
+        return
+    with contextlib.suppress(Exception):
+        pool = await asyncio.to_thread(
+            service.get_film_posters, [f.slug for f in missing]
+        )
+        for fav in missing:
+            if pool.get(fav.slug):
+                fav.poster_url = pool[fav.slug]
+
+    missing = [f for f in favorites if not f.poster_url and f.slug]
+    if missing and enricher is not None:
+        with contextlib.suppress(Exception):
+            got = await enricher.enrich(
+                [{"slug": f.slug, "title": f.title, "year": f.year} for f in missing],
+                include_details=False,
+            )
+            by_slug = {g.slug: g for g in got if g.slug}
+            for fav in missing:
+                hit = by_slug.get(fav.slug)
+                if hit and hit.poster_url:
+                    fav.poster_url = hit.poster_url
+
+    await _stash_posters(
+        [
+            {
+                "slug": f.slug,
+                "poster_url": f.poster_url,
+                "tmdb_id": f.tmdb_id,
+                "title": f.title,
+                "release_year": f.year,
+            }
+            for f in favorites
+            if f.slug and f.poster_url
+        ]
+    )
+
+
+async def _apply_director_photos(taste, enricher, service) -> None:
+    """Fill top_directors_detail[].photo_url from TMDb person search (cached)."""
+    detail = getattr(taste, "top_directors_detail", None) or []
+    if not detail or enricher is None:
+        return
+    with contextlib.suppress(Exception):
+        photos = await enricher.person_photos([d.get("name", "") for d in detail])
+        for d in detail:
+            if photos.get(d.get("name", "")):
+                d["photo_url"] = photos[d["name"]]
 
 
 class _SyncPipeline:
@@ -1351,6 +1439,7 @@ class _SyncPipeline:
                     "details_loaded": False,
                 }
             )
+        await _stash_posters(out)
         return out
 
     async def enrich_details(self, rows: list[dict]) -> list[dict]:
@@ -1369,10 +1458,12 @@ class _SyncPipeline:
             if row.get("film_slug") or row.get("slug")
         ]
         detailed = await enricher.enrich(seeds, include_details=True)
-        return [
+        out = [
             {
                 "slug": film.slug,
                 "tmdb_id": film.tmdb_id,
+                "title": film.title or "",
+                "release_year": film.year,
                 "director": film.director or "",
                 "genres": film.genres or [],
                 "keywords": film.keywords or [],
@@ -1382,6 +1473,8 @@ class _SyncPipeline:
             for film in detailed
             if film.slug
         ]
+        await _stash_posters(out)
+        return out
 
     async def rebuild_snapshot(self, account: Account, *, use_llm: bool = True) -> int:
         service = _auth_service()
@@ -1407,8 +1500,27 @@ class _SyncPipeline:
             for row in rows
         ]
         enricher = self._enricher()
-        # Backfill posters for the directors we're about to surface — covers
-        # rows crawled before poster_url was persisted, cache-first so it's cheap.
+        # ── Poster repair ────────────────────────────────────────────────
+        # 1) shared pool (free), 2) TMDb for the directors we're about to
+        # surface. Anything resolved is written back to rows + the pool.
+        missing = [f for f in watched if not f.poster_url]
+        if missing:
+            with contextlib.suppress(Exception):
+                pool = await asyncio.to_thread(
+                    service.get_film_posters, [f.slug for f in missing]
+                )
+                pool_patch = []
+                for film in missing:
+                    if pool.get(film.slug):
+                        film.poster_url = pool[film.slug]
+                        pool_patch.append(
+                            {"slug": film.slug, "poster_url": film.poster_url}
+                        )
+                if pool_patch:
+                    await asyncio.to_thread(
+                        service.save_watched_films, account.id, pool_patch
+                    )
+
         if enricher is not None:
             from collections import Counter as _Counter
 
@@ -1421,7 +1533,7 @@ class _SyncPipeline:
             need_poster = [
                 film
                 for film in watched
-                if film.director in top_dirs and not film.poster_url
+                if not film.poster_url and (film.director in top_dirs or not film.director)
             ][:400]
             if need_poster:
                 with contextlib.suppress(Exception):
@@ -1439,12 +1551,19 @@ class _SyncPipeline:
                         if hit and hit.poster_url:
                             film.poster_url = hit.poster_url
                             patch.append(
-                                {"slug": film.slug, "poster_url": hit.poster_url}
+                                {
+                                    "slug": film.slug,
+                                    "poster_url": hit.poster_url,
+                                    "tmdb_id": hit.tmdb_id,
+                                    "title": hit.title,
+                                    "release_year": hit.year,
+                                }
                             )
                     if patch:
                         await asyncio.to_thread(
                             service.save_watched_films, account.id, patch
                         )
+                        await _stash_posters(patch)
 
         profile = await scrape_profile(
             account.username, max_retries=self.settings.scrape_max_retries
@@ -1463,18 +1582,11 @@ class _SyncPipeline:
                 )
                 for film in profile.favorite_films
             ]
-        # Fill any Fav 4 poster we already have from the watched-history rows.
-        row_poster = {
-            row.get("film_slug"): row.get("poster_url")
-            for row in rows
-            if row.get("poster_url")
-        }
-        for fav in favorites:
-            if not fav.poster_url and row_poster.get(fav.slug):
-                fav.poster_url = row_poster[fav.slug]
+        await _resolve_favorite_posters(favorites, rows, service, enricher)
         taste = build_taste_profile(watched)
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
         taste.personality = personality_from_favorites(favorites)
+        await _apply_director_photos(taste, enricher, service)
         # Background pass: upgrade the deterministic prose with an LLM read.
         if use_llm:
             with contextlib.suppress(Exception):

@@ -100,6 +100,7 @@ def _director_detail(
         detail.append(
             {
                 "name": name,
+                "photo_url": "",  # filled by the caller via TMDb person search
                 "count": len(films),
                 "avg_rating": round(sum(ratings) / len(ratings), 2) if ratings else None,
                 "films": films[:per_director],

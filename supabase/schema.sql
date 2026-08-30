@@ -110,6 +110,51 @@ CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
 CREATE INDEX IF NOT EXISTS idx_user_watched_films_director
   ON public.user_watched_films (user_id, director);
 
+-- Shared film → poster pool. Filled by every enrichment path across all users;
+-- poster lookups hit this first so a rate-limited gap for one user self-heals
+-- once any user's enrichment resolves that film.
+CREATE TABLE IF NOT EXISTS public.film_posters (
+  film_slug     TEXT PRIMARY KEY,
+  poster_url    TEXT NOT NULL,
+  tmdb_id       INTEGER,
+  title         TEXT NOT NULL DEFAULT '',
+  release_year  INTEGER,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE OR REPLACE FUNCTION public.upsert_film_posters(p_films JSONB)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  INSERT INTO public.film_posters (film_slug, poster_url, tmdb_id, title, release_year, updated_at)
+  SELECT
+    item->>'slug',
+    item->>'poster_url',
+    NULLIF(item->>'tmdb_id', '')::INTEGER,
+    COALESCE(item->>'title', ''),
+    NULLIF(item->>'release_year', '')::INTEGER,
+    now()
+  FROM jsonb_array_elements(COALESCE(p_films, '[]'::jsonb)) AS item
+  WHERE COALESCE(item->>'slug', '') <> '' AND COALESCE(item->>'poster_url', '') <> ''
+  ON CONFLICT (film_slug) DO UPDATE SET
+    poster_url = EXCLUDED.poster_url,
+    tmdb_id = COALESCE(EXCLUDED.tmdb_id, public.film_posters.tmdb_id),
+    title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE public.film_posters.title END,
+    release_year = COALESCE(EXCLUDED.release_year, public.film_posters.release_year),
+    updated_at = now();
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_film_posters(JSONB) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_film_posters(JSONB) TO service_role;
+
 -- Checkpointed background crawl for the one-time full history sweep. One row per
 -- user; a run advances cursor_page under a per-run time budget and can be resumed
 -- (in-process on the next visit) if the instance restarts mid-crawl.
@@ -803,6 +848,7 @@ CREATE TABLE IF NOT EXISTS public.tmdb_cache (
 -- tablolardaki kullanıcı adlarını ve cache verisini okuyamaz/değiştiremez.
 ALTER TABLE public.users     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tmdb_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.film_posters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.taste_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profile_favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_watched_films ENABLE ROW LEVEL SECURITY;
@@ -821,6 +867,7 @@ DROP POLICY IF EXISTS "service_all_tmdb_cache" ON public.tmdb_cache;
 
 REVOKE ALL ON TABLE public.users FROM anon, authenticated;
 REVOKE ALL ON TABLE public.tmdb_cache FROM anon, authenticated;
+REVOKE ALL ON TABLE public.film_posters FROM anon, authenticated;
 REVOKE ALL ON TABLE public.taste_profiles FROM anon, authenticated;
 REVOKE ALL ON TABLE public.profile_favorites FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_watched_films FROM anon, authenticated;
@@ -839,6 +886,7 @@ REVOKE ALL ON SEQUENCE public.recommendation_feedback_events_id_seq FROM anon, a
 
 GRANT ALL ON TABLE public.users TO service_role;
 GRANT ALL ON TABLE public.tmdb_cache TO service_role;
+GRANT ALL ON TABLE public.film_posters TO service_role;
 GRANT ALL ON TABLE public.taste_profiles TO service_role;
 GRANT ALL ON TABLE public.profile_favorites TO service_role;
 GRANT ALL ON TABLE public.user_watched_films TO service_role;

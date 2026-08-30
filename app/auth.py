@@ -608,6 +608,38 @@ class AuthService:
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
 
+    # ── Shared film → poster pool ────────────────────────────────────────
+    def save_film_posters(self, films: list[dict]) -> int:
+        rows = [f for f in films if f.get("slug") and f.get("poster_url")]
+        if not rows:
+            return 0
+        try:
+            result = self._service_client().rpc(
+                "upsert_film_posters", {"p_films": rows}
+            ).execute()
+            return int(result.data)
+        except Exception:
+            return 0
+
+    def get_film_posters(self, slugs) -> dict[str, str]:
+        wanted = [s for s in dict.fromkeys(slugs) if s]
+        if not wanted:
+            return {}
+        service = self._service_client()
+        out: dict[str, str] = {}
+        for i in range(0, len(wanted), 200):
+            chunk = wanted[i : i + 200]
+            rows = (
+                service.table("film_posters")
+                .select("film_slug,poster_url")
+                .in_("film_slug", chunk)
+                .execute()
+            ).data or []
+            for row in rows:
+                if row.get("poster_url"):
+                    out[row["film_slug"]] = row["poster_url"]
+        return out
+
     def search_accounts(self, account: Account, query: str, limit: int = 8) -> list[dict]:
         service = self._service_client()
         result = (

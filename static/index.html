@@ -1766,6 +1766,18 @@ function directorFilmGrid(films, id, hidden) {
   </div>`;
 }
 
+function directorAvatar(d, sizeClass) {
+  const photo = safeImageURL(d && d.photo_url);
+  const initial = escapeHTML((((d && d.name) || '?').trim()[0] || '?').toUpperCase());
+  if (photo) {
+    return `<span class="${sizeClass} shrink-0 rounded-full overflow-hidden block bg-surface-container ring-1 ring-primary-container/30">
+      <img src="${photo}" alt="${initial}" loading="lazy" onerror="posterErr(this)" class="w-full h-full object-cover"/>
+      <span hidden class="w-full h-full flex items-center justify-center font-headline-md text-primary-container">${initial}</span>
+    </span>`;
+  }
+  return `<span class="${sizeClass} shrink-0 rounded-full flex items-center justify-center font-headline-md text-primary-container" style="background:rgba(0,224,84,0.10);border:1px solid rgba(0,224,84,0.30)">${initial}</span>`;
+}
+
 function renderPersistedProfile(data) {
   if (!data) return;
   _persistedProfile = data;
@@ -1807,7 +1819,7 @@ function renderPersistedProfile(data) {
         <div class="relative overflow-hidden rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
           <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[120px] leading-none select-none" style="color:rgba(0,224,84,0.09)">01</span>
           <div class="relative flex items-center gap-4">
-            <span class="w-12 h-12 shrink-0 rounded-full flex items-center justify-center font-headline-md text-[18px]" style="color:#00e054;background:rgba(0,224,84,0.10);border:1px solid rgba(0,224,84,0.30)">${escapeHTML((top.name.trim()[0] || '?').toUpperCase())}</span>
+            ${directorAvatar(top, 'w-14 h-14 text-[18px]')}
             <div class="min-w-0">
               <span class="block font-label-sm text-label-sm uppercase tracking-wide text-primary-container">Favori yönetmen</span>
               <strong class="block font-headline-md text-[20px] md:text-[22px] text-on-surface truncate">${escapeHTML(top.name)}</strong>
@@ -1827,7 +1839,8 @@ function renderPersistedProfile(data) {
         return `
           <div class="rounded-xl border border-outline-variant/20 bg-surface-container/40 overflow-hidden">
             <button type="button" data-dir-idx="${i}" class="w-full flex items-center gap-3 p-3.5 text-left hover:bg-surface-container/70 transition-colors">
-              <span class="font-display-lg text-[17px] leading-none text-on-surface-variant/70 w-7 shrink-0">${String(i + 1).padStart(2, '0')}</span>
+              <span class="font-display-lg text-[15px] leading-none text-on-surface-variant/70 w-5 shrink-0">${String(i + 1).padStart(2, '0')}</span>
+              ${directorAvatar(d, 'w-9 h-9 text-[13px]')}
               <strong class="font-headline-md text-[15px] text-on-surface truncate flex-grow">${escapeHTML(d.name)}</strong>
               ${meta ? `<span class="font-label-sm text-label-sm text-on-surface-variant/50 shrink-0">${escapeHTML(meta)}</span>` : ''}
               ${films.length ? '<span class="material-symbols-outlined text-on-surface-variant/40 text-[18px] shrink-0 transition-transform" data-dir-chevron>expand_more</span>' : ''}
