@@ -224,10 +224,17 @@
     animation: caret-blink 1s steps(1) infinite; }
   @keyframes caret-blink { 50% { opacity: 0; } }
 
+  /* Onboarding slide reveal — slow, flowing */
+  @keyframes ob-in { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .ob-in { animation: ob-in .9s cubic-bezier(.22,1,.36,1) both; }
+  #ob-dots > i { width: 6px; height: 6px; border-radius: 9999px; background: rgba(255,255,255,.18); transition: all .4s ease; display: block; }
+  #ob-dots > i.on { width: 22px; background: #00e054; }
+
   @media (prefers-reduced-motion: reduce) {
     .profile-rise { opacity: 1; animation: none; }
     .collapse-y { transition: none; }
     .line-rise { opacity: 1; animation: none; }
     #profile-sweep-bar.is-indeterminate { animation: none; transform: none; }
     .stream-caret::after { display: none; }
+    .ob-in { animation: none; }
   }

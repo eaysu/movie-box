@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260830.1"/>
+<link rel="stylesheet" href="/static/app.css?v=20260831.1"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -431,6 +431,23 @@
       <div id="profile-action-notice" class="hidden mt-4 rounded-xl px-4 py-3 bg-primary-container/10 text-primary-container font-body-md text-body-md"></div>
     </section>
   </main>
+</div>
+
+<!-- ═══════════════════════════  VIEW: ONBOARDING  ═══════════════════════════ -->
+<div id="view-onboarding" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile pt-16 pb-10 overflow-hidden">
+  <div class="absolute inset-0 pointer-events-none" style="background:radial-gradient(circle at 22% 18%,rgba(0,224,84,.14),transparent 34%),radial-gradient(circle at 82% 78%,rgba(108,205,255,.09),transparent 34%)"></div>
+
+  <div class="relative z-10 w-full max-w-[560px] flex flex-col items-center text-center min-h-[440px] justify-center">
+    <div id="ob-stage" class="w-full"></div>
+  </div>
+
+  <div class="relative z-10 mt-8 w-full max-w-[560px] flex flex-col items-center gap-3">
+    <div id="ob-dots" class="flex items-center gap-1.5"></div>
+    <button id="ob-skip" type="button" class="w-full max-w-[320px] bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2">
+      <span class="material-symbols-outlined text-[18px]">arrow_forward</span><span id="ob-skip-label">Uygulamaya geç</span>
+    </button>
+    <p id="ob-bg-note" class="font-label-sm text-label-sm text-on-surface-variant/45">Zevk analizin arka planda hazırlanıyor…</p>
+  </div>
 </div>
 
 <!-- ═══════════════════════════  VIEW: IDLE  ═══════════════════════════ -->
@@ -926,6 +943,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260830.1"></script>
+<script type="module" src="/static/js/app.js?v=20260831.1"></script>
 </body>
 </html>

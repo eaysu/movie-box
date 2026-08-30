@@ -1272,6 +1272,7 @@ async def _provisional_profile_sync(
             await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
             account.profile_sync_status = "ready"
             stored["account"] = account.__dict__
+            stored["letterboxd_stats"] = profile.stats
             return stored
         if enricher is not None:
             await enricher.ensure_details(_detail_sample(watched, 40))
@@ -1312,6 +1313,7 @@ async def _provisional_profile_sync(
             "account": account.__dict__,
             "taste": taste.to_dict(),
             "favorite_films": [film.to_dict() for film in favorites[:4]],
+            "letterboxd_stats": profile.stats,
         }
     except ScrapeError as exc:
         with contextlib.suppress(Exception):

@@ -55,6 +55,21 @@ class ProfileParserTests(unittest.TestCase):
         with self.assertRaises(MarkupChangedError):
             _parse_profile_page("sample_user", "<main>redesigned profile</main>")
 
+    def test_parses_public_profile_statistics(self):
+        html = """
+        <section class="profile-summary">
+          <div class="person-display-name"><span class="label">Sample User</span></div>
+          <h4 class="profile-statistic statistic"><a href="/u/films/"><span class="value">1,204</span><span class="definition">Films</span></a></h4>
+          <h4 class="profile-statistic statistic"><a href="/u/diary/for/2026/"><span class="value">73</span><span class="definition">This year</span></a></h4>
+          <h4 class="profile-statistic statistic"><a href="/u/followers/"><span class="value">5</span><span class="definition">Followers</span></a></h4>
+        </section>
+        """
+        profile = _parse_profile_page("sample_user", html)
+        self.assertEqual(profile.stats.get("films"), 1204)
+        self.assertEqual(profile.stats.get("this_year"), 73)
+        self.assertEqual(profile.stats.get("followers"), 5)
+        self.assertIn("stats", profile.to_dict())
+
 
 class ProfileRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_lazy_poster_resolver_prefers_high_resolution_url(self):

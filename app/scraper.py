@@ -379,6 +379,7 @@ class ScrapedProfile:
     avatar_url: Optional[str] = None
     bio: str = ""
     favorite_films: list[ScrapedFilm] = field(default_factory=list)
+    stats: dict = field(default_factory=dict)  # {"films": 563, "this_year": 25, ...}
 
     def to_dict(self) -> dict:
         return {
@@ -387,6 +388,7 @@ class ScrapedProfile:
             "avatar_url": self.avatar_url,
             "bio": self.bio,
             "favorite_films": [film.to_dict() for film in self.favorite_films],
+            "stats": self.stats,
         }
 
 
@@ -595,12 +597,33 @@ def _parse_profile_page(username: str, html: str) -> ScrapedProfile:
     favorite_films = (
         _parse_page(str(favorites_section))[:4] if favorites_section is not None else []
     )
+
+    # Public profile stat row: Films / This year / Lists / Following / Followers.
+    _STAT_KEYS = {
+        "films": "films",
+        "this year": "this_year",
+        "lists": "lists",
+        "following": "following",
+        "followers": "followers",
+    }
+    stats: dict = {}
+    for stat in soup.select(".profile-statistic"):
+        value_el = stat.select_one(".value")
+        label_el = stat.select_one(".definition")
+        if value_el is None or label_el is None:
+            continue
+        key = _STAT_KEYS.get(label_el.get_text(" ", strip=True).lower())
+        digits = re.sub(r"[^\d]", "", value_el.get_text("", strip=True))
+        if key and digits:
+            stats[key] = int(digits)
+
     return ScrapedProfile(
         username=username,
         display_name=display_name or username,
         avatar_url=avatar_url or None,
         bio=bio[:1000],
         favorite_films=favorite_films,
+        stats=stats,
     )
 
 

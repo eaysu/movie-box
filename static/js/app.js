@@ -487,10 +487,10 @@ function setAuthHeaderLinks(visible) {
 }
 
 function showView(name) {
-  ['auth', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'feedback-history'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
-  $('main-footer').classList.toggle('hidden', ['auth', 'loading', 'blend-loading'].includes(name));
+  $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
   setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
 }
 
@@ -1105,10 +1105,12 @@ async function syncProfile(force = false) {
     });
     if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
     renderPersistedProfile(data);
+    return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
     $('profile-sync-error').textContent = error.message || 'Profil senkronu tamamlanamadı.';
     $('profile-sync-error').classList.remove('hidden');
+    return null;
   } finally {
     button.disabled = false;
     button.querySelector('span').classList.remove('animate-spin');
@@ -1136,10 +1138,161 @@ function openProfile() {
 
 function enterApp(account) {
   applyAccount(account);
+  loadBlendInbox(false);
+  // First run after registration: play the onboarding reveal while the full
+  // history sweep warms up in the background.
+  if (account.profile_sync_status === 'pending' && !sessionStorage.getItem('mb_onboarded')) {
+    startOnboarding();
+    return;
+  }
   showView('profile');
   openProfilePanel('watch');
   loadProfile();
-  loadBlendInbox(false);
+}
+
+// ── Onboarding reveal ──────────────────────────────────────────────────
+let _obTimer = null;
+let _obIndex = 0;
+let _obSlides = [];
+const OB_SLIDE_MS = 5000;
+
+function finishOnboarding() {
+  if (_obTimer) { clearTimeout(_obTimer); _obTimer = null; }
+  sessionStorage.setItem('mb_onboarded', '1');
+  showView('profile');
+  openProfilePanel('watch');
+  if (_persistedProfile) renderPersistedProfile(_persistedProfile);
+  else loadProfile();
+}
+
+function _obStage(html) {
+  const stage = $('ob-stage');
+  stage.innerHTML = `<div class="ob-in">${html}</div>`;
+}
+
+function _obDots(total, active) {
+  $('ob-dots').innerHTML = Array.from({ length: total }, (_, i) =>
+    `<i class="${i === active ? 'on' : ''}"></i>`).join('');
+}
+
+function _countUp(el, target, ms = 1100) {
+  if (_reduceMotion) { el.textContent = target.toLocaleString('tr-TR'); return; }
+  const start = performance.now();
+  const step = (now) => {
+    const p = Math.min((now - start) / ms, 1);
+    el.textContent = Math.round((1 - Math.pow(1 - p, 3)) * target).toLocaleString('tr-TR');
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function _renderObSlide() {
+  const slide = _obSlides[_obIndex];
+  const total = 1 + _obSlides.length;
+  _obDots(total, _obIndex + 1);
+  const last = _obIndex === _obSlides.length - 1;
+  $('ob-skip-label').textContent = last ? 'Uygulamaya geç' : 'Geç';
+
+  if (slide.kind === 'numbers') {
+    _obStage(`
+      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Letterboxd geçmişin</p>
+      <div class="mt-6 grid grid-cols-3 gap-3">
+        ${slide.items.map(x => `
+          <div class="rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-4">
+            <strong data-ob-count="${x.value}" class="block font-display-lg text-[26px] md:text-[30px] leading-none text-on-surface">0</strong>
+            <span class="mt-2 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">${escapeHTML(x.label)}</span>
+          </div>`).join('')}
+      </div>`);
+    $('ob-stage').querySelectorAll('[data-ob-count]').forEach(el =>
+      _countUp(el, Number(el.dataset.obCount)));
+  } else if (slide.kind === 'favs') {
+    _obStage(`
+      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Favori dörtlün</p>
+      <div class="mt-6 grid grid-cols-4 gap-2.5">
+        ${slide.favs.map((f, i) => {
+          const poster = safeImageURL(f.poster_url);
+          const title = escapeHTML(f.title || '');
+          return `<div class="line-rise" style="animation-delay:${i * 140}ms">
+            <div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-surface-container ring-1 ring-outline-variant/25">
+              ${poster ? `<img src="${poster}" alt="${title}" class="absolute inset-0 w-full h-full object-cover"/>` : `<div class="absolute inset-0 flex items-center justify-center p-2 text-center text-[9px] text-on-surface-variant/70">${title}</div>`}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`);
+  } else if (slide.kind === 'personality') {
+    _obStage(`
+      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
+      <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
+    streamText($('ob-personality'), slide.text);
+  } else if (slide.kind === 'director') {
+    const d = slide.dir;
+    _obStage(`
+      <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Favori yönetmenin</p>
+      <div class="mt-6 flex flex-col items-center gap-4">
+        ${directorAvatar(d, 'w-28 h-28 text-[36px]')}
+        <div>
+          <h2 class="font-headline-lg text-[26px] text-on-surface">${escapeHTML(d.name)}</h2>
+          <p class="mt-1 font-body-md text-body-md text-on-surface-variant">${Number(d.count) || 0} filmini izledin${d.avg_rating ? ` · ortalaman ${Number(d.avg_rating).toFixed(1)}★` : ''}</p>
+        </div>
+      </div>`);
+  }
+
+  if (_obTimer) clearTimeout(_obTimer);
+  if (!last) {
+    _obTimer = setTimeout(() => { _obIndex += 1; _renderObSlide(); }, OB_SLIDE_MS);
+  } else {
+    $('ob-bg-note').textContent = 'Hazır olduğunda uygulamaya geçebilirsin.';
+  }
+}
+
+async function startOnboarding() {
+  _obSlides = [];
+  _obIndex = 0;
+  showView('onboarding');
+
+  const name = escapeHTML(((_account.display_name || _account.username || '').split(' ')[0]) || _account.username || '');
+  const avatar = safeImageURL(_account.avatar_url);
+  _obStage(`
+    <div class="flex flex-col items-center gap-5">
+      ${avatar
+        ? `<img src="${avatar}" alt="" class="w-32 h-32 rounded-full object-cover ring-2 ring-primary-container/40 shadow-2xl"/>`
+        : `<div class="w-32 h-32 rounded-full bg-surface-container ring-2 ring-primary-container/40 flex items-center justify-center font-display-lg text-[44px] text-primary-container">${name ? name[0].toUpperCase() : '?'}</div>`}
+      <div>
+        <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Letterboxd profilin bağlandı</p>
+        <h2 class="mt-2 font-headline-lg text-[30px] text-on-surface">Merhaba ${name}</h2>
+        <p class="mt-3 font-body-md text-body-md text-on-surface-variant/70">İzleme geçmişin okunuyor…</p>
+      </div>
+    </div>`);
+  _obDots(2, 0);
+
+  const data = await syncProfile();
+  if (!data || $('view-onboarding').classList.contains('hidden')) {
+    if (data) finishOnboarding();
+    return;
+  }
+
+  const taste = data.taste || {};
+  const stats = data.letterboxd_stats || {};
+  const favs = data.favorite_films || [];
+  const dir = (taste.top_directors_detail || [])[0];
+  const swept = (data.sync_job && data.sync_job.total) || 0;
+
+  const numbers = [
+    { label: 'İzlediğin filmler', value: Math.max(stats.films || 0, taste.sample_size || 0, swept) },
+    { label: 'Puanladıkların', value: taste.rated_count || 0 },
+    { label: 'Bu yıl', value: stats.this_year || 0 },
+  ].filter(x => x.value > 0);
+
+  _obSlides = [
+    numbers.length ? { kind: 'numbers', items: numbers } : null,
+    favs.length ? { kind: 'favs', favs: favs.slice(0, 4) } : null,
+    (taste.personality || '').trim() ? { kind: 'personality', text: taste.personality.trim() } : null,
+    dir && dir.name ? { kind: 'director', dir } : null,
+  ].filter(Boolean);
+
+  if (!_obSlides.length) { finishOnboarding(); return; }
+  _obIndex = 0;
+  _renderObSlide();
 }
 
 async function boot() {
@@ -2036,6 +2189,7 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
   });
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
+$('ob-skip').addEventListener('click', finishOnboarding);
 $('btn-account-menu').addEventListener('click', event => {
   event.stopPropagation();
   toggleAccountMenu();
