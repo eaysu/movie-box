@@ -176,7 +176,8 @@ async def rank_candidates(
 
 
 _ANALYSIS_REASONING_MODELS = {
-    "gpt-5-mini-2025-08-07", "gpt-5", "o3-mini", "o4-mini", "o1-mini", "o1", "o3",
+    "gpt-5-mini-2025-08-07", "gpt-5", "gpt-5.6-terra",
+    "o3-mini", "o4-mini", "o1-mini", "o1", "o3",
 }
 
 

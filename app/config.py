@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini-2025-08-07"
     # Zevk/kişilik analizi için ayrı model; boşsa openai_model kullanılır.
-    openai_analysis_model: str = ""
+    openai_analysis_model: str = "gpt-5.6-terra"
     supabase_url: str = ""
     supabase_key: str = ""
     supabase_anon_key: str = ""
