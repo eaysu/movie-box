@@ -299,8 +299,28 @@ tailwind.config = {
     to   { opacity: 1; transform: translateY(0); }
   }
   .profile-rise { opacity: 0; animation: profile-rise .6s cubic-bezier(.22,1,.36,1) forwards; }
+
+  /* Accordion — animates to the real content height */
+  .collapse-y { display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows .34s cubic-bezier(.22,1,.36,1), opacity .28s ease, margin .34s ease; }
+  .collapse-y:not(.open) { margin-top: 0 !important; margin-bottom: 0 !important; }
+  .collapse-y.open { grid-template-rows: 1fr; opacity: 1; }
+  .collapse-y > .collapse-inner { overflow: hidden; min-height: 0; }
+
+  /* Staggered fade-up for lists (analysis lines, result cards) */
+  @keyframes line-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .line-rise { opacity: 0; animation: line-rise .45s cubic-bezier(.22,1,.36,1) forwards; }
+
+  /* Streaming text caret */
+  .stream-caret::after { content: '▌'; margin-left: 1px; color: #43fe6d;
+    animation: caret-blink 1s steps(1) infinite; }
+  @keyframes caret-blink { 50% { opacity: 0; } }
+
   @media (prefers-reduced-motion: reduce) {
     .profile-rise { opacity: 1; animation: none; }
+    .collapse-y { transition: none; }
+    .line-rise { opacity: 1; animation: none; }
+    .stream-caret::after { display: none; }
   }
 </style>
 </head>
@@ -576,7 +596,7 @@ tailwind.config = {
           <span id="profile-directors-more-label">İlk 10 yönetmen sıralaması</span>
           <span id="profile-directors-more-chevron" class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
         </button>
-        <div id="profile-directors-panel" class="hidden mt-3 flex-col gap-2"></div>
+        <div id="profile-directors-panel" class="collapse-y mt-3"><div class="collapse-inner"><div id="profile-directors-list" class="flex flex-col gap-2"></div></div></div>
       </section>
 
       <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
@@ -621,7 +641,8 @@ tailwind.config = {
       </div>
 
       <!-- alt panel: ne izlesem → watchlist / rastgele -->
-      <div id="profile-watch-panel" class="hidden mt-4 rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
+      <div id="profile-watch-panel" class="collapse-y mt-4">
+       <div class="collapse-inner"><div class="rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
         <div class="grid sm:grid-cols-2 gap-3">
           <button type="button" data-watch-mode="taste" class="profile-submode flex flex-col gap-1 rounded-xl border border-outline-variant/25 p-4 text-left transition-colors text-on-surface-variant">
             <span class="flex items-center gap-2 font-label-md text-label-md uppercase tracking-wide">
@@ -639,10 +660,15 @@ tailwind.config = {
         <button id="profile-watch-go" type="button" class="mt-4 w-full bg-primary-container text-black py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40">
           <span id="profile-watch-go-icon" class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1">auto_awesome</span><span id="profile-watch-go-label">Öner</span>
         </button>
+       </div></div>
       </div>
 
+      <!-- inline öneri sonucu — ayrı sayfaya geçmeden -->
+      <div id="profile-reco-panel" class="collapse-y mt-4"><div class="collapse-inner"><div id="profile-reco-body" class="rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5"></div></div></div>
+
       <!-- alt panel: blend -->
-      <div id="profile-blend-panel" class="hidden mt-4 rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
+      <div id="profile-blend-panel" class="collapse-y mt-4">
+       <div class="collapse-inner"><div class="rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5">
         <div class="relative">
           <div class="flex rounded-xl border border-outline-variant/30 bg-surface focus-within:border-secondary-container/60 transition-colors">
             <span class="absolute left-4 top-1/2 -translate-y-1/2 text-secondary-container/40 pointer-events-none"><span class="material-symbols-outlined text-[20px]">person_add</span></span>
@@ -653,6 +679,7 @@ tailwind.config = {
         <button id="profile-blend-go" type="button" class="mt-4 w-full bg-secondary-container text-on-secondary-container py-3.5 rounded-xl font-label-md text-label-md uppercase tracking-wider hover:opacity-90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-40">
           <span class="material-symbols-outlined text-[18px]">send</span>Blend isteği gönder
         </button>
+       </div></div>
       </div>
 
       <div id="profile-action-error" class="hidden mt-4 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
@@ -1443,8 +1470,9 @@ function showActionError(msg) {
 function openProfilePanel(which) {
   const watch = which === 'watch';
   const blend = which === 'blend';
-  $('profile-watch-panel').classList.toggle('hidden', !watch);
-  $('profile-blend-panel').classList.toggle('hidden', !blend);
+  $('profile-watch-panel').classList.toggle('open', watch);
+  $('profile-blend-panel').classList.toggle('open', blend);
+  if (watch || blend) resetRecoPanel();
   $('profile-act-watch').classList.toggle('border-primary-container/60', watch);
   $('profile-act-watch').classList.toggle('bg-surface-container/70', watch);
   $('profile-act-watch').classList.toggle('border-outline-variant/25', !watch);
@@ -1473,11 +1501,174 @@ function setProfileWatchMode(mode) {
   $('profile-watch-go-label').textContent = mode === 'random' ? 'Rastgele seç' : 'Öner';
 }
 
+// ── Shared SSE consumer for /api/recommend & /api/random ────────────────
+async function consumeRecommendationStream(path, body, handlers) {
+  const { onQueued, onStep, onResult, onError, timeoutMs = 180000 } = handlers || {};
+  const apiRequest = beginApiRequest(timeoutMs);
+  let terminal = false;
+  try {
+    const resp = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+      signal: apiRequest.controller.signal,
+    });
+    await assertStreamResponse(resp);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; }
+        if (event.type === 'queued') onQueued && onQueued(event.ahead);
+        else if (event.type === 'step') onStep && onStep(event.step);
+        else if (event.type === 'result') { terminal = true; onResult && onResult(event); }
+        else if (event.type === 'error') { terminal = true; onError && onError(scrapeErrorMessage(event)); }
+      }
+    }
+    if (!terminal) onError && onError('Sunucu yanıtı tamamlanmadan bağlantı kapandı. Lütfen tekrar deneyin.');
+  } catch (error) {
+    if (apiRequest.replaced || apiRequest.cancelled) return;
+    const message = streamErrorMessage(error, apiRequest, 'Sunucuya ulaşılamadı.');
+    if (message) onError && onError(message);
+  } finally {
+    finishApiRequest(apiRequest);
+  }
+}
+
+// ── Streaming text reveal ──────────────────────────────────────────────
+const _reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function streamText(el, text) {
+  if (!el) return;
+  text = String(text || '');
+  if (el._streamKey === text) return;
+  el._streamKey = text;
+  if (el._streamTimer) { clearInterval(el._streamTimer); el._streamTimer = null; }
+  if (_reduceMotion || text.length < 3) { el.textContent = text; return; }
+  const tokens = text.split(/(\s+)/);
+  let i = 0;
+  el.textContent = '';
+  el.classList.add('stream-caret');
+  el._streamTimer = setInterval(() => {
+    el.textContent += tokens[i++] || '';
+    if (i >= tokens.length) {
+      clearInterval(el._streamTimer);
+      el._streamTimer = null;
+      el.classList.remove('stream-caret');
+    }
+  }, 26);
+}
+
+// ── Inline "Bu gece" recommendation (no page transition) ────────────────
+const _RECO_STEP_LABEL = {
+  scraping: 'İzleme listen okunuyor',
+  enriching: 'Film bilgileri toplanıyor',
+  ranking: 'Zevkinle eşleştiriliyor',
+  llm: 'En iyi seçim yapılıyor',
+};
+let _recoBusy = false;
+
+function resetRecoPanel() {
+  cancelActiveApiRequest();
+  _recoBusy = false;
+  $('profile-reco-panel').classList.remove('open');
+  $('profile-reco-body').innerHTML = '';
+}
+
+function _recoLoadingHTML(mode) {
+  return `
+    <div class="flex flex-col items-center gap-4 py-6 text-center">
+      <div class="spinner" style="width:44px;height:44px"></div>
+      <p id="profile-reco-status" class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wide">${mode === 'random' ? 'Watchlist karıştırılıyor' : 'İzleme listen okunuyor'}</p>
+    </div>`;
+}
+
+function _recoResetBtn() {
+  return `<button type="button" id="profile-reco-again" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span>Yeni öneri</button>`;
+}
+
+async function startInlineReco(mode) {
+  if (_recoBusy) return;
+  const username = ($('username-input').value || (_account && _account.username) || '').trim();
+  if (!username) return;
+  _recoBusy = true;
+  profileActionNotice(null);
+  profileActionError(null);
+  $('profile-watch-panel').classList.remove('open');
+  $('profile-reco-body').innerHTML = _recoLoadingHTML(mode);
+  $('profile-reco-panel').classList.add('open');
+  setTimeout(() => $('profile-reco-panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+
+  await consumeRecommendationStream(
+    mode === 'random' ? '/api/random' : '/api/recommend',
+    { username },
+    {
+      onStep: (step) => {
+        const el = $('profile-reco-status');
+        if (el) el.textContent = _RECO_STEP_LABEL[step] || 'Hazırlanıyor';
+      },
+      onResult: (event) => {
+        _recoBusy = false;
+        if (mode === 'random') renderInlineRandom(event);
+        else renderInlineTaste(event);
+      },
+      onError: (msg) => {
+        _recoBusy = false;
+        $('profile-reco-body').innerHTML =
+          `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">${escapeHTML(msg)}</div>${_recoResetBtn()}`;
+      },
+    },
+  );
+}
+
+function renderInlineTaste(data) {
+  _feedbackFilms.clear();
+  const all = data.recommendations || [];
+  const hero = all[0];
+  const alts = all.slice(1, 5);
+  $('profile-reco-body').innerHTML = `
+    <p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(data.taste_summary || 'Bu akşam için seçim hazır.')}</p>
+    <div class="line-rise">${hero ? buildHeroCard(hero) : ''}</div>
+    ${alts.length ? `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">${alts.map((f, i) => `<div class="line-rise" style="animation-delay:${(i + 1) * 70}ms">${buildAltCard(f, i)}</div>`).join('')}</div>` : ''}
+    ${_recoResetBtn()}`;
+}
+
+function renderInlineRandom(data) {
+  _feedbackFilms.clear();
+  const films = data.films || [];
+  if (!films.length) {
+    $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Watchlist boş veya film bilgisi alınamadı.</div>${_recoResetBtn()}`;
+    return;
+  }
+  $('profile-reco-body').dataset.pool = JSON.stringify(films);
+  $('profile-reco-body').dataset.attempt = '0';
+  _paintInlineRandom();
+}
+
+function _paintInlineRandom() {
+  const body = $('profile-reco-body');
+  const films = JSON.parse(body.dataset.pool || '[]');
+  let attempt = parseInt(body.dataset.attempt || '0', 10);
+  const remaining = films.length - attempt - 1;
+  body.innerHTML = `
+    <div class="line-rise">${buildRandomCard(films[attempt])}</div>
+    <div class="mt-4 flex gap-2">
+      <button type="button" id="profile-reco-retry" class="flex-1 rounded-xl bg-tertiary-container text-on-tertiary-container py-3 font-label-md text-label-md uppercase tracking-wide disabled:opacity-40" ${remaining <= 0 ? 'disabled' : ''}>Başka bir tane (${Math.max(remaining, 0)})</button>
+    </div>
+    ${_recoResetBtn()}`;
+}
+
 function runProfileWatch() {
   profileActionNotice(null);
   profileActionError(null);
-  setMode(_profileWatchMode);
-  recommend();
+  startInlineReco(_profileWatchMode);
 }
 
 function runProfileBlend() {
@@ -1761,9 +1952,9 @@ function directorFilmTile(film) {
 }
 
 function directorFilmGrid(films, id, hidden) {
-  return `<div id="${id}"${hidden ? ' class="hidden"' : ''}>
-    <div class="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-3">${films.map(directorFilmTile).join('')}</div>
-  </div>`;
+  return `<div id="${id}" class="collapse-y${hidden ? '' : ' open'} mt-3"><div class="collapse-inner">
+    <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">${films.map(directorFilmTile).join('')}</div>
+  </div></div>`;
 }
 
 function directorAvatar(d, sizeClass) {
@@ -1784,7 +1975,7 @@ function renderPersistedProfile(data) {
   if (data.account) applyAccount(data.account);
   const taste = data.taste;
   if (taste) {
-    $('profile-taste-summary').textContent = taste.summary || 'Zevk analizi hazır.';
+    streamText($('profile-taste-summary'), taste.summary || 'Zevk analizi hazır.');
     const confidenceNames = { low: 'Düşük veri güveni', medium: 'Orta veri güveni', high: 'Yüksek veri güveni' };
     const confidenceColors = { low: '#ff8000', medium: '#6ccdff', high: '#00e054' };
     const confidenceScore = Math.max(0, Math.min(100, Math.round(taste.confidence_score || 0)));
@@ -1831,7 +2022,7 @@ function renderPersistedProfile(data) {
 
       $('profile-directors-more').classList.toggle('hidden', dirRows.length <= 1);
       $('profile-directors-more-label').textContent = `İlk ${dirRows.length} yönetmen sıralaması`;
-      $('profile-directors-panel').innerHTML = dirRows.map((d, i) => {
+      $('profile-directors-list').innerHTML = dirRows.map((d, i) => {
         const films = d.films || [];
         const meta = d.count
           ? `${d.count} film${d.avg_rating ? ` · ${Number(d.avg_rating).toFixed(1)}★` : ''}`
@@ -1851,13 +2042,14 @@ function renderPersistedProfile(data) {
     } else {
       $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için daha fazla metadata gerekiyor.</div>';
       $('profile-directors-more').classList.add('hidden');
-      $('profile-directors-panel').innerHTML = '';
+      $('profile-directors-panel').classList.remove('open');
+      $('profile-directors-list').innerHTML = '';
     }
 
     const analysisLines = (taste.analysis || []).filter(line => typeof line === 'string' && line.trim());
     if (analysisLines.length) {
       $('profile-analysis').innerHTML = analysisLines
-        .map(line => `<p class="font-body-md text-body-md leading-[1.6] text-on-surface-variant flex gap-2.5"><span class="mt-2 w-1 h-1 rounded-full bg-primary-container/70 shrink-0"></span><span>${escapeHTML(line)}</span></p>`)
+        .map((line, i) => `<p class="line-rise font-body-md text-body-md leading-[1.6] text-on-surface-variant flex gap-2.5" style="animation-delay:${i * 90}ms"><span class="mt-2 w-1 h-1 rounded-full bg-primary-container/70 shrink-0"></span><span>${escapeHTML(line)}</span></p>`)
         .join('');
       $('profile-analysis').classList.remove('hidden');
       $('profile-analysis').classList.add('flex');
@@ -1877,13 +2069,14 @@ function renderPersistedProfile(data) {
     $('profile-confidence-ring').style.strokeDashoffset = String(2 * Math.PI * 28);
     $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
     $('profile-directors-more').classList.add('hidden');
-    $('profile-directors-panel').innerHTML = '';
+    $('profile-directors-panel').classList.remove('open');
+    $('profile-directors-list').innerHTML = '';
     $('profile-analysis').classList.add('hidden');
   }
 
   const personality = (taste && taste.personality || '').trim();
   if (personality) {
-    $('profile-personality-text').textContent = personality;
+    streamText($('profile-personality-text'), personality);
     $('profile-personality').classList.remove('hidden');
   } else {
     $('profile-personality').classList.add('hidden');
@@ -3301,10 +3494,7 @@ $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('btn-feedback-back').addEventListener('click', () => showView(homeView()));
 
 $('profile-directors-more').addEventListener('click', () => {
-  const panel = $('profile-directors-panel');
-  const open = panel.classList.contains('hidden');
-  panel.classList.toggle('hidden', !open);
-  panel.classList.toggle('flex', open);
+  const open = $('profile-directors-panel').classList.toggle('open');
   $('profile-directors-more-chevron').style.transform = open ? 'rotate(180deg)' : '';
 });
 $('profile-directors-panel').addEventListener('click', event => {
@@ -3312,9 +3502,24 @@ $('profile-directors-panel').addEventListener('click', event => {
   if (!row) return;
   const films = $(`profile-dir-films-${row.dataset.dirIdx}`);
   if (!films) return;
-  const open = films.classList.toggle('hidden');
+  const open = films.classList.toggle('open');
   const chevron = row.querySelector('[data-dir-chevron]');
-  if (chevron) chevron.style.transform = open ? '' : 'rotate(180deg)';
+  if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
+});
+$('profile-reco-body').addEventListener('click', event => {
+  if (event.target.closest('#profile-reco-again')) {
+    resetRecoPanel();
+    openProfilePanel('watch');
+    return;
+  }
+  if (event.target.closest('#profile-reco-retry')) {
+    const body = $('profile-reco-body');
+    const pool = JSON.parse(body.dataset.pool || '[]');
+    let attempt = parseInt(body.dataset.attempt || '0', 10);
+    if (attempt < pool.length - 1) { body.dataset.attempt = String(attempt + 1); _paintInlineRandom(); }
+    return;
+  }
+  handleRecommendationFeedbackClick(event);
 });
 
 // Profil ana ekranı — "Bu gece" aksiyonları
