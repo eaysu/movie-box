@@ -8,6 +8,26 @@ function posterLink(inner, film) {
     ? `<a href="${href}" target="_blank" rel="noopener" title="${escapeHTML(film.title || '')} — Letterboxd" class="block w-full h-full">${inner}</a>`
     : inner;
 }
+
+// "Konu" — the film's plot summary.
+function overviewBlock(film) {
+  if (!film.overview) return '';
+  return `<div>
+      <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-on-surface-variant/55 mb-1.5">Konu</p>
+      <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(film.overview)}</p>
+    </div>`;
+}
+
+// "Sana neden önerdik?" — the LLM's reasoning for this pick.
+function whyBlock(film) {
+  if (!film.reason) return '';
+  return `<div class="rounded-xl border border-primary-container/25 bg-primary-container/[0.07] p-4">
+      <p class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container mb-1.5">
+        <span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">auto_awesome</span>Sana neden önerdik?
+      </p>
+      <p class="font-body-md text-body-md text-on-surface leading-relaxed">${escapeHTML(film.reason)}</p>
+    </div>`;
+}
 function buildHeroCard(film) {
   const title = escapeHTML(film.title);
   const director = escapeHTML(film.director);
@@ -25,12 +45,6 @@ function buildHeroCard(film) {
           <span class="material-symbols-outlined text-[64px] text-on-surface-variant/20">movie</span>
        </div>`;
 
-  const reason = film.reason
-    ? `<div class="border-l-2 border-primary-container pl-stack-md py-unit bg-surface-variant/20 rounded-r-md">
-          <p class="font-body-lg text-body-lg text-on-surface-variant italic">"${escapeHTML(film.reason)}"</p>
-       </div>`
-    : '';
-
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col md:flex-row gap-0">
       <div class="md:w-[260px] shrink-0 aspect-[2/3] md:aspect-auto md:h-auto overflow-hidden relative bg-surface-container">
@@ -47,7 +61,8 @@ function buildHeroCard(film) {
           ${film.director ? `<div class="font-label-md text-label-md text-tertiary-container mt-unit">${director}</div>` : ''}
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
-        ${reason}
+        ${overviewBlock(film)}
+        ${whyBlock(film)}
       </div>
     </article>`;
 }
@@ -67,8 +82,14 @@ function buildAltCard(film, idx) {
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span>
        </div>`;
+  const shortOverview = film.overview
+    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/60 line-clamp-3 leading-relaxed">${escapeHTML(film.overview)}</p>`
+    : '';
   const shortReason = film.reason
-    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 line-clamp-2 italic">${escapeHTML(film.reason)}</p>`
+    ? `<div class="mt-1 rounded-lg border border-primary-container/20 bg-primary-container/[0.06] p-2.5">
+         <p class="font-label-sm text-[9px] uppercase tracking-[.14em] text-primary-container mb-1">Sana neden önerdik?</p>
+         <p class="font-label-sm text-label-sm text-on-surface-variant leading-relaxed line-clamp-4">${escapeHTML(film.reason)}</p>
+       </div>`
     : '';
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col">
@@ -80,6 +101,7 @@ function buildAltCard(film, idx) {
       <div class="p-stack-sm flex flex-col gap-unit flex-grow">
         <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
         ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
+        ${shortOverview}
         ${shortReason}
       </div>
     </article>`;
@@ -102,10 +124,6 @@ function buildRandomCard(film) {
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[64px] text-on-surface-variant/20">movie</span>
        </div>`;
-
-  const overview = film.overview
-    ? `<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed line-clamp-5">${escapeHTML(film.overview)}</p>`
-    : '';
 
   const rating = film.vote_average && film.vote_average > 0
     ? `<div class="flex items-center gap-1 text-on-surface-variant/60 mt-unit">
@@ -133,7 +151,8 @@ function buildRandomCard(film) {
           ${rating}
         </div>
         ${genres ? `<div class="flex flex-wrap gap-stack-sm">${genres}</div>` : ''}
-        ${overview}
+        ${overviewBlock(film)}
+        ${whyBlock(film)}
       </div>
     </article>`;
 }
