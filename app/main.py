@@ -2080,8 +2080,16 @@ async def _compute_accepted_blend(
             enricher.ensure_details(_detail_sample(watched1, 40)),
             enricher.ensure_details(_detail_sample(watched2, 40)),
         )
-    blend_result = _calculate_blend(watched1, watched2, top_n=20)
-    common_watchlist = _common_watchlist_films(watchlist1, watchlist2)
+    blend_result = _calculate_blend(watched1, watched2, top_n=10)
+    common_watchlist = _common_watchlist_films(watchlist1, watchlist2, limit=5)
+    bridge_films: list = []
+    if not common_watchlist:
+        bridge_films = await _blend_bridge_films(
+            watched1, watched2, watchlist1, watchlist2, enricher=enricher, n=5
+        )
+        if enricher is not None and bridge_films:
+            with contextlib.suppress(Exception):
+                await enricher.ensure_details(bridge_films)
     payload = {
         "username1": first.username,
         "username2": second.username,
@@ -2095,6 +2103,7 @@ async def _compute_accepted_blend(
         "top_director_count2": blend_result["top_director_count2"],
         "films": [film.to_dict() for film in blend_result["films"]],
         "common_watchlist_films": [film.to_dict() for film in common_watchlist],
+        "bridge_films": [film.to_dict() for film in bridge_films],
         "watchlist_public": bool(watchlist1) and bool(watchlist2),
         "watchlist_pending": False,
     }
@@ -2843,6 +2852,75 @@ def _common_watchlist_films(first: list, second: list, limit: int = 3) -> list:
     return common[:limit]
 
 
+async def _blend_bridge_films(
+    watched1: list,
+    watched2: list,
+    watchlist1: list,
+    watchlist2: list,
+    enricher=None,
+    n: int = 5,
+) -> list:
+    """No shared watchlist → surface N films that bridge both tastes.
+
+    Candidates must be unseen by *both* users. The pool is drawn from the two
+    watchlists first; if that is too thin it is widened with a popularity
+    discover pool biased toward the genres both users watch. The pool is then
+    ranked against the combined viewing history so the picks lean toward what
+    each person already likes.
+    """
+    from collections import Counter
+
+    seen_slugs = {f.slug for f in (watched1 + watched2) if f.slug}
+    seen_keys = {
+        (f.title.lower().strip(), f.year)
+        for f in (watched1 + watched2)
+        if f.title
+    }
+
+    def _unseen(film) -> bool:
+        if film.slug and film.slug in seen_slugs:
+            return False
+        if film.title and (film.title.lower().strip(), film.year) in seen_keys:
+            return False
+        return True
+
+    pool: list = []
+    pool_slugs: set = set()
+    pool_keys: set = set()
+
+    def _add(film) -> None:
+        if not _unseen(film):
+            return
+        key = (film.title.lower().strip() if film.title else "", film.year)
+        if (film.slug and film.slug in pool_slugs) or key in pool_keys:
+            return
+        if film.slug:
+            pool_slugs.add(film.slug)
+        pool_keys.add(key)
+        pool.append(film)
+
+    for film in (watchlist1 + watchlist2):
+        _add(film)
+
+    if len(pool) < n and enricher is not None:
+        g1 = Counter(g for f in watched1 for g in (f.genres or []))
+        g2 = Counter(g for f in watched2 for g in (f.genres or []))
+        shared = [g for g, _ in (g1 & g2).most_common(4)] or [
+            g for g, _ in (g1 + g2).most_common(4)
+        ]
+        with contextlib.suppress(Exception):
+            for film in await enricher.discover_pool(genre_names=shared, limit=40):
+                _add(film)
+
+    if not pool:
+        return []
+
+    ranked = rank_watchlist(watched1 + watched2, pool, n=n)
+    for film in ranked:
+        film.reason = ""  # similarity note is internal, not shown for bridge picks
+    return ranked[:n]
+
+
 @app.post("/api/blend")
 async def blend(req: BlendRequest, request: Request):
     """SSE stream: iki kullanıcının film zevkini harmanlayıp uyum skoru hesapla."""
@@ -2937,7 +3015,7 @@ async def blend(req: BlendRequest, request: Request):
 
             # ── Ranking ───────────────────────────────────────────────────────────
             yield _sse({"type": "step", "step": "ranking"})
-            result = _calculate_blend(w1_enriched, w2_enriched, top_n=20)
+            result = _calculate_blend(w1_enriched, w2_enriched, top_n=10)
 
             metrics = {
                 "total_ms": round((time.perf_counter() - t0) * 1000),
@@ -2967,6 +3045,7 @@ async def blend(req: BlendRequest, request: Request):
                 "top_director_count2": result["top_director_count2"],
                 "films": [f.to_dict() for f in result["films"]],
                 "common_watchlist_films": [],
+                "bridge_films": [],
                 "watchlist_public": None,
                 "watchlist_pending": True,
                 "meta": {"metrics": metrics},
@@ -2981,10 +3060,19 @@ async def blend(req: BlendRequest, request: Request):
                 wl1e, wl2e = [], []
             else:
                 (wl1e, _w1), (wl2e, _w2) = h2["result"]
-            common_wl_films = _common_watchlist_films(wl1e, wl2e)
+            common_wl_films = _common_watchlist_films(wl1e, wl2e, limit=5)
+            bridge_wl_films: list = []
+            if not common_wl_films:
+                bridge_wl_films = await _blend_bridge_films(
+                    w1_enriched, w2_enriched, wl1e, wl2e, enricher=enricher, n=5
+                )
+                if enricher is not None and bridge_wl_films:
+                    with contextlib.suppress(Exception):
+                        await enricher.ensure_details(bridge_wl_films)
             yield _sse({
                 "type": "watchlist_result",
                 "common_watchlist_films": [film.to_dict() for film in common_wl_films],
+                "bridge_films": [film.to_dict() for film in bridge_wl_films],
                 "watchlist_public": bool(wl1e) and bool(wl2e),
                 "metrics": {
                     "watchlist_ms": round((time.perf_counter() - t0) * 1000),

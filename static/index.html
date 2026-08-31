@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.5"/>
+<link rel="stylesheet" href="/static/app.css?v=20260902.6"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -269,6 +269,13 @@
                   <button id="btn-logout" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
                 </div>
               </div>
+            </div>
+
+            <div class="mt-2 flex items-center gap-2 justify-center lg:justify-start">
+              <button id="profile-blends" type="button" class="relative inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container/50 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
+                <span class="material-symbols-outlined text-[16px]">grain</span>Blendlerim
+                <span id="profile-blends-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-primary-container text-on-primary-container text-[9px] font-bold items-center justify-center"></span>
+              </button>
             </div>
 
             <button id="profile-invite-friend" type="button" class="mt-4 inline-flex items-center gap-2 rounded-full border border-primary-container/30 bg-primary-container/10 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
@@ -850,8 +857,9 @@
     <section id="br-wishlist-section" class="hidden flex flex-col gap-stack-md">
       <h2 class="font-headline-md text-headline-md text-on-surface flex items-center gap-stack-sm">
         <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">bookmark_add</span>
-        Birlikte İzlemek İstedikleriniz
+        <span id="br-wishlist-title">Birlikte İzlemek İstedikleriniz</span>
       </h2>
+      <p id="br-wishlist-sub" class="hidden font-body-md text-body-md text-on-surface-variant/70 -mt-2"></p>
       <div id="br-wishlist-grid" class="grid grid-cols-3 gap-gutter"></div>
     </section>
 
@@ -944,6 +952,25 @@
   </div>
 </div>
 
+<!-- ═══════════════════════════  VIEW: BLENDLERİM  ═══════════════════════════ -->
+<div id="view-blends" class="hidden flex-grow pt-20">
+  <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
+    <div class="flex items-center justify-between mt-stack-md">
+      <button id="btn-blends-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
+      </button>
+      <button id="btn-blends-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
+    </div>
+    <div>
+      <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Tamamlanmış blendler</span>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Blendlerim</h1>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Blend yaptığın kişiler ve uyum skorların. Bir karta dokun, ortak listelerinizi gör.</p>
+    </div>
+    <div id="blends-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
+    <div id="blends-list" class="grid sm:grid-cols-2 gap-gutter"></div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════  FOOTER  ═══════════════════════════ -->
 <footer id="main-footer" class="hidden w-full py-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
   <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto">
@@ -956,6 +983,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260902.5"></script>
+<script type="module" src="/static/js/app.js?v=20260902.6"></script>
 </body>
 </html>

@@ -549,7 +549,7 @@ function setAuthHeaderLinks(visible) {
 }
 
 function showView(name) {
-  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
@@ -1138,6 +1138,70 @@ function emptyInbox(text) {
   return `<div class="rounded-xl border border-dashed border-outline-variant/30 p-5 text-center text-on-surface-variant text-sm">${escapeHTML(text)}</div>`;
 }
 
+function blendMyCard(item) {
+  const peer = item.peer || {};
+  const result = item.blend_result;
+  const score = Number(result?.score);
+  const hasResult = Number.isFinite(score) && !!result?.result;
+  const name = escapeHTML(peer.display_name || peer.username || 'Bilinmeyen');
+  const username = escapeHTML(peer.username || '');
+  const poster = safeImageURL(peer.avatar_url);
+  const avatar = poster
+    ? `<img src="${poster}" alt="${name}" class="w-14 h-14 rounded-full object-cover border border-outline-variant/30"/>`
+    : `<div class="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center text-primary-container text-xl font-bold">${name[0] || '?'}</div>`;
+  const dateValue = result?.created_at || item.decided_at || item.created_at;
+  const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
+  const scoreBlock = hasResult
+    ? `<div class="text-right leading-none shrink-0"><div class="text-3xl font-bold text-primary-container">${score}</div><div class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60 mt-1">% uyum</div></div>`
+    : `<span class="shrink-0 font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/50">hazır değil</span>`;
+  const head = `<div class="flex items-center gap-3">
+      ${avatar}
+      <div class="min-w-0 flex-grow">
+        <strong class="text-on-surface block truncate">${name}</strong>
+        <span class="text-on-surface-variant text-sm block truncate">@${username}${dateLabel ? ` · ${escapeHTML(dateLabel)}` : ''}</span>
+      </div>
+      ${scoreBlock}
+    </div>`;
+  if (hasResult) {
+    return `<article role="button" tabindex="0" data-blend-action="view" data-request-id="${escapeHTML(item.id)}"
+      class="glass-panel rounded-2xl p-5 flex flex-col cursor-pointer hover:border-primary-container/40 transition-colors">
+      ${head}
+      <span class="mt-4 inline-flex items-center gap-1 font-label-sm text-label-sm uppercase tracking-wide text-primary-container">
+        <span class="material-symbols-outlined text-[16px]">list_alt</span>Ortak listeleri aç
+      </span>
+    </article>`;
+  }
+  return `<article class="glass-panel rounded-2xl p-5 flex flex-col">
+    ${head}
+    <button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="mt-4 w-full px-3 py-2.5 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-sm uppercase tracking-wide">Sonucu hazırla</button>
+  </article>`;
+}
+
+function renderMyBlends(data) {
+  const done = (data.history || []).filter(item => item.status === 'accepted');
+  $('blends-list').innerHTML = done.length
+    ? done.map(blendMyCard).join('')
+    : emptyInbox('Henüz tamamlanmış bir Blend yok. Bir arkadaşına Blend isteği gönder.');
+  const ready = done.filter(item => !!item.blend_result?.result).length;
+  $('profile-blends-badge').textContent = ready > 9 ? '9+' : String(ready);
+  $('profile-blends-badge').classList.toggle('hidden', ready === 0);
+  $('profile-blends-badge').classList.toggle('flex', ready > 0);
+}
+
+async function loadMyBlends(show = true) {
+  if (!_account) return;
+  if (show) showView('blends');
+  $('blends-error').classList.add('hidden');
+  try {
+    renderBlendInbox(await apiJSON('/api/blends'));
+  } catch (error) {
+    if (show) {
+      $('blends-error').textContent = error.message || 'Blendler yüklenemedi.';
+      $('blends-error').classList.remove('hidden');
+    }
+  }
+}
+
 function blockedUserCard(item) {
   const user = item.user || {};
   const username = escapeHTML(user.username || '');
@@ -1166,6 +1230,7 @@ function renderBlendInbox(data) {
   $('profile-inbox-badge').textContent = count > 9 ? '9+' : String(count);
   $('profile-inbox-badge').classList.toggle('hidden', count === 0);
   $('profile-inbox-badge').classList.toggle('flex', count > 0);
+  renderMyBlends(data);
 }
 
 async function loadBlendInbox(show = true) {
@@ -1852,7 +1917,7 @@ async function renderBlendResult(data) {
   const { username1, username2, score, watched_count1, watched_count2,
           common_count, top_director,
           top_director_count1, top_director_count2, films,
-          common_watchlist_films = [], watchlist_public = false, watchlist_pending = false,
+          common_watchlist_films = [], bridge_films = [], watchlist_public = false, watchlist_pending = false,
           confidence = { level: 'low', score: 0, sample_size: 0, rating_pairs: 0 } } = data;
 
   const info = getScoreInfo(score);
@@ -1900,7 +1965,7 @@ async function renderBlendResult(data) {
     $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.add('hidden');
   } else {
-    renderBlendWatchlist({ common_watchlist_films, watchlist_public });
+    renderBlendWatchlist({ common_watchlist_films, bridge_films, watchlist_public });
   }
 
   showView('blend-result');
@@ -1931,13 +1996,26 @@ async function renderBlendResult(data) {
   $('br-stats').classList.add('blend-fade-up');
 }
 
-function renderBlendWatchlist({ common_watchlist_films = [], watchlist_public = false }) {
+function renderBlendWatchlist({ common_watchlist_films = [], bridge_films = [], watchlist_public = false }) {
   $('br-wishlist-loading').classList.add('hidden');
-  if (common_watchlist_films && common_watchlist_films.length > 0) {
-    $('br-wishlist-grid').innerHTML = common_watchlist_films.map(buildBlendFilmCard).join('');
+  const title = $('br-wishlist-title');
+  const sub = $('br-wishlist-sub');
+  const show = (films) => {
+    $('br-wishlist-grid').innerHTML = films.map(buildBlendFilmCard).join('');
     $('br-wishlist-section').classList.remove('hidden');
     $('br-wishlist-section').classList.add('flex');
     $('br-no-wishlist').classList.add('hidden');
+  };
+  if (common_watchlist_films && common_watchlist_films.length > 0) {
+    title.textContent = 'Birlikte İzlemek İstedikleriniz';
+    sub.classList.add('hidden');
+    sub.textContent = '';
+    show(common_watchlist_films);
+  } else if (bridge_films && bridge_films.length > 0) {
+    title.textContent = `Sizi Birleştirecek ${bridge_films.length} Film`;
+    sub.textContent = 'Watchlist’lerinizde ortak film çıkmadı — ikinizin zevkini buluşturacak, henüz kimsenin izlemediği filmler.';
+    sub.classList.remove('hidden');
+    show(bridge_films);
   } else {
     $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.remove('hidden');
@@ -2591,6 +2669,7 @@ document.addEventListener('keydown', event => {
   }
 });
 $('profile-inbox').addEventListener('click', () => loadBlendInbox(true));
+$('profile-blends').addEventListener('click', () => loadMyBlends(true));
 $('profile-settings-btn').addEventListener('click', event => {
   event.stopPropagation();
   toggleProfileMenu();
@@ -2609,6 +2688,8 @@ $('btn-profile-sync').addEventListener('click', () => syncProfile(false));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
+$('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
+$('btn-blends-back').addEventListener('click', () => showView(homeView()));
 
 $('profile-directors-more').addEventListener('click', () => {
   const open = $('profile-directors-panel').classList.toggle('open');
@@ -2708,6 +2789,13 @@ $('profile-blend-suggestions').addEventListener('click', event => {
   $('profile-blend-suggestions').classList.add('hidden');
 });
 $('view-inbox').addEventListener('click', handleBlendInboxAction);
+$('view-blends').addEventListener('click', handleBlendInboxAction);
+$('view-blends').addEventListener('keydown', event => {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-blend-action]')) {
+    event.preventDefault();
+    handleBlendInboxAction(event);
+  }
+});
 $('btn-recommend').addEventListener('click', recommend);
 $('btn-delete-data').addEventListener('click', deleteMyData);
 $('username-input').addEventListener('keydown', e => { if (e.key === 'Enter') recommend(); });
