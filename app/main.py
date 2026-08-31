@@ -1739,58 +1739,6 @@ class _SyncPipeline:
             )
         return out
 
-    async def prepare_onboarding(self, account: Account) -> None:
-        """Bound the metadata work needed before the mandatory reveal slides.
-
-        The complete Letterboxd history is already persisted at this point. A
-        rating-first/recent sample provides the director and poster signals used
-        by onboarding; exhaustive plot/keyword repair continues afterwards.
-        """
-        service = _auth_service()
-        rows = await asyncio.to_thread(service.get_watched_films, account.id)
-        films = [
-            EnrichedFilm(
-                title=row.get("title") or "",
-                year=row.get("release_year"),
-                slug=row.get("film_slug") or "",
-                tmdb_id=row.get("tmdb_id"),
-                overview=row.get("overview") or "",
-                genres=row.get("genres") or [],
-                director=row.get("director") or "",
-                keywords=row.get("keywords") or [],
-                vote_average=float(row.get("vote_average") or 0),
-                poster_url=row.get("poster_url") or None,
-                matched=bool(row.get("tmdb_id")),
-                details_loaded=bool(row.get("details_loaded")),
-                user_rating=row.get("user_rating"),
-            )
-            for row in rows
-            if row.get("film_slug")
-        ]
-        sample = [film for film in _detail_sample(films, 60) if not film.details_loaded]
-        if not sample:
-            return
-        detailed = await self.enrich_details(
-            [
-                {
-                    "slug": film.slug,
-                    "title": film.title,
-                    "release_year": film.year,
-                    "poster_resolver_url": next(
-                        (
-                            row.get("poster_resolver_url") or ""
-                            for row in rows
-                            if row.get("film_slug") == film.slug
-                        ),
-                        "",
-                    ),
-                }
-                for film in sample
-            ]
-        )
-        if detailed:
-            await asyncio.to_thread(service.save_watched_films, account.id, detailed)
-
     async def enrich_search(self, films: list[dict]) -> list[dict]:
         enricher = self._enricher()
         if enricher is None:
@@ -2223,6 +2171,16 @@ async def create_blend_invite(req: CreateBlendRequest, request: Request) -> dict
 async def list_my_blends(request: Request) -> dict:
     account = await _require_account(request)
     return await asyncio.to_thread(_auth_service().list_blends, account)
+
+
+@app.get("/api/blends/pending-count")
+async def pending_blend_count(request: Request) -> dict:
+    """Small polling endpoint for the numbered inbox notification badge."""
+    account = await _require_account(request)
+    count = await asyncio.to_thread(
+        _auth_service().count_pending_blend_requests, account
+    )
+    return {"count": count}
 
 
 @app.delete("/api/blends/requests/{request_id}")

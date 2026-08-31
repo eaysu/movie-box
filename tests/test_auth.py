@@ -236,6 +236,26 @@ def test_authenticated_user_can_create_consent_based_blend_request():
     }
 
 
+def test_pending_blend_count_returns_numbered_inbox_badge_value():
+    account = _account()
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        count_pending_blend_requests=lambda _account: 12,
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.get(
+            "/api/blends/pending-count",
+            headers={"Cookie": "mb_access=access-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"count": 12}
+
+
 def test_rejecting_blend_does_not_run_comparison_engine():
     account = _account()
     fake_service = SimpleNamespace(
@@ -374,8 +394,8 @@ def test_onboarding_completion_requires_full_crawl_milestone():
     fake_service = SimpleNamespace(
         current_account=lambda _token: account,
         get_sync_job=lambda _uid: {
-            "state": "running", "phase": "diary",
-            "films_processed": 100, "films_total": 0,
+            "state": "running", "phase": "enrich", "scope": "full",
+            "films_processed": 250, "films_total": 250,
         },
         complete_onboarding=lambda value: completed.append(value.id),
     )
@@ -401,7 +421,7 @@ def test_onboarding_completion_is_persisted_after_reveal_is_ready():
     fake_service = SimpleNamespace(
         current_account=lambda _token: account,
         get_sync_job=lambda _uid: {
-            "state": "running", "phase": "enrich",
+            "state": "done", "phase": "done", "scope": "full",
             "films_processed": 250, "films_total": 250,
         },
         complete_onboarding=lambda _account: "2026-08-31T12:00:00+00:00",

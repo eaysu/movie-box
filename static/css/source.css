@@ -307,6 +307,33 @@
   }
   .profile-rise { opacity: 0; animation: profile-rise .6s cubic-bezier(.22,1,.36,1) forwards; }
 
+  /* Profile carousels — the next card enters from the direction of travel. */
+  @keyframes carousel-from-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes carousel-from-left {
+    from { opacity: 0; transform: translateX(-24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .carousel-from-right { animation: carousel-from-right .42s cubic-bezier(.22,1,.36,1) both; }
+  .carousel-from-left  { animation: carousel-from-left  .42s cubic-bezier(.22,1,.36,1) both; }
+
+  @keyframes inbox-badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,128,0,.15), 0 0 12px rgba(255,128,0,.45); }
+    50% { box-shadow: 0 0 0 5px rgba(255,128,0,0), 0 0 20px rgba(255,128,0,.75); }
+  }
+  .inbox-badge-pulse { animation: inbox-badge-pulse 1.8s ease-in-out infinite; }
+
+  .profile-carousel {
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
+  }
+  .profile-carousel img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+
   /* Accordion — animates to the real content height */
   .collapse-y { display: grid; grid-template-rows: 0fr; opacity: 0;
     transition: grid-template-rows .34s cubic-bezier(.22,1,.36,1), opacity .28s ease, margin .34s ease; }
@@ -332,6 +359,8 @@
     .profile-rise { opacity: 1; animation: none; }
     .collapse-y { transition: none; }
     .line-rise { opacity: 1; animation: none; }
+    .carousel-from-right, .carousel-from-left { animation: none; }
+    .inbox-badge-pulse { animation: none; }
     #profile-sweep-bar.is-indeterminate { animation: none; transform: none; }
     .stream-word { opacity: 1; transition: none; }
     .ob-in { animation: none; }

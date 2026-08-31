@@ -100,6 +100,30 @@ class TasteProfileTests(unittest.TestCase):
             profile.top_directors[:3], ["Most Watched", "Seven High", "Seven Low"]
         )
 
+    def test_full_history_count_crowns_nolan_over_three_jackson_films(self):
+        watched = (
+            [
+                EnrichedFilm(
+                    title=f"Nolan {index}", slug=f"nolan-{index}",
+                    director="Christopher Nolan",
+                )
+                for index in range(11)
+            ]
+            + [
+                EnrichedFilm(
+                    title=f"Jackson {index}", slug=f"jackson-{index}",
+                    director="Peter Jackson",
+                )
+                for index in range(3)
+            ]
+        )
+
+        profile = build_taste_profile(watched)
+
+        self.assertEqual(profile.favorite_director, "Christopher Nolan")
+        self.assertEqual(profile.top_directors[:2], ["Christopher Nolan", "Peter Jackson"])
+        self.assertEqual(profile.top_directors_detail[0]["count"], 11)
+
     def test_top_directors_returns_up_to_ten_ranked(self):
         watched = [
             EnrichedFilm(title=f"f{i}", slug=f"f{i}", director=f"D{i:02d}", user_rating=4.0)

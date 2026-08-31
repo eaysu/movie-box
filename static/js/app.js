@@ -667,56 +667,18 @@ function renderPersistedProfile(data) {
     $('profile-genres').innerHTML = genres.length
       ? genres.slice(0, 4).map(genre => `<span class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-primary-container/20 bg-primary-container/5 text-on-surface font-label-md text-label-md"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>${escapeHTML(genre)}</span>`).join('')
       : '<span class="text-on-surface-variant/60 text-sm">Tür sinyali henüz yeterli değil.</span>';
-    // ── Auteur radar: #1 director + expandable top-10 with all their films ──
+    // ── Auteur radar: top-10 director carousel ──────────────────────────
     const dirDetail = (taste.top_directors_detail || []).filter(d => d && d.name).slice(0, 10);
     const dirFallback = (taste.top_directors?.length ? taste.top_directors : [taste.favorite_director])
       .filter(Boolean).slice(0, 10).map(name => ({ name, films: [], count: 0 }));
     const dirRows = dirDetail.length ? dirDetail : dirFallback;
 
     if (dirRows.length) {
-      const top = dirRows[0];
-      const meta0 = top.count
-        ? `${top.count} film${top.avg_rating ? ` · senin ortalaman ${Number(top.avg_rating).toFixed(1)}★` : ''}`
-        : 'Puan ve izleme ağırlıklı';
-      $('profile-directors').innerHTML = `
-        <div class="relative overflow-hidden rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
-          <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[120px] leading-none select-none" style="color:rgba(0,224,84,0.09)">01</span>
-          <div class="relative flex items-center gap-4">
-            ${directorAvatar(top, 'w-14 h-14 text-[18px]')}
-            <div class="min-w-0">
-              <span class="block font-label-sm text-label-sm uppercase tracking-wide text-primary-container">Favori yönetmen</span>
-              <strong class="block font-headline-md text-[20px] md:text-[22px] text-on-surface truncate">${escapeHTML(top.name)}</strong>
-              <span class="font-label-sm text-label-sm text-on-surface-variant/60">${escapeHTML(meta0)}</span>
-            </div>
-          </div>
-          ${(top.films || []).length ? directorFilmGrid(top.films, 'profile-dir0-films', false, Boolean(top.has_more)) : ''}
-          ${top.has_more ? '<button type="button" data-dir-load-rank="1" data-dir-grid="profile-dir0-films" class="mt-3 w-full rounded-xl border border-primary-container/25 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/10 transition-colors">Tüm filmlerini göster</button>' : ''}
-        </div>`;
-
-      $('profile-directors-more').classList.toggle('hidden', dirRows.length <= 1);
-      $('profile-directors-more-label').textContent = `İlk ${dirRows.length} yönetmen sıralaması`;
-      $('profile-directors-list').innerHTML = dirRows.map((d, i) => {
-        const films = d.films || [];
-        const meta = d.count
-          ? `${d.count} film${d.avg_rating ? ` · ${Number(d.avg_rating).toFixed(1)}★` : ''}`
-          : '';
-        return `
-          <div class="rounded-xl border border-outline-variant/20 bg-surface-container/40 overflow-hidden">
-            <button type="button" data-dir-idx="${i}" class="w-full flex items-center gap-3 p-3.5 text-left hover:bg-surface-container/70 transition-colors">
-              <span class="font-display-lg text-[15px] leading-none text-on-surface-variant/70 w-5 shrink-0">${String(i + 1).padStart(2, '0')}</span>
-              ${directorAvatar(d, 'w-9 h-9 text-[13px]')}
-              <strong class="font-headline-md text-[15px] text-on-surface truncate flex-grow">${escapeHTML(d.name)}</strong>
-              ${meta ? `<span class="font-label-sm text-label-sm text-on-surface-variant/50 shrink-0">${escapeHTML(meta)}</span>` : ''}
-              ${films.length ? '<span class="material-symbols-outlined text-on-surface-variant/40 text-[18px] shrink-0 transition-transform" data-dir-chevron>expand_more</span>' : ''}
-            </button>
-            ${films.length ? `<div class="px-3.5 pb-3.5">${directorFilmGrid(films, `profile-dir-films-${i}`, true, Boolean(d.has_more))}</div>` : ''}
-          </div>`;
-      }).join('');
+      renderDirectorDeck(dirRows);
     } else {
+      unregisterProfileCarousel('profile-directors');
+      _directorDeck = null;
       $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için daha fazla metadata gerekiyor.</div>';
-      $('profile-directors-more').classList.add('hidden');
-      $('profile-directors-panel').classList.remove('open');
-      $('profile-directors-list').innerHTML = '';
     }
 
     const analysisLines = (taste.analysis || []).filter(line => typeof line === 'string' && line.trim());
@@ -736,10 +698,9 @@ function renderPersistedProfile(data) {
       $('profile-last-sync').innerHTML = `<span class="material-symbols-outlined text-[16px]">schedule</span>Son güncelleme · ${escapeHTML(new Date(syncedAt).toLocaleString('tr-TR'))}`;
     }
   } else {
+    unregisterProfileCarousel('profile-directors');
+    _directorDeck = null;
     $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
-    $('profile-directors-more').classList.add('hidden');
-    $('profile-directors-panel').classList.remove('open');
-    $('profile-directors-list').innerHTML = '';
     $('profile-analysis').classList.add('hidden');
   }
   const deferAuxiliary = !$('view-onboarding').classList.contains('hidden');
@@ -795,7 +756,207 @@ function renderPersistedProfile(data) {
   applySyncJob(data.sync_job);
 }
 
-// ── "Başucu filmleri" & "Son filmler" — 1 odak film + açılır liste ───────
+// ── Profil carouselleri — görünür ve kullanıcı boşta iken 10 sn'de ilerler ─
+const PROFILE_CAROUSEL_MS = 10000;
+const _profileCarouselTimers = new Map();
+const _profileCarouselVisible = new Map();
+const _profileCarouselPaused = new Set();
+const _profileCarouselAdvance = new Map();
+let _profileCarouselObserver = null;
+
+function _clearProfileCarouselTimer(boxId) {
+  const timer = _profileCarouselTimers.get(boxId);
+  if (timer) clearTimeout(timer);
+  _profileCarouselTimers.delete(boxId);
+}
+
+function _scheduleProfileCarousel(boxId) {
+  _clearProfileCarouselTimer(boxId);
+  const advance = _profileCarouselAdvance.get(boxId);
+  if (!advance || document.hidden || _profileCarouselPaused.has(boxId)
+      || _profileCarouselVisible.get(boxId) === false) return;
+  _profileCarouselTimers.set(boxId, setTimeout(() => {
+    _profileCarouselTimers.delete(boxId);
+    advance();
+  }, PROFILE_CAROUSEL_MS));
+}
+
+function registerProfileCarousel(boxId, advance) {
+  _profileCarouselAdvance.set(boxId, advance);
+  if (!_profileCarouselVisible.has(boxId)) _profileCarouselVisible.set(boxId, true);
+  const box = $(boxId);
+  if ('IntersectionObserver' in window && box) {
+    if (!_profileCarouselObserver) {
+      _profileCarouselObserver = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const id = entry.target.id;
+          _profileCarouselVisible.set(id, entry.isIntersecting && entry.intersectionRatio >= 0.3);
+          if (_profileCarouselVisible.get(id)) _scheduleProfileCarousel(id);
+          else _clearProfileCarouselTimer(id);
+        });
+      }, { threshold: [0, 0.3] });
+    }
+    _profileCarouselObserver.observe(box);
+  }
+  _scheduleProfileCarousel(boxId);
+}
+
+function unregisterProfileCarousel(boxId) {
+  _clearProfileCarouselTimer(boxId);
+  _profileCarouselAdvance.delete(boxId);
+  _profileCarouselVisible.delete(boxId);
+  _profileCarouselPaused.delete(boxId);
+  const box = $(boxId);
+  if (_profileCarouselObserver && box) _profileCarouselObserver.unobserve(box);
+}
+
+function _pauseProfileCarousel(boxId) {
+  _profileCarouselPaused.add(boxId);
+  _clearProfileCarouselTimer(boxId);
+}
+
+function _resumeProfileCarousel(boxId) {
+  _profileCarouselPaused.delete(boxId);
+  _scheduleProfileCarousel(boxId);
+}
+
+function attachProfileCarousel(box, navigate) {
+  let x0 = null;
+  let y0 = null;
+  let horizontal = false;
+
+  const resetDragFrame = () => {
+    const frame = box.querySelector('[data-carousel-frame]');
+    if (!frame) return;
+    frame.style.transition = 'transform .2s ease, opacity .2s ease';
+    frame.style.transform = 'translateX(0)';
+    frame.style.opacity = '1';
+    setTimeout(() => {
+      if (!frame.isConnected) return;
+      frame.style.transition = '';
+      frame.style.transform = '';
+      frame.style.opacity = '';
+    }, 220);
+  };
+
+  box.addEventListener('mouseenter', () => _pauseProfileCarousel(box.id));
+  box.addEventListener('mouseleave', () => _resumeProfileCarousel(box.id));
+  box.addEventListener('focusin', () => _pauseProfileCarousel(box.id));
+  box.addEventListener('focusout', () => setTimeout(() => {
+    if (!box.contains(document.activeElement)) _resumeProfileCarousel(box.id);
+  }, 0));
+  box.addEventListener('touchstart', event => {
+    x0 = event.touches[0].clientX;
+    y0 = event.touches[0].clientY;
+    horizontal = false;
+    _pauseProfileCarousel(box.id);
+  }, { passive: true });
+  box.addEventListener('touchmove', event => {
+    if (x0 == null || y0 == null) return;
+    const dx = event.touches[0].clientX - x0;
+    const dy = event.touches[0].clientY - y0;
+    if (!horizontal && Math.abs(dx) > Math.abs(dy) + 6) horizontal = true;
+    if (!horizontal) return;
+    const frame = box.querySelector('[data-carousel-frame]');
+    if (!frame) return;
+    const drag = Math.max(-72, Math.min(72, dx * 0.55));
+    frame.style.transition = 'none';
+    frame.style.transform = `translateX(${drag}px)`;
+    frame.style.opacity = String(Math.max(0.72, 1 - Math.abs(drag) / 260));
+  }, { passive: true });
+  box.addEventListener('touchend', event => {
+    let navigated = false;
+    if (x0 != null && horizontal) {
+      const dx = event.changedTouches[0].clientX - x0;
+      if (Math.abs(dx) > 45) {
+        navigate(dx < 0 ? 1 : -1);
+        navigated = true;
+      }
+    }
+    if (!navigated) resetDragFrame();
+    x0 = null;
+    y0 = null;
+    horizontal = false;
+    _resumeProfileCarousel(box.id);
+  }, { passive: true });
+  box.addEventListener('touchcancel', () => {
+    resetDragFrame();
+    x0 = null;
+    y0 = null;
+    horizontal = false;
+    _resumeProfileCarousel(box.id);
+  }, { passive: true });
+}
+
+document.addEventListener('visibilitychange', () => {
+  _profileCarouselAdvance.forEach((_advance, id) => {
+    if (document.hidden) _clearProfileCarouselTimer(id);
+    else _scheduleProfileCarousel(id);
+  });
+});
+
+// ── İlk 10 yönetmen ───────────────────────────────────────────────────────
+let _directorDeck = null;
+
+function renderDirectorDeck(directors) {
+  const rows = Array.isArray(directors) ? directors.slice(0, 10) : [];
+  if (!rows.length) {
+    _directorDeck = null;
+    unregisterProfileCarousel('profile-directors');
+    return;
+  }
+  const currentName = _directorDeck?.directors?.[_directorDeck.index]?.name;
+  const preserved = rows.findIndex(d => d.name === currentName);
+  _directorDeck = { directors: rows, index: preserved >= 0 ? preserved : 0 };
+  _paintDirectorDeck(0);
+}
+
+function _paintDirectorDeck(direction = 0) {
+  if (!_directorDeck) return;
+  const { directors, index } = _directorDeck;
+  const director = directors[index];
+  const rank = index + 1;
+  const meta = director.count
+    ? `${director.count} film${director.avg_rating ? ` · senin ortalaman ${Number(director.avg_rating).toFixed(1)}★` : ''}`
+    : 'İzleme sıklığı ve puanlarına göre';
+  const gridId = `profile-dir-hero-films-${index}`;
+  const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
+  $('profile-directors').innerHTML = `
+    <div data-carousel-frame class="${motion} flex-grow flex flex-col">
+      <div class="relative overflow-hidden rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
+        <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[120px] leading-none select-none" style="color:rgba(0,224,84,0.09)">${String(rank).padStart(2, '0')}</span>
+        <div class="relative flex items-center gap-4">
+          ${directorAvatar(director, 'w-14 h-14 text-[18px]')}
+          <div class="min-w-0">
+            <span class="block font-label-sm text-label-sm uppercase tracking-wide text-primary-container">${rank}. favori yönetmen</span>
+            <strong class="block font-headline-md text-[20px] md:text-[22px] text-on-surface truncate">${escapeHTML(director.name)}</strong>
+            <span class="font-label-sm text-label-sm text-on-surface-variant/60">${escapeHTML(meta)}</span>
+          </div>
+        </div>
+        ${(director.films || []).length ? directorFilmGrid(director.films, gridId, false, Boolean(director.has_more)) : ''}
+        ${director.has_more ? `<button type="button" data-dir-load-rank="${rank}" data-dir-grid="${gridId}" class="mt-3 w-full rounded-xl border border-primary-container/25 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/10 transition-colors">Tüm filmlerini göster</button>` : ''}
+      </div>
+      <div class="mt-auto pt-4 flex items-center justify-between gap-3">
+        <button type="button" data-director-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki yönetmen"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+        <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${rank} / ${directors.length}</span>
+        <button type="button" data-director-nav="1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki yönetmen"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+      </div>
+    </div>`;
+  if (directors.length > 1) {
+    registerProfileCarousel('profile-directors', () => _directorNav(1));
+  } else {
+    unregisterProfileCarousel('profile-directors');
+  }
+}
+
+function _directorNav(delta) {
+  if (!_directorDeck || _directorDeck.directors.length < 2) return;
+  const length = _directorDeck.directors.length;
+  _directorDeck.index = (_directorDeck.index + delta + length) % length;
+  _paintDirectorDeck(delta);
+}
+
+// ── "Başucu filmleri" & "Son filmler" — tek odak film ──────────────────
 let _recentFilms = [];
 let _recentLoaded = false;
 let _topFilms = [];
@@ -834,34 +995,45 @@ function renderFilmDeck(boxId, list, emptyText) {
   if (!films.length) {
     $(boxId).innerHTML = `<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">${emptyText}</p>`;
     _filmDecks[boxId] = null;
+    unregisterProfileCarousel(boxId);
     return;
   }
-  _filmDecks[boxId] = { films, index: 0 };
-  _paintFilmDeck(boxId);
+  const previous = _filmDecks[boxId];
+  const currentSlug = previous?.films?.[previous.index]?.slug;
+  const preserved = films.findIndex(film => film.slug === currentSlug);
+  _filmDecks[boxId] = { films, index: preserved >= 0 ? preserved : 0 };
+  _paintFilmDeck(boxId, 0);
 }
 
-function _paintFilmDeck(boxId) {
+function _paintFilmDeck(boxId, direction = 0) {
   const deck = _filmDecks[boxId];
   if (!deck) return;
   const { films, index } = deck;
+  const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
   $(boxId).innerHTML = `
-    <div class="flex-grow" data-deck-body>${_filmHero(films[index])}</div>
-    <div class="mt-auto pt-4 flex items-center justify-between gap-3">
-      <button type="button" data-deck-nav="-1" ${index === 0 ? 'disabled' : ''} class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
-      <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
-      <button type="button" data-deck-nav="1" ${index === films.length - 1 ? 'disabled' : ''} class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+    <div data-carousel-frame class="${motion} flex-grow flex flex-col">
+      <div class="flex-grow" data-deck-body>${_filmHero(films[index])}</div>
+      <div class="mt-auto pt-4 flex items-center justify-between gap-3">
+        <button type="button" data-deck-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki film"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+        <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
+        <button type="button" data-deck-nav="1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki film"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+      </div>
     </div>`;
   const f = films[index];
   if (!f.overview && !f._noOverview) _loadDeckOverview(boxId, index);
+  if (films.length > 1) {
+    registerProfileCarousel(boxId, () => _deckNav(boxId, 1));
+  } else {
+    unregisterProfileCarousel(boxId);
+  }
 }
 
 function _deckNav(boxId, delta) {
   const deck = _filmDecks[boxId];
-  if (!deck) return;
-  const next = Math.max(0, Math.min(deck.index + delta, deck.films.length - 1));
-  if (next === deck.index) return;
-  deck.index = next;
-  _paintFilmDeck(boxId);
+  if (!deck || deck.films.length < 2) return;
+  const length = deck.films.length;
+  deck.index = (deck.index + delta + length) % length;
+  _paintFilmDeck(boxId, delta);
 }
 
 async function _loadDeckOverview(boxId, index) {
@@ -882,17 +1054,6 @@ async function _loadDeckOverview(boxId, index) {
 function handleFilmDeck(event) {
   const nav = event.target.closest('[data-deck-nav]');
   if (nav) _deckNav(event.currentTarget.id, Number(nav.dataset.deckNav));
-}
-
-function attachDeckSwipe(box) {
-  let x0 = null;
-  box.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
-  box.addEventListener('touchend', e => {
-    if (x0 == null) return;
-    const dx = e.changedTouches[0].clientX - x0;
-    x0 = null;
-    if (Math.abs(dx) > 45) _deckNav(box.id, dx < 0 ? 1 : -1);
-  }, { passive: true });
 }
 
 function renderTopFilms(list) {
@@ -1081,6 +1242,46 @@ function stopSweepPoll() {
 }
 
 let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
+const BLEND_BADGE_POLL_MS = 20000;
+let _blendBadgePollTimer = null;
+
+function renderBlendBadge(rawCount) {
+  const count = Math.max(0, Number(rawCount) || 0);
+  const badge = $('profile-inbox-badge');
+  const button = $('profile-inbox');
+  badge.textContent = count > 9 ? '9+' : String(count);
+  badge.classList.toggle('hidden', count === 0);
+  badge.classList.toggle('flex', count > 0);
+  badge.classList.toggle('inbox-badge-pulse', count > 0);
+  button.classList.toggle('border-secondary-container/60', count > 0);
+  button.classList.toggle('text-secondary-container', count > 0);
+  button.setAttribute(
+    'aria-label',
+    count ? `Gelen kutusu, ${count} bekleyen Blend isteği` : 'Gelen kutusu',
+  );
+}
+
+async function refreshBlendBadge() {
+  if (!_account || document.hidden) return;
+  try {
+    const data = await apiJSON('/api/blends/pending-count');
+    renderBlendBadge(data.count);
+  } catch (_) { /* mevcut sayıyı koru; sonraki poll tekrar dener */ }
+}
+
+function startBlendBadgePolling() {
+  if (_blendBadgePollTimer) return;
+  _blendBadgePollTimer = setInterval(refreshBlendBadge, BLEND_BADGE_POLL_MS);
+}
+
+function stopBlendBadgePolling() {
+  if (_blendBadgePollTimer) clearInterval(_blendBadgePollTimer);
+  _blendBadgePollTimer = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _account) refreshBlendBadge();
+});
 
 function peerAvatar(peer) {
   const poster = safeImageURL(peer?.avatar_url);
@@ -1227,10 +1428,7 @@ function renderBlendInbox(data) {
   $('inbox-blocked').innerHTML = data.blocked?.length
     ? data.blocked.map(blockedUserCard).join('')
     : emptyInbox('Engellediğin kullanıcı yok.');
-  const count = data.incoming?.length || 0;
-  $('profile-inbox-badge').textContent = count > 9 ? '9+' : String(count);
-  $('profile-inbox-badge').classList.toggle('hidden', count === 0);
-  $('profile-inbox-badge').classList.toggle('flex', count > 0);
+  renderBlendBadge(data.incoming?.length || 0);
   renderMyBlends(data);
 }
 
@@ -1401,6 +1599,7 @@ function _onboardKey(account) {
 function enterApp(account, opts = {}) {
   applyAccount(account);
   loadBlendInbox(false);
+  startBlendBadgePolling();
   // Onboarding always plays right after a fresh registration. Otherwise it
   // plays only while the first sync is still pending and it hasn't already
   // been shown for this account in this tab.
@@ -1630,8 +1829,8 @@ function _obRenderOutro(full) {
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
     <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevk profilin hazır</h2>
     <p class="mt-3 font-body-md text-body-md text-on-surface-variant/80">${full
-      ? 'Tüm izleme geçmişin tarandı. İçeri girip bu geceye bir film seçelim.'
-      : 'Analizin derinleşmeye devam ediyor, birazdan profilinde güncellenecek. Sen içeri geçebilirsin.'}</p>`);
+      ? 'Tüm izleme geçmişin ve yönetmen verilerin analiz edildi. İçeri girip bu geceye bir film seçelim.'
+      : 'Tam analiz doğrulanıyor; tamamlanmadan profile geçilmeyecek.'}</p>`);
 }
 
 // Tarama sonrası sunum: slaytları sırayla gösterir, OB_SLIDE_MS'de bir
@@ -1659,8 +1858,8 @@ function _obRevealNav(delta) {
   if (_obReveal) _obShowRevealSlide(_obReveal.index + delta);
 }
 
-// Tüm Letterboxd sayfaları taranıp onboarding snapshot'ı commit edilene kadar
-// bekler. Ağır katalog enrichment'i bu milestone'dan sonra arka planda sürer.
+// Tüm Letterboxd sayfaları, tüm film metadata pass'i ve final zevk snapshot'ı
+// tamamlanana kadar bekler. Ham crawl'un bitmesi tek başına yeterli değildir.
 function _obAwaitFullSweep(token, provisional) {
   return new Promise(resolve => {
     const job0 = provisional && provisional.sync_job;
@@ -1706,7 +1905,7 @@ async function startOnboarding() {
   $('ob-prev').classList.add('hidden');
   $('ob-next').classList.add('hidden');
   $('ob-skip-label').textContent = 'Uygulamaya geç';
-  $('ob-bg-note').textContent = 'Zevk analizin arka planda hazırlanıyor…';
+  $('ob-bg-note').textContent = 'Tüm geçmişin ve yönetmen verilerin hazırlanıyor…';
   $('ob-dots').innerHTML = '';
 
   // ── Bekleme: tüm Letterboxd geçmişi taranana ve reveal verisi hazır olana kadar.
@@ -1714,7 +1913,7 @@ async function startOnboarding() {
   //    tamamlandıktan sonra sırayla sunulur.
   _obRenderWaiting('Zevk profilin hazırlanıyor');
 
-  const data = await syncProfile();       // provisional: stats + tam sweep'i başlatır
+  const data = await syncProfile();       // bootstrap: kimlik bilgileri + tam sweep'i başlatır
   if (!_obLive(token)) return;
   if (!data) {
     _obRenderWaiting('Bağlantı yeniden kuruluyor');
@@ -2613,6 +2812,7 @@ async function finishPasswordReset() {
 
 async function logoutAccount() {
   cancelActiveApiRequest();
+  stopBlendBadgePolling();
   try {
     await apiJSON('/api/auth/logout', { method: 'POST', headers: csrfHeaders() });
   } catch (_) {}
@@ -2627,8 +2827,7 @@ async function logoutAccount() {
   $('ob-skip').classList.add('hidden');
   $('primary-username-field').classList.remove('hidden');
   $('username-input').value = '';
-  $('profile-inbox-badge').classList.add('hidden');
-  $('profile-inbox-badge').classList.remove('flex');
+  renderBlendBadge(0);
   $('profile-settings-menu').classList.add('hidden');
   setAuthMode('login');
   showView('auth');
@@ -2729,14 +2928,11 @@ $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
 $('btn-blends-back').addEventListener('click', () => showView(homeView()));
 
-$('profile-directors-more').addEventListener('click', () => {
-  const open = $('profile-directors-panel').classList.toggle('open');
-  $('profile-directors-more-chevron').style.transform = open ? 'rotate(180deg)' : '';
-});
 $('profile-top-films').addEventListener('click', handleFilmDeck);
 $('profile-recent-films').addEventListener('click', handleFilmDeck);
-attachDeckSwipe($('profile-top-films'));
-attachDeckSwipe($('profile-recent-films'));
+attachProfileCarousel($('profile-directors'), delta => _directorNav(delta));
+attachProfileCarousel($('profile-top-films'), delta => _deckNav('profile-top-films', delta));
+attachProfileCarousel($('profile-recent-films'), delta => _deckNav('profile-recent-films', delta));
 
 async function loadAllDirectorFilms(rank, films, trigger) {
   if (!films || films.dataset.fullLoaded === 'true') return;
@@ -2767,6 +2963,11 @@ async function loadAllDirectorFilms(rank, films, trigger) {
 }
 
 $('profile-directors').addEventListener('click', event => {
+  const nav = event.target.closest('[data-director-nav]');
+  if (nav) {
+    _directorNav(Number(nav.dataset.directorNav));
+    return;
+  }
   const trigger = event.target.closest('[data-dir-load-rank]');
   if (!trigger) return;
   loadAllDirectorFilms(
@@ -2774,17 +2975,6 @@ $('profile-directors').addEventListener('click', event => {
     $(trigger.dataset.dirGrid),
     trigger,
   );
-});
-$('profile-directors-panel').addEventListener('click', async event => {
-  const row = event.target.closest('[data-dir-idx]');
-  if (!row) return;
-  const films = $(`profile-dir-films-${row.dataset.dirIdx}`);
-  if (!films) return;
-  const open = films.classList.toggle('open');
-  const chevron = row.querySelector('[data-dir-chevron]');
-  if (chevron) chevron.style.transform = open ? 'rotate(180deg)' : '';
-  if (!open || films.dataset.fullLoaded === 'true') return;
-  await loadAllDirectorFilms(Number(row.dataset.dirIdx) + 1, films, row);
 });
 $('profile-reco-body').addEventListener('click', event => {
   if (event.target.closest('#profile-reco-again')) {

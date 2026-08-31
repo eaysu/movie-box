@@ -1216,6 +1216,18 @@ class AuthService:
             "blocked": blocked,
         }
 
+    def count_pending_blend_requests(self, account: Account) -> int:
+        """Lightweight inbox badge count; no peer/result payload is loaded."""
+        rows = (
+            self._service_client()
+            .table("blend_requests")
+            .select("id")
+            .eq("recipient_user_id", account.id)
+            .eq("status", "pending")
+            .execute()
+        ).data or []
+        return len(rows)
+
     def get_blend_participants(
         self, account: Account, request_id: str
     ) -> tuple[dict, Account, Account]:

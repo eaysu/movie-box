@@ -95,11 +95,12 @@ class JobHelperTests(unittest.TestCase):
         reveal = profile_sync.progress_of(
             {"state": "running", "phase": "enrich", "films_processed": 200, "films_total": 200}
         )
-        self.assertTrue(reveal["onboarding_ready"])
+        self.assertFalse(reveal["onboarding_ready"])
         done = profile_sync.progress_of(
-            {"state": "done", "films_processed": 812, "films_total": 812}
+            {"state": "done", "scope": "full", "films_processed": 812, "films_total": 812}
         )
         self.assertEqual(done["percent"], 100)
+        self.assertTrue(done["onboarding_ready"])
         # Never report 100 before the job is actually done.
         almost = profile_sync.progress_of(
             {"state": "running", "films_processed": 999, "films_total": 1000}
@@ -341,6 +342,35 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(pipeline.rebuilt_llm)
         self.assertEqual(service.job["state"], "done")
         self.assertEqual(service.job["scope"], "full")
+
+    async def test_incremental_repairs_existing_poster_only_metadata(self):
+        service = FakeService()
+        service.films = {
+            "a": {
+                "film_slug": "a",
+                "title": "A",
+                "tmdb_id": None,
+                "poster_url": "https://letterboxd.example/a.jpg",
+                "details_loaded": False,
+                "user_rating": 4.0,
+            },
+        }
+        service.job = {
+            "user_id": 7,
+            "state": "done",
+            "phase": "done",
+            "scope": "incremental",
+        }
+        pipeline = FakePipeline(service, {})
+        pipeline.recent = [
+            {"slug": "a", "title": "A", "year": 2020, "user_rating": 4.0}
+        ]
+
+        await profile_sync._crawl(pipeline, service, _account())
+
+        self.assertTrue(service.films["a"]["details_loaded"])
+        self.assertEqual(service.films["a"]["director"], "Some Director")
+        self.assertTrue(pipeline.rebuilt_llm)
 
     async def test_incremental_can_clear_a_removed_rating(self):
         service = FakeService()

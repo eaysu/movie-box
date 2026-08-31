@@ -116,13 +116,10 @@ def progress_of(job: dict | None) -> dict | None:
         percent = min(99, round(processed / total * 100))
     else:
         percent = 0
-    # Onboarding may start after every Letterboxd history page has been crawled
-    # and the interim snapshot has been committed. Director/keyword/plot repair
-    # intentionally continues in the background after this durable milestone.
-    onboarding_ready = bool(
-        state == "done"
-        or (total > 0 and (job.get("phase") or "") in ("enrich", "aggregate"))
-    )
+    # The reveal is intentionally gated on the final full-history snapshot.
+    # A completed raw crawl is not enough: every row must first pass through
+    # director/genre/keyword enrichment, then the taste aggregates are rebuilt.
+    onboarding_ready = bool(state == "done" and job.get("scope") == "full")
     return {
         "state": state,
         "phase": job.get("phase") or "diary",
@@ -340,39 +337,31 @@ async def _crawl(pipeline, service, account, *, lease_token: str | None = None) 
         if processed >= FULL_MAX_FILMS:
             phase = "enrich"
 
-    # Interim aggregate: the profile should jump to the full film count as soon
-    # as the crawl is done. Only the bounded data required by the onboarding
-    # slides is enriched here; the exhaustive metadata pass remains background.
-    if phase == "enrich":
-        with contextlib.suppress(Exception):
-            await _touch(service, uid, lease_token, phase="aggregate")
-            prepare = getattr(pipeline, "prepare_onboarding", None)
-            if prepare:
-                await prepare(account)
-            interim_total = await pipeline.rebuild_snapshot(
-                account, use_llm=False, repair_all=False
-            )
-            await _touch(
-                service,
-                uid,
-                lease_token,
-                phase="enrich",
-                films_total=interim_total,
-                films_processed=interim_total,
-            )
-
     # ── Phase 2 · director/keyword details for rows still missing them ─────
-    await _touch(service, uid, lease_token, phase="enrich")
     rows = await asyncio.to_thread(service.get_watched_films, uid)
     # Rows without a TMDb id still need the background search step; restricting
     # this list to known ids would permanently strand every cold-catalog film.
     pending = [r for r in rows if not r.get("details_loaded")]
+    completed = len(rows) - len(pending)
+    await _touch(
+        service,
+        uid,
+        lease_token,
+        phase="enrich",
+        films_total=len(rows),
+        films_processed=completed,
+    )
     for offset in range(0, len(pending), ENRICH_BATCH):
         batch = pending[offset : offset + ENRICH_BATCH]
         detailed = await pipeline.enrich_details(batch)
         if detailed:
             await asyncio.to_thread(service.save_watched_films, uid, detailed)
-        await _touch(service, uid, lease_token, films_processed=offset + len(batch))
+        await _touch(
+            service,
+            uid,
+            lease_token,
+            films_processed=completed + offset + len(batch),
+        )
 
     # ── Phase 3 · aggregate the full history into the snapshot ────────────
     await _touch(service, uid, lease_token, phase="aggregate")
@@ -439,11 +428,22 @@ async def _incremental(
     if rating_updates:
         await asyncio.to_thread(service.save_watched_films, uid, rating_updates)
 
+    # Heal incomplete legacy/catalog rows too. Earlier builds could treat a
+    # poster-only cache entry as a complete film and never retry its director
+    # metadata; every incremental visit now repairs those rows in bounded batches.
+    incomplete = [row for row in existing.values() if not row.get("details_loaded")]
+    for offset in range(0, len(incomplete), ENRICH_BATCH):
+        detailed = await pipeline.enrich_details(
+            incomplete[offset : offset + ENRICH_BATCH]
+        )
+        if detailed:
+            await asyncio.to_thread(service.save_watched_films, uid, detailed)
+
     # Always re-aggregate so the snapshot can never drift behind
     # user_watched_films; only spend an LLM call when something changed.
     await _touch(service, uid, lease_token, phase="aggregate")
     total = await pipeline.rebuild_snapshot(
-        account, use_llm=bool(new_films or rating_updates)
+        account, use_llm=bool(new_films or rating_updates or incomplete)
     )
 
     await _touch(

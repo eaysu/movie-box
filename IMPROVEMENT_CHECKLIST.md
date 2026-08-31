@@ -20,10 +20,11 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   kimlik + Fav 4 bootstrap'ından sonra checkpoint'li full crawl'u hemen başlat.
 - [x] Tüm Letterboxd film sayfalarını TMDb zenginleştirmesinden önce ham ve
   kayıpsız kaydet; film başına TMDb çağrısını crawl kritik yolundan çıkar.
-- [x] Full crawl bittiğinde onboarding için rating-first/recent 60 filmlik sınırlı
-  metadata örneğini hazırla ve `onboarding_ready` milestone'u yayınla.
-- [x] Zorunlu onboarding slaytlarını bu milestone'da başlat; kalan poster, konu,
-  yönetmen ve keyword tamamlama işini arka planda sürdür.
+- [x] Full crawl sonrasında tüm aktif filmleri yönetmen/tür/keyword enrichment
+  aşamasından geçir; nihai toplamlar ve zevk snapshot'ı tamamlanmadan
+  `onboarding_ready` yayınlama.
+- [x] Zorunlu onboarding slaytlarını yalnız final full-history snapshot'ından
+  başlat; 60 filmlik geçici örnek üzerinden favori yönetmen gösterme.
 - [x] Onboarding sırasında `recent`, `stats` ve `top-films` isteklerini ertele;
   Letterboxd global request bütçesini full crawl ile yarıştırma.
 - [x] Onboarding tamamlanmasını DB'de kalıcılaştır; yenileme/yeni oturum ile son
@@ -160,6 +161,8 @@ onayı gelmeden uygulanmaz.
   düşük veri kapsamı senaryoları.
 - [x] Blend request API izin sınırı, kabul/ret, persisted result, single-flight ve SQL
   consent guard contract testleri.
+- [x] Bekleyen Blend isteklerini gösteren sayılı inbox ışığı ekle; görünür sekmede
+  hafif count endpoint'i ile periyodik güncelle ve `9+` üst sınırı uygula.
 - [ ] Gerçek Supabase üzerinde iki kullanıcılı RLS/state-machine entegrasyon testi.
 - [ ] Login → profil senkronu → inbox → Blend kabulü browser E2E testi.
 - [ ] Eski anonim endpoint'ler için rollout flag'i, migration telemetry'si ve geri
