@@ -1102,26 +1102,50 @@ async def profile_watched_films(request: Request, q: str = "", limit: int = 60) 
 
 
 async def _fill_overviews(service, rows: list[dict], count: int) -> None:
-    """Best-effort: pull TMDb plots for the first `count` rows via shared cache."""
+    """Best-effort: plot / poster / director for the first `count` rows.
+
+    Films already carrying a tmdb_id use the cached detail path; anything else
+    (a diary entry the sweep hasn't reached yet) is resolved by a TMDb search.
+    """
     settings = get_settings()
     if not (count and settings.has_tmdb and rows):
         return
     with contextlib.suppress(Exception):
         _client, cache = _make_cache(settings)
         enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
-        objs = [
+        targets = rows[:count]
+        with_id = [
             EnrichedFilm(
                 title=r["title"], year=r.get("year"),
                 slug=r["slug"], tmdb_id=r["tmdb_id"],
             )
-            for r in rows[:count]
-            if r.get("tmdb_id")
+            for r in targets if r.get("tmdb_id")
         ]
-        await enricher.ensure_details(objs)
-        by_slug = {o.slug: o.overview for o in objs if o.overview}
+        need_search = [r for r in targets if not r.get("tmdb_id") and r.get("title")]
+        if with_id:
+            await enricher.ensure_details(with_id)
+        searched = []
+        if need_search:
+            searched = await enricher.enrich(
+                [
+                    {"title": r["title"], "year": r.get("year"), "slug": r["slug"]}
+                    for r in need_search
+                ],
+                include_details=True,
+            )
+        by_slug = {o.slug: o for o in (with_id + searched) if o.slug}
         for row in rows:
-            if row["slug"] in by_slug:
-                row["overview"] = by_slug[row["slug"]]
+            o = by_slug.get(row["slug"])
+            if not o:
+                continue
+            if o.overview:
+                row["overview"] = o.overview
+            if not row.get("poster_url") and o.poster_url:
+                row["poster_url"] = o.poster_url
+            if not row.get("director") and o.director:
+                row["director"] = o.director
+            if not row.get("tmdb_id") and o.tmdb_id:
+                row["tmdb_id"] = o.tmdb_id
 
 
 def _guess_lb_slug(title: str) -> str:
@@ -1293,7 +1317,9 @@ async def get_top_films(request: Request, preview: int = 1) -> dict:
 
 
 @app.get("/api/profile/film-overview")
-async def profile_film_overview(request: Request, slug: str) -> dict:
+async def profile_film_overview(
+    request: Request, slug: str, title: str = "", year: int | None = None
+) -> dict:
     """One film's plot, resolved lazily when a list row is expanded."""
     account = await _require_account(request)
     clean = slug.strip().lower()
@@ -1301,7 +1327,9 @@ async def profile_film_overview(request: Request, slug: str) -> dict:
         raise HTTPException(status_code=422, detail="Geçersiz film.")
     service = _auth_service()
     row = await asyncio.to_thread(service.watched_film_by_slug, account.id, clean)
-    if not row:
+    if row is None:
+        row = {"slug": clean, "title": title.strip()[:200], "year": year}
+    if not row.get("title"):
         return {"overview": ""}
     await _fill_overviews(service, [row], 1)
     return {"overview": row.get("overview", "")}

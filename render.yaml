@@ -15,7 +15,7 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5-mini-2025-08-07
       - key: NUM_RECOMMENDATIONS
-        value: "5"
+        value: "3"
       - key: RECOMMENDATION_HISTORY_LIMIT
         value: "100"
       - key: FAVORITE_DIRECTOR_BOOST

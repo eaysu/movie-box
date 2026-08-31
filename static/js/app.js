@@ -831,7 +831,7 @@ function _filmMiniRow(f, n) {
   const year = f.year ? escapeHTML(String(f.year)) : '';
   const rating = f.user_rating ? Number(f.user_rating).toFixed(1) : '';
   return `<div class="py-2">
-    <button type="button" data-film-row="${escapeHTML(f.slug)}" class="w-full flex items-center gap-3 text-left">
+    <button type="button" data-film-row="${escapeHTML(f.slug)}" data-film-title="${escapeHTML(f.title || '')}" data-film-year="${f.year || ''}" class="w-full flex items-center gap-3 text-left">
       ${n ? `<span class="w-4 shrink-0 text-center font-label-sm text-label-sm text-on-surface-variant/40">${n}</span>` : ''}
       ${poster
         ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-8 h-12 rounded object-cover bg-surface-container shrink-0"/>`
@@ -892,7 +892,10 @@ async function handleFilmCardClick(event) {
   if (open && !plot.dataset.loaded) {
     plot.textContent = 'Yükleniyor…';
     try {
-      const data = await apiJSON(`/api/profile/film-overview?slug=${encodeURIComponent(row.dataset.filmRow)}`);
+      const qs = `slug=${encodeURIComponent(row.dataset.filmRow)}`
+        + `&title=${encodeURIComponent(row.dataset.filmTitle || '')}`
+        + (row.dataset.filmYear ? `&year=${encodeURIComponent(row.dataset.filmYear)}` : '');
+      const data = await apiJSON(`/api/profile/film-overview?${qs}`);
       plot.textContent = data.overview || 'Konu bilgisi bulunamadı.';
     } catch (_) { plot.textContent = 'Konu alınamadı.'; }
     plot.dataset.loaded = '1';

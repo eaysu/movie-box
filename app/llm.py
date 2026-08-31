@@ -89,7 +89,8 @@ def _build_prompt(
         "sağlayacak 2-3 cümlelik sıcak bir paragraf yaz (Türkçe): 'sen' diliyle "
         "konuş, izleme geçmişindeki SOMUT filmlere / yönetmenlere / temalara "
         "atıfta bulun ve bu filmin ona neden dokunacağını anlat. "
-        "Ayrıca 2-3 cümle genel zevk analizi yaz (Türkçe). "
+        "Ayrıca 'taste_summary' alanına 2-3 cümlelik genel zevk analizi yaz "
+        "(Türkçe) — kaç film önerdiğini YAZMA, sayı verme. "
         "Önemli: film isimleri, yönetmen adları ve diğer özel isimler orijinal dilinde kalmalı, çevrilmemeli.\n\n"
         "SADECE aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:\n"
         '{"taste_summary": "...", '
