@@ -1253,6 +1253,35 @@ async def profile_recent_films(
     return {"films": rows}
 
 
+@app.get("/api/profile/stats")
+async def profile_stats(request: Request) -> dict:
+    """Lightweight Letterboxd counters (total watched, films this year)."""
+    account = await _require_account(request)
+    settings = get_settings()
+    supabase_client, _ = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    with contextlib.suppress(Exception):
+        cached = await asyncio.to_thread(
+            pcache.get, "profile_stats", account.username, 3600
+        )
+        if cached:
+            return cached
+    out = {"films": 0, "this_year": 0}
+    try:
+        profile = await scrape_profile(
+            account.username, max_retries=settings.scrape_max_retries
+        )
+        out = {
+            "films": int(profile.stats.get("films", 0) or 0),
+            "this_year": int(profile.stats.get("this_year", 0) or 0),
+        }
+    except ScrapeError:
+        pass
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(pcache.set, "profile_stats", account.username, out)
+    return out
+
+
 @app.get("/api/profile/top-films")
 async def get_top_films(request: Request, preview: int = 1) -> dict:
     """The user's curated (or highest-rated) top 10; first `preview` get a plot."""

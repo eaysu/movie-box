@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.1"/>
+<link rel="stylesheet" href="/static/app.css?v=20260902.2"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -279,26 +279,11 @@
 
         <!-- taste analysis -->
         <div class="min-w-0 lg:border-l lg:border-outline-variant/15 lg:pl-10 xl:pl-16">
-          <div class="flex flex-wrap items-center justify-between gap-5">
-            <div class="flex flex-wrap items-center gap-2.5">
-              <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik DNA</span>
-              <span id="profile-scope-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary-container/25 bg-primary-container/10 text-primary-container font-label-sm text-label-sm uppercase tracking-wide">
-                <span class="material-symbols-outlined text-[13px]" style="font-variation-settings:'FILL' 1">verified</span><span id="profile-scope-badge-text">Tüm geçmiş</span>
-              </span>
-            </div>
-            <div class="flex items-center gap-3">
-              <div class="relative w-[72px] h-[72px] shrink-0">
-                <svg viewBox="0 0 72 72" class="w-full h-full -rotate-90">
-                  <circle class="ring-track" cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="6"/>
-                  <circle id="profile-confidence-ring" cx="36" cy="36" r="28" fill="none" stroke="#00e054" stroke-width="6" stroke-linecap="round" stroke-dasharray="175.93" stroke-dashoffset="175.93" style="transition:stroke-dashoffset .9s cubic-bezier(.22,1,.36,1),stroke .4s ease"/>
-                </svg>
-                <span id="profile-confidence-score" class="absolute inset-0 flex items-center justify-center font-headline-md text-[16px] text-on-surface">—</span>
-              </div>
-              <div class="text-left">
-                <span id="profile-confidence" class="block font-label-md text-label-md uppercase tracking-wide text-primary-container">Analiz bekleniyor</span>
-                <span class="block font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/55">Veri kapsamı</span>
-              </div>
-            </div>
+          <div class="flex flex-wrap items-center gap-2.5">
+            <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik DNA</span>
+            <span id="profile-scope-badge" class="hidden items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary-container/25 bg-primary-container/10 text-primary-container font-label-sm text-label-sm uppercase tracking-wide">
+              <span class="material-symbols-outlined text-[13px]" style="font-variation-settings:'FILL' 1">verified</span><span id="profile-scope-badge-text">Tüm geçmiş</span>
+            </span>
           </div>
 
           <div class="relative mt-6 pl-5">
@@ -321,9 +306,9 @@
               <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Puanlanan film</span>
             </div>
             <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
-              <span class="material-symbols-outlined text-secondary-container/70 text-[20px]">dataset</span>
-              <strong id="profile-metadata-coverage" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-secondary-container">—</strong>
-              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Veri kapsamı</span>
+              <span class="material-symbols-outlined text-secondary-container/70 text-[20px]">calendar_month</span>
+              <strong id="profile-year-count" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-secondary-container">—</strong>
+              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Bu yıl izlenen</span>
             </div>
           </div>
 
@@ -971,6 +956,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260902.1"></script>
+<script type="module" src="/static/js/app.js?v=20260902.2"></script>
 </body>
 </html>

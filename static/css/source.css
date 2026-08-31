@@ -100,7 +100,6 @@
       linear-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px),
       linear-gradient(90deg, rgba(0, 0, 0, 0.045) 1px, transparent 1px) !important;
   }
-  #view-profile.theme-light .ring-track { stroke: rgba(0, 0, 0, 0.10); }
 
   body {
     font-family: 'Space Grotesk', 'Geist', sans-serif;

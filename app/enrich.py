@@ -275,7 +275,7 @@ class Enricher:
             details = await self._get(
                 client,
                 f"/movie/{film.tmdb_id}",
-                append_to_response="keywords,credits",
+                append_to_response="keywords,credits,translations",
             )
         except httpx.HTTPError:
             return film
@@ -283,7 +283,13 @@ class Enricher:
         film.keywords = [
             k["name"] for k in details.get("keywords", {}).get("keywords", [])
         ][:12]
-        film.overview = details.get("overview", "") or film.overview
+        # Prefer the Turkish plot; fall back to TMDb's default (English).
+        tr_overview = ""
+        for tr in details.get("translations", {}).get("translations", []):
+            if tr.get("iso_639_1") == "tr":
+                tr_overview = (tr.get("data") or {}).get("overview", "") or ""
+                break
+        film.overview = tr_overview or details.get("overview", "") or film.overview
         film.vote_average = float(details.get("vote_average", 0.0) or film.vote_average)
         film.genres = [
             genre.get("name", "")

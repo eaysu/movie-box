@@ -331,8 +331,9 @@ const _RECO_STEP_LABEL = {
 let _recoBusy = false;
 
 function resetRecoPanel() {
-  cancelActiveApiRequest();
-  _recoBusy = false;
+  // A running recommendation is never interrupted by navigating around —
+  // only leaving the site stops it. Panel switches just leave it be.
+  if (_recoBusy) return;
   $('profile-reco-panel').classList.remove('open');
   $('profile-reco-body').innerHTML = '';
 }
@@ -365,17 +366,21 @@ async function startInlineReco(mode) {
     mode === 'random' ? '/api/random' : '/api/recommend',
     { username },
     {
+      timeoutMs: 300000,
       onStep: (step) => {
         const el = $('profile-reco-status');
         if (el) el.textContent = _RECO_STEP_LABEL[step] || 'Hazırlanıyor';
       },
       onResult: (event) => {
         _recoBusy = false;
+        // Surface the result even if the user wandered off mid-request.
+        $('profile-reco-panel').classList.add('open');
         if (mode === 'random') renderInlineRandom(event);
         else renderInlineTaste(event);
       },
       onError: (msg) => {
         _recoBusy = false;
+        $('profile-reco-panel').classList.add('open');
         $('profile-reco-body').innerHTML =
           `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">${escapeHTML(msg)}</div>${_recoResetBtn()}`;
       },
@@ -628,21 +633,9 @@ function renderPersistedProfile(data) {
   const taste = data.taste;
   if (taste) {
     streamText($('profile-taste-summary'), taste.summary || 'Zevk analizi hazır.');
-    const confidenceNames = { low: 'Düşük veri kapsamı', medium: 'Orta veri kapsamı', high: 'Yüksek veri kapsamı' };
-    const confidenceColors = { low: '#ff8000', medium: '#6ccdff', high: '#00e054' };
-    const confidenceScore = Math.max(0, Math.min(100, Math.round(taste.confidence_score || 0)));
-    const confidenceTone = confidenceColors[taste.confidence_level] || '#ff8000';
-    $('profile-confidence').textContent = confidenceNames[taste.confidence_level] || 'Düşük veri kapsamı';
-    $('profile-confidence').style.color = confidenceTone;
-    $('profile-confidence-score').textContent = `%${confidenceScore}`;
-    const confidenceRing = $('profile-confidence-ring');
-    const ringCircumference = 2 * Math.PI * 28;
-    confidenceRing.style.stroke = confidenceTone;
-    confidenceRing.style.strokeDashoffset = String(ringCircumference * (1 - confidenceScore / 100));
     const sweptTotal = (data.sync_job && data.sync_job.total) || 0;
     $('profile-sample-size').textContent = String(Math.max(taste.sample_size || 0, sweptTotal));
     $('profile-rated-count').textContent = String(taste.rated_count || 0);
-    $('profile-metadata-coverage').textContent = `%${taste.metadata_coverage || 0}`;
     const genres = taste.top_genres || [];
     $('profile-genres').innerHTML = genres.length
       ? genres.slice(0, 4).map(genre => `<span class="inline-flex items-center gap-2 px-3.5 py-2 rounded-full border border-primary-container/20 bg-primary-container/5 text-on-surface font-label-md text-label-md"><span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>${escapeHTML(genre)}</span>`).join('')
@@ -716,16 +709,13 @@ function renderPersistedProfile(data) {
       $('profile-last-sync').innerHTML = `<span class="material-symbols-outlined text-[16px]">schedule</span>Son güncelleme · ${escapeHTML(new Date(syncedAt).toLocaleString('tr-TR'))}`;
     }
   } else {
-    $('profile-confidence').textContent = 'Analiz bekleniyor';
-    $('profile-confidence').style.color = '';
-    $('profile-confidence-score').textContent = '—';
-    $('profile-confidence-ring').style.strokeDashoffset = String(2 * Math.PI * 28);
     $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
     $('profile-directors-more').classList.add('hidden');
     $('profile-directors-panel').classList.remove('open');
     $('profile-directors-list').innerHTML = '';
     $('profile-analysis').classList.add('hidden');
   }
+  if (!_statsLoaded) loadProfileStats();
 
   const personality = (taste && taste.personality || '').trim();
   if (personality) {
@@ -913,6 +903,17 @@ async function loadRecentFilms(fresh) {
     const films = data.films || [];
     renderRecentFilms(films);
     if (films.length) _recentLoaded = true;
+  } catch (_) { /* sonraki render tekrar dener */ }
+}
+
+let _statsLoaded = false;
+async function loadProfileStats() {
+  try {
+    const data = await apiJSON('/api/profile/stats');
+    if (typeof data.this_year === 'number') {
+      $('profile-year-count').textContent = data.this_year.toLocaleString('tr-TR');
+      _statsLoaded = true;
+    }
   } catch (_) { /* sonraki render tekrar dener */ }
 }
 
@@ -1284,6 +1285,7 @@ async function syncProfile(force = false) {
     renderPersistedProfile(data);
     _topFilmsLoaded = false; loadTopFilms();
     _recentLoaded = false; loadRecentFilms(true);
+    _statsLoaded = false; loadProfileStats();
     return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
@@ -2485,6 +2487,7 @@ async function logoutAccount() {
   _pendingRegPassword = null;
   _recentLoaded = false;
   _topFilmsLoaded = false;
+  _statsLoaded = false;
   _obToken += 1;
   _obClearTimers();
   $('ob-skip').classList.add('hidden');
