@@ -319,10 +319,9 @@
   @keyframes line-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .line-rise { opacity: 0; animation: line-rise .45s cubic-bezier(.22,1,.36,1) forwards; }
 
-  /* Streaming text caret */
-  .stream-caret::after { content: '▌'; margin-left: 1px; color: #43fe6d;
-    animation: caret-blink 1s steps(1) infinite; }
-  @keyframes caret-blink { 50% { opacity: 0; } }
+  /* Streaming text — words fade in softly, no crawling caret */
+  .stream-word { opacity: 0; transition: opacity .7s ease; }
+  .stream-word.on { opacity: 1; }
 
   /* Onboarding slide reveal — slow, flowing */
   @keyframes ob-in { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -335,6 +334,6 @@
     .collapse-y { transition: none; }
     .line-rise { opacity: 1; animation: none; }
     #profile-sweep-bar.is-indeterminate { animation: none; transform: none; }
-    .stream-caret::after { display: none; }
+    .stream-word { opacity: 1; transition: none; }
     .ob-in { animation: none; }
   }

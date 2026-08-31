@@ -299,18 +299,26 @@ function streamText(el, text) {
   el._streamKey = text;
   if (el._streamTimer) { clearInterval(el._streamTimer); el._streamTimer = null; }
   if (_reduceMotion || text.length < 3) { el.textContent = text; return; }
-  const tokens = text.split(/(\s+)/);
-  let i = 0;
+  // Soft wash: words are laid out at once, then faded in a few at a time.
+  const parts = text.split(/(\s+)/);
+  const words = [];
+  const frag = document.createDocumentFragment();
+  for (const part of parts) {
+    if (part === '') continue;
+    if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); continue; }
+    const span = document.createElement('span');
+    span.className = 'stream-word';
+    span.textContent = part;
+    frag.appendChild(span);
+    words.push(span);
+  }
   el.textContent = '';
-  el.classList.add('stream-caret');
+  el.appendChild(frag);
+  let i = 0;
   el._streamTimer = setInterval(() => {
-    el.textContent += tokens[i++] || '';
-    if (i >= tokens.length) {
-      clearInterval(el._streamTimer);
-      el._streamTimer = null;
-      el.classList.remove('stream-caret');
-    }
-  }, 26);
+    for (let k = 0; k < 2 && i < words.length; k++, i++) words[i].classList.add('on');
+    if (i >= words.length) { clearInterval(el._streamTimer); el._streamTimer = null; }
+  }, 60);
 }
 
 // ── Inline "Bu gece" recommendation (no page transition) ────────────────
