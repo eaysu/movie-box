@@ -389,41 +389,49 @@ function _discoverNote(on) {
     : '';
 }
 
+// Zevk profili: tek film göster; beğenilmezse 2 yedek hak (toplam 3).
 function renderInlineTaste(data) {
-  const all = data.recommendations || [];
-  const hero = all[0];
-  const alts = all.slice(1, 5);
-  $('profile-reco-body').innerHTML = `
-    ${_discoverNote(data.discover_fallback)}
-    <p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(data.taste_summary || 'Bu akşam için seçim hazır.')}</p>
-    <div class="line-rise">${hero ? buildHeroCard(hero) : ''}</div>
-    ${alts.length ? `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">${alts.map((f, i) => `<div class="line-rise" style="animation-delay:${(i + 1) * 70}ms">${buildAltCard(f, i)}</div>`).join('')}</div>` : ''}
+  const body = $('profile-reco-body');
+  const pool = (data.recommendations || []).slice(0, 3);
+  if (!pool.length) {
+    body.innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Sana uygun bir öneri çıkaramadık.</div>${_recoResetBtn()}`;
+    return;
+  }
+  body.dataset.tastePool = JSON.stringify(pool);
+  body.dataset.tasteAttempt = '0';
+  body.dataset.tasteSummary = data.taste_summary || '';
+  body.dataset.discover = data.discover_fallback ? '1' : '';
+  _paintInlineTaste();
+}
+
+function _paintInlineTaste() {
+  const body = $('profile-reco-body');
+  const pool = JSON.parse(body.dataset.tastePool || '[]');
+  const attempt = parseInt(body.dataset.tasteAttempt || '0', 10);
+  const left = pool.length - attempt - 1;
+  body.innerHTML = `
+    ${_discoverNote(body.dataset.discover === '1')}
+    ${body.dataset.tasteSummary ? `<p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(body.dataset.tasteSummary)}</p>` : ''}
+    <div class="line-rise">${buildHeroCard(pool[attempt])}</div>
+    ${left > 0
+      ? `<button type="button" id="profile-reco-next" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span>Beğenmedim — başka öner (${left} hak kaldı)</button>`
+      : '<p class="mt-4 text-center font-label-sm text-label-sm text-on-surface-variant/50">Bu gecelik öneri hakların doldu.</p>'}
     ${_recoResetBtn()}`;
 }
 
+// Rastgele: tek hak. Beğenmezse zevkine göre öneriye geçebilir.
 function renderInlineRandom(data) {
+  const body = $('profile-reco-body');
   const films = data.films || [];
   if (!films.length) {
-    $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Watchlist boş veya film bilgisi alınamadı.</div>${_recoResetBtn()}`;
+    body.innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Film bulunamadı.</div>${_recoResetBtn()}`;
     return;
   }
-  $('profile-reco-body').dataset.pool = JSON.stringify(films);
-  $('profile-reco-body').dataset.attempt = '0';
-  $('profile-reco-body').dataset.discover = data.discover_fallback ? '1' : '';
-  _paintInlineRandom();
-}
-
-function _paintInlineRandom() {
-  const body = $('profile-reco-body');
-  const films = JSON.parse(body.dataset.pool || '[]');
-  let attempt = parseInt(body.dataset.attempt || '0', 10);
-  const remaining = films.length - attempt - 1;
   body.innerHTML = `
-    ${_discoverNote(body.dataset.discover === '1')}
-    <div class="line-rise">${buildRandomCard(films[attempt])}</div>
-    <div class="mt-4 flex gap-2">
-      <button type="button" id="profile-reco-retry" class="flex-1 rounded-xl bg-tertiary-container text-on-tertiary-container py-3 font-label-md text-label-md uppercase tracking-wide disabled:opacity-40" ${remaining <= 0 ? 'disabled' : ''}>Başka bir tane (${Math.max(remaining, 0)})</button>
-    </div>
+    ${_discoverNote(data.discover_fallback)}
+    <p class="mb-4 font-body-md text-body-md text-on-surface-variant">🎬 Günün filmi bu — ona bir şans ver. Sevmezsen zevkine göre öneriye geç.</p>
+    <div class="line-rise">${buildRandomCard(films[0])}</div>
+    <button type="button" id="profile-reco-totaste" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">psychology</span>Zevkime göre öner</button>
     ${_recoResetBtn()}`;
 }
 
@@ -2642,11 +2650,19 @@ $('profile-reco-body').addEventListener('click', event => {
     openProfilePanel('watch');
     return;
   }
-  if (event.target.closest('#profile-reco-retry')) {
+  if (event.target.closest('#profile-reco-next')) {
     const body = $('profile-reco-body');
-    const pool = JSON.parse(body.dataset.pool || '[]');
-    let attempt = parseInt(body.dataset.attempt || '0', 10);
-    if (attempt < pool.length - 1) { body.dataset.attempt = String(attempt + 1); _paintInlineRandom(); }
+    const pool = JSON.parse(body.dataset.tastePool || '[]');
+    const attempt = parseInt(body.dataset.tasteAttempt || '0', 10);
+    if (attempt < pool.length - 1) {
+      body.dataset.tasteAttempt = String(attempt + 1);
+      _paintInlineTaste();
+    }
+    return;
+  }
+  if (event.target.closest('#profile-reco-totaste')) {
+    setProfileWatchMode('taste');
+    startInlineReco('taste');
     return;
   }
 });

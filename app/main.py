@@ -1165,7 +1165,16 @@ async def _discover_fallback_films(
     return picks
 
 
-async def _random_discover_pick(settings, service, account, cache, n: int = 3):
+def _daily_pick(username: str, pool: list, n: int) -> list:
+    """Stable 'film of the day' selection — same pick all day for a user."""
+    if not pool:
+        return []
+    day = time.strftime("%Y-%m-%d", time.gmtime())
+    rng = _random.Random(f"{day}:{username}")
+    return rng.sample(pool, min(n, len(pool)))
+
+
+async def _random_discover_pick(settings, service, account, cache, username, n=3):
     """A few unseen TMDb films for the 'random' mode when the watchlist is empty."""
     if not settings.has_tmdb:
         return []
@@ -1177,7 +1186,7 @@ async def _random_discover_pick(settings, service, account, cache, n: int = 3):
         return []
     with_poster = [f for f in picks if f.poster_url]
     pool = with_poster if len(with_poster) >= n else picks
-    chosen = _random.sample(pool, min(n, len(pool)))
+    chosen = _daily_pick(username, pool, n)
     with contextlib.suppress(Exception):
         await enricher.ensure_details(chosen)
     return chosen
@@ -2485,13 +2494,13 @@ async def random_pick(req: RandomRequest, request: Request):
             pool = with_poster if len(with_poster) >= 3 else enriched
             discover_fallback = False
             if not pool:
-                chosen = await _random_discover_pick(settings, service, account, cache)
+                chosen = await _random_discover_pick(settings, service, account, cache, req.username)
                 discover_fallback = True
                 if not chosen:
                     yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
                     return
             else:
-                chosen = _random.sample(pool, min(3, len(pool)))
+                chosen = _daily_pick(req.username, pool, 3)
             log.warning("cache HIT  watchlist/%s (random pick)", req.username)
             yield _sse({
                 "type": "result",
@@ -2523,7 +2532,7 @@ async def random_pick(req: RandomRequest, request: Request):
 
         watchlist_count = len(scraped_watchlist)
         if not scraped_watchlist:
-            chosen = await _random_discover_pick(settings, service, account, cache)
+            chosen = await _random_discover_pick(settings, service, account, cache, req.username)
             if not chosen:
                 yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
                 return
@@ -2540,7 +2549,7 @@ async def random_pick(req: RandomRequest, request: Request):
         with_poster = [f for f in scraped_watchlist if f.poster_url]
         pool = with_poster if len(with_poster) >= 3 else scraped_watchlist
         count = min(3, len(pool))
-        chosen = _random.sample(pool, count)
+        chosen = _daily_pick(req.username, pool, count)
 
         yield _sse({"type": "step", "step": "enriching"})
         if settings.has_tmdb:
