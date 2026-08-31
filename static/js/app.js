@@ -825,97 +825,85 @@ function _filmHero(f) {
       : '<p class="mt-3 font-label-sm text-label-sm text-on-surface-variant/40">Konu bilgisi hazırlanıyor…</p>'}`;
 }
 
-function _filmMiniRow(f, n) {
-  const poster = safeImageURL(f.poster_url);
-  const title = escapeHTML(f.title || '');
-  const year = f.year ? escapeHTML(String(f.year)) : '';
-  const rating = f.user_rating ? Number(f.user_rating).toFixed(1) : '';
-  return `<div class="py-2">
-    <button type="button" data-film-row="${escapeHTML(f.slug)}" data-film-title="${escapeHTML(f.title || '')}" data-film-year="${f.year || ''}" class="w-full flex items-center gap-3 text-left">
-      ${n ? `<span class="w-4 shrink-0 text-center font-label-sm text-label-sm text-on-surface-variant/40">${n}</span>` : ''}
-      ${poster
-        ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-8 h-12 rounded object-cover bg-surface-container shrink-0"/>`
-        : '<div class="w-8 h-12 rounded bg-surface-container shrink-0"></div>'}
-      <span class="min-w-0 flex-grow font-label-md text-label-md text-on-surface truncate">${title}${year ? ` <span class="text-on-surface-variant/40">${year}</span>` : ''}</span>
-      ${rating ? `<span class="shrink-0 font-label-sm text-label-sm text-primary-container">★${rating}</span>` : ''}
-      <span data-film-row-chevron class="material-symbols-outlined text-[16px] text-on-surface-variant/40 transition-transform shrink-0">expand_more</span>
-    </button>
-    <p data-film-row-plot class="hidden mt-1.5 pl-7 font-label-sm text-label-sm text-on-surface-variant/60 leading-relaxed"></p>
-  </div>`;
-}
+// Deste: kartta tek film, ‹ › / kaydırma ile 10 film arası gezinilir.
+const _filmDecks = {};
 
-function _filmDetailCard(boxId, films, opts) {
-  const box = $(boxId);
-  const list = Array.isArray(films) ? films.slice(0, 10) : [];
-  if (!list.length) {
-    box.innerHTML = `<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">${opts.emptyText}</p>`;
+function renderFilmDeck(boxId, list, emptyText) {
+  const films = Array.isArray(list) ? list.slice(0, 10) : [];
+  if (!films.length) {
+    $(boxId).innerHTML = `<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">${emptyText}</p>`;
+    _filmDecks[boxId] = null;
     return;
   }
-  const rest = list.slice(1);
-  box.innerHTML = `
-    <div>${_filmHero(list[0])}</div>
-    ${rest.length ? `
-      <div class="mt-auto pt-4">
-        <button type="button" data-film-expand class="w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors">
-          <span data-film-expand-label>Diğer ${rest.length} film</span>
-          <span data-film-expand-chevron class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
-        </button>
-        <div data-film-rest class="hidden mt-2 flex flex-col divide-y divide-outline-variant/20">
-          ${rest.map((f, i) => _filmMiniRow(f, opts.numbered ? i + 2 : 0)).join('')}
-        </div>
-      </div>` : ''}`;
+  _filmDecks[boxId] = { films, index: 0 };
+  _paintFilmDeck(boxId);
 }
 
-async function handleFilmCardClick(event) {
-  const box = event.currentTarget;
-  const expand = event.target.closest('[data-film-expand]');
-  if (expand) {
-    const holder = box.querySelector('[data-film-rest]');
-    if (!holder) return;
-    const shown = !holder.classList.toggle('hidden');
-    box.querySelector('[data-film-expand-chevron]').style.transform = shown ? 'rotate(180deg)' : '';
-    const lbl = box.querySelector('[data-film-expand-label]');
-    if (lbl) {
-      if (!lbl.dataset.full) lbl.dataset.full = lbl.textContent;
-      lbl.textContent = shown ? 'Daha az' : lbl.dataset.full;
-    }
-    return;
-  }
-  const row = event.target.closest('[data-film-row]');
-  if (!row) return;
-  const wrap = row.parentElement;
-  const plot = wrap.querySelector('[data-film-row-plot]');
-  const chev = row.querySelector('[data-film-row-chevron]');
-  if (!plot) return;
-  const open = !plot.classList.toggle('hidden');
-  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
-  if (open && !plot.dataset.loaded) {
-    plot.textContent = 'Yükleniyor…';
-    try {
-      const qs = `slug=${encodeURIComponent(row.dataset.filmRow)}`
-        + `&title=${encodeURIComponent(row.dataset.filmTitle || '')}`
-        + (row.dataset.filmYear ? `&year=${encodeURIComponent(row.dataset.filmYear)}` : '');
-      const data = await apiJSON(`/api/profile/film-overview?${qs}`);
-      plot.textContent = data.overview || 'Konu bilgisi bulunamadı.';
-    } catch (_) { plot.textContent = 'Konu alınamadı.'; }
-    plot.dataset.loaded = '1';
-  }
+function _paintFilmDeck(boxId) {
+  const deck = _filmDecks[boxId];
+  if (!deck) return;
+  const { films, index } = deck;
+  $(boxId).innerHTML = `
+    <div class="flex-grow" data-deck-body>${_filmHero(films[index])}</div>
+    <div class="mt-auto pt-4 flex items-center justify-between gap-3">
+      <button type="button" data-deck-nav="-1" ${index === 0 ? 'disabled' : ''} class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+      <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
+      <button type="button" data-deck-nav="1" ${index === films.length - 1 ? 'disabled' : ''} class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+    </div>`;
+  const f = films[index];
+  if (!f.overview && !f._noOverview) _loadDeckOverview(boxId, index);
+}
+
+function _deckNav(boxId, delta) {
+  const deck = _filmDecks[boxId];
+  if (!deck) return;
+  const next = Math.max(0, Math.min(deck.index + delta, deck.films.length - 1));
+  if (next === deck.index) return;
+  deck.index = next;
+  _paintFilmDeck(boxId);
+}
+
+async function _loadDeckOverview(boxId, index) {
+  const deck = _filmDecks[boxId];
+  if (!deck) return;
+  const f = deck.films[index];
+  try {
+    const qs = `slug=${encodeURIComponent(f.slug || '')}`
+      + `&title=${encodeURIComponent(f.title || '')}`
+      + (f.year ? `&year=${encodeURIComponent(f.year)}` : '');
+    const data = await apiJSON(`/api/profile/film-overview?${qs}`);
+    f.overview = data.overview || '';
+    f._noOverview = !data.overview;
+  } catch (_) { f._noOverview = true; }
+  if (_filmDecks[boxId] && _filmDecks[boxId].index === index) _paintFilmDeck(boxId);
+}
+
+function handleFilmDeck(event) {
+  const nav = event.target.closest('[data-deck-nav]');
+  if (nav) _deckNav(event.currentTarget.id, Number(nav.dataset.deckNav));
+}
+
+function attachDeckSwipe(box) {
+  let x0 = null;
+  box.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
+  box.addEventListener('touchend', e => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    x0 = null;
+    if (Math.abs(dx) > 45) _deckNav(box.id, dx < 0 ? 1 : -1);
+  }, { passive: true });
 }
 
 function renderTopFilms(list) {
   _topFilms = Array.isArray(list) ? list : [];
-  _filmDetailCard('profile-top-films', _topFilms, {
-    numbered: true,
-    emptyText: 'Puanladığın filmler tarandıkça en sevdiğin 10 film burada. Kalemle kendin de seçebilirsin.',
-  });
+  renderFilmDeck('profile-top-films', _topFilms,
+    'Puanladığın filmler tarandıkça en sevdiğin 10 film burada. Kalemle kendin de seçebilirsin.');
 }
 
 function renderRecentFilms(list) {
   _recentFilms = Array.isArray(list) ? list : [];
-  _filmDetailCard('profile-recent-films', _recentFilms, {
-    numbered: false,
-    emptyText: 'İzleme geçmişin tarandıkça son izlediğin filmler burada görünür.',
-  });
+  renderFilmDeck('profile-recent-films', _recentFilms,
+    'İzleme geçmişin tarandıkça son izlediğin filmler burada görünür.');
 }
 
 async function loadTopFilms() {
@@ -2626,8 +2614,10 @@ $('profile-directors-more').addEventListener('click', () => {
   const open = $('profile-directors-panel').classList.toggle('open');
   $('profile-directors-more-chevron').style.transform = open ? 'rotate(180deg)' : '';
 });
-$('profile-top-films').addEventListener('click', handleFilmCardClick);
-$('profile-recent-films').addEventListener('click', handleFilmCardClick);
+$('profile-top-films').addEventListener('click', handleFilmDeck);
+$('profile-recent-films').addEventListener('click', handleFilmDeck);
+attachDeckSwipe($('profile-top-films'));
+attachDeckSwipe($('profile-recent-films'));
 
 async function loadAllDirectorFilms(rank, films, trigger) {
   if (!films || films.dataset.fullLoaded === 'true') return;

@@ -566,6 +566,57 @@ class Enricher:
             await self._flush_cache()
         return out
 
+    async def movie_meta_by_id(self, tmdb_ids: list[int]) -> dict[int, dict]:
+        """overview / poster / director / genres straight from /movie/{id}.
+
+        Cached under a dedicated key so it never inherits an incomplete
+        detail row left by an older enrichment pass.
+        """
+        ids = [i for i in dict.fromkeys(tmdb_ids) if i]
+        if not ids:
+            return {}
+        client = await _get_tmdb_client()
+        out: dict[int, dict] = {}
+
+        async def worker(tmdb_id: int) -> None:
+            key = f"meta_id:{tmdb_id}"
+            cached = await asyncio.to_thread(self.cache.get, "tmdb", key)
+            if isinstance(cached, dict) and "overview" in cached:
+                self._cache_hits += 1
+                out[tmdb_id] = cached
+                return
+            try:
+                data = await self._get(
+                    client, f"/movie/{tmdb_id}", append_to_response="credits"
+                )
+            except httpx.HTTPError:
+                return
+            director = ""
+            for crew in data.get("credits", {}).get("crew", []):
+                if crew.get("job") == "Director":
+                    director = crew.get("name", "") or ""
+                    break
+            poster_path = data.get("poster_path") or ""
+            meta = {
+                "overview": data.get("overview") or "",
+                "poster_url": (
+                    f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else ""
+                ),
+                "director": director,
+                "genres": [
+                    g.get("name", "") for g in data.get("genres", []) if g.get("name")
+                ],
+                "vote_average": float(data.get("vote_average") or 0.0),
+            }
+            await asyncio.to_thread(self.cache.set, "tmdb", key, meta)
+            out[tmdb_id] = meta
+
+        try:
+            await asyncio.gather(*(worker(i) for i in ids))
+        finally:
+            await self._flush_cache()
+        return out
+
     async def person_photos(self, names: list[str]) -> dict[str, str]:
         """Map a director name → a portrait URL via TMDb person search (cached)."""
         wanted = [n.strip() for n in names if n and n.strip()]

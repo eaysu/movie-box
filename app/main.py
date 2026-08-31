@@ -1114,16 +1114,10 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
         _client, cache = _make_cache(settings)
         enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
         targets = rows[:count]
-        with_id = [
-            EnrichedFilm(
-                title=r["title"], year=r.get("year"),
-                slug=r["slug"], tmdb_id=r["tmdb_id"],
-            )
-            for r in targets if r.get("tmdb_id")
-        ]
+        meta = await enricher.movie_meta_by_id(
+            [r["tmdb_id"] for r in targets if r.get("tmdb_id")]
+        )
         need_search = [r for r in targets if not r.get("tmdb_id") and r.get("title")]
-        if with_id:
-            await enricher.ensure_details(with_id)
         searched = []
         if need_search:
             searched = await enricher.enrich(
@@ -1133,8 +1127,17 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
                 ],
                 include_details=True,
             )
-        by_slug = {o.slug: o for o in (with_id + searched) if o.slug}
+        by_slug = {o.slug: o for o in searched if o.slug}
         for row in rows:
+            m = meta.get(row.get("tmdb_id"))
+            if m:
+                if m.get("overview"):
+                    row["overview"] = m["overview"]
+                if not row.get("poster_url") and m.get("poster_url"):
+                    row["poster_url"] = m["poster_url"]
+                if not row.get("director") and m.get("director"):
+                    row["director"] = m["director"]
+                continue
             o = by_slug.get(row["slug"])
             if not o:
                 continue
