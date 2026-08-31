@@ -2348,14 +2348,21 @@ async def recommend(req: RecommendRequest, request: Request):
                         top_genres = [g for g in taste.get("top_genres", []) if g][:3]
 
                 discover_fallback = False
-                if not watchlist_films:
-                    # No watchlist → recommend from TMDb Discover, biased by taste,
-                    # excluding everything the user has already watched.
-                    watchlist_films = await _discover_fallback_films(
+                if len(watchlist_films) < settings.num_recommendations:
+                    # Watchlist empty or too thin to fill a recommendation set →
+                    # top up from TMDb Discover, biased by taste, excluding
+                    # everything already watched (and the films we already hold).
+                    have_slugs = {
+                        f.slug for f in watchlist_films if getattr(f, "slug", "")
+                    }
+                    topups = await _discover_fallback_films(
                         enricher, service, account, watched_films,
                         genre_names=top_genres,
                         limit=max(12, settings.num_recommendations * 6),
                     )
+                    watchlist_films = watchlist_films + [
+                        f for f in topups if f.slug not in have_slugs
+                    ]
                     discover_fallback = True
                     if not watchlist_films:
                         yield _sse({"type": "error", "detail": "Watchlist boş; alternatif öneri de bulunamadı."})
@@ -2697,8 +2704,24 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
     ]
     common = common_slugs + common_title
     common_count = len(common)
-    # Posteri olan filmler öne gelsin; eşitlikte vote_average'a bak.
-    common.sort(key=lambda f: (f.poster_url is not None, f.vote_average), reverse=True)
+    # Sıralama: önce posterli filmler; sonra İKİ kullanıcının da puanladıkları;
+    # sonra iki puanın toplamı (ikisinin de sevdiği tepeye); en son TMDb ortalaması
+    # (böylece 3 oylu yeni bir film klasikleri geçemez).
+    _w2_rating_by_slug = {f.slug: f.user_rating for f in watched2 if f.slug}
+    _w2_rating_by_key = {
+        (f.title.lower().strip(), f.year): f.user_rating for f in watched2
+    }
+
+    def _common_rank(f):
+        r1 = f.user_rating
+        r2 = _w2_rating_by_slug.get(f.slug) if f.slug else None
+        if r2 is None:
+            r2 = _w2_rating_by_key.get((f.title.lower().strip(), f.year))
+        both_rated = 1 if (r1 is not None and r2 is not None) else 0
+        mutual_love = (r1 or 0.0) + (r2 or 0.0)
+        return (f.poster_url is not None, both_rated, mutual_love, f.vote_average)
+
+    common.sort(key=_common_rank, reverse=True)
     top_common = common[:top_n]
 
     # ── Uyum skoru ─────────────────────────────────────────────────────────
@@ -2910,6 +2933,8 @@ async def _blend_bridge_films(
         ]
         with contextlib.suppress(Exception):
             for film in await enricher.discover_pool(genre_names=shared, limit=40):
+                if not film.slug and film.title:
+                    film.slug = _guess_lb_slug(film.title)
                 _add(film)
 
     if not pool:

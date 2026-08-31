@@ -97,6 +97,32 @@ class BlendBridgeFilmTests(unittest.TestCase):
         )
         self.assertEqual(bridge, [])
 
+    def test_bridge_widens_with_discover_pool_and_assigns_slugs(self):
+        class _FakeEnricher:
+            async def discover_pool(self, *, genre_names=None, limit=50):
+                # Discover results arrive without a Letterboxd slug.
+                return [
+                    EnrichedFilm(title="The Prophecy", year=1995, slug="",
+                                 genres=["Horror"], poster_url="p"),
+                    EnrichedFilm(title="Carriers", year=2009, slug="",
+                                 genres=["Horror"], poster_url="p"),
+                ]
+
+        watched1 = [_film("Seen A", genres=("Horror",))]
+        watched2 = [_film("Seen B", genres=("Horror",))]
+        # One thin watchlist film each → pool below n, discover widens it.
+        bridge = asyncio.run(
+            _blend_bridge_films(
+                watched1, watched2,
+                [_film("Only WL", genres=("Horror",))], [],
+                enricher=_FakeEnricher(), n=5,
+            )
+        )
+        by_title = {f.title: f for f in bridge}
+        self.assertIn("The Prophecy", by_title)
+        self.assertEqual(by_title["The Prophecy"].slug, "the-prophecy")
+        self.assertTrue(all(f.slug for f in bridge))
+
 
 if __name__ == "__main__":
     unittest.main()

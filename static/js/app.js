@@ -395,7 +395,7 @@ async function startInlineReco(mode) {
 
 function _discoverNote(on) {
   return on
-    ? `<div class="mb-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 px-4 py-3 font-body-md text-body-md text-tertiary-container">Watchlist'in boş görünüyor — bunları TMDb'den, daha önce izlemediğin filmlerden seçtik.</div>`
+    ? `<div class="mb-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 px-4 py-3 font-body-md text-body-md text-tertiary-container">Watchlist'inde öneri için yeterli film yoktu — eksikleri TMDb'den, daha önce izlemediğin filmlerden tamamladık.</div>`
     : '';
 }
 
@@ -1830,7 +1830,7 @@ function renderResults(data) {
   $('result-username').textContent = '@' + data.username;
 
   $('taste-summary').textContent =
-    (data.discover_fallback ? 'Watchlist’in boştu; TMDb’den, izlemediklerinden seçtik. ' : '')
+    (data.discover_fallback ? 'Watchlist’inde yeterli film yoktu; eksikleri TMDb’den, izlemediklerinden tamamladık. ' : '')
     + (data.taste_summary || 'Film zevkin analiz edildi.');
 
   const all = data.recommendations;
