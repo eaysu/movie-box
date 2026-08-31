@@ -497,6 +497,26 @@ function showView(name) {
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
   setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
+  if (name === 'profile') applyProfileTheme();
+}
+
+// ── Profile-only light/dark theme (opt-in, per viewer) ─────────────────
+function _profileThemePref() {
+  try { return localStorage.getItem('mb_profile_theme') === 'light' ? 'light' : 'dark'; }
+  catch (_) { return 'dark'; }
+}
+
+function applyProfileTheme() {
+  const light = _profileThemePref() === 'light';
+  $('view-profile').classList.toggle('theme-light', light);
+  const label = $('profile-theme-label');
+  if (label) label.textContent = light ? 'Görünüm: Açık' : 'Görünüm: Koyu';
+}
+
+function toggleProfileTheme() {
+  const next = _profileThemePref() === 'light' ? 'dark' : 'light';
+  try { localStorage.setItem('mb_profile_theme', next); } catch (_) {}
+  applyProfileTheme();
 }
 
 function setIdleError(msg) {
@@ -564,13 +584,9 @@ function applyAccount(account) {
   _account = account;
   $('username-input').value = account.username;
   $('primary-username-field').classList.add('hidden');
-  $('header-account').classList.remove('hidden');
-  $('header-account').classList.add('flex');
-  $('header-username').textContent = '@' + account.username;
   $('profile-display-name').textContent = account.display_name || account.username;
   $('profile-username').textContent = '@' + account.username;
   $('profile-avatar-fallback').textContent = (account.display_name || account.username)[0].toUpperCase();
-  setImage($('header-avatar'), null, account.avatar_url, account.display_name);
   setImage($('profile-avatar'), $('profile-avatar-fallback'), account.avatar_url, account.display_name);
   $('btn-delete-data').classList.add('hidden');
   $('btn-mode-blend').disabled = false;
@@ -871,9 +887,9 @@ function renderBlendInbox(data) {
     ? data.blocked.map(blockedUserCard).join('')
     : emptyInbox('Engellediğin kullanıcı yok.');
   const count = data.incoming?.length || 0;
-  $('inbox-badge').textContent = count > 9 ? '9+' : String(count);
-  $('inbox-badge').classList.toggle('hidden', count === 0);
-  $('inbox-badge').classList.toggle('flex', count > 0);
+  $('profile-inbox-badge').textContent = count > 9 ? '9+' : String(count);
+  $('profile-inbox-badge').classList.toggle('hidden', count === 0);
+  $('profile-inbox-badge').classList.toggle('flex', count > 0);
 }
 
 async function loadBlendInbox(show = true) {
@@ -1029,18 +1045,6 @@ async function loadProfile() {
   } catch (_) {
     if (_account?.profile_sync_status === 'pending') syncProfile();
   }
-}
-
-function openProfile() {
-  toggleAccountMenu(false);
-  _obToken += 1;              // onboarding sürüyorsa akışını durdur
-  _obClearTimers();
-  $('ob-skip').classList.add('hidden');
-  showView('profile');
-  const job = _persistedProfile && _persistedProfile.sync_job;
-  const sweepActive = job && job.state !== 'done';
-  if (_persistedProfile && !sweepActive) renderPersistedProfile(_persistedProfile);
-  else loadProfile();
 }
 
 function _onboardKey(account) {
@@ -2228,22 +2232,20 @@ async function logoutAccount() {
   _obToken += 1;
   _obClearTimers();
   $('ob-skip').classList.add('hidden');
-  $('header-account').classList.add('hidden');
-  $('header-account').classList.remove('flex');
   $('primary-username-field').classList.remove('hidden');
   $('username-input').value = '';
-  $('inbox-badge').classList.add('hidden');
-  $('inbox-badge').classList.remove('flex');
-  $('account-menu').classList.add('hidden');
+  $('profile-inbox-badge').classList.add('hidden');
+  $('profile-inbox-badge').classList.remove('flex');
+  $('profile-settings-menu').classList.add('hidden');
   setAuthMode('login');
   showView('auth');
 }
 
-function toggleAccountMenu(force) {
-  const menu = $('account-menu');
+function toggleProfileMenu(force) {
+  const menu = $('profile-settings-menu');
   const shouldOpen = typeof force === 'boolean' ? force : menu.classList.contains('hidden');
   menu.classList.toggle('hidden', !shouldOpen);
-  $('btn-account-menu').setAttribute('aria-expanded', String(shouldOpen));
+  $('profile-settings-btn').setAttribute('aria-expanded', String(shouldOpen));
 }
 
 function copyCode(element) {
@@ -2304,20 +2306,23 @@ document.addEventListener('keydown', event => {
     else if (event.key === 'ArrowRight') _obRevealNav(1);
   }
 });
-$('btn-account-menu').addEventListener('click', event => {
+$('profile-inbox').addEventListener('click', () => loadBlendInbox(true));
+$('profile-settings-btn').addEventListener('click', event => {
   event.stopPropagation();
-  toggleAccountMenu();
+  toggleProfileMenu();
 });
-$('account-menu').addEventListener('click', event => event.stopPropagation());
-$('menu-profile-view').addEventListener('click', openProfile);
+$('profile-settings-menu').addEventListener('click', event => event.stopPropagation());
+$('profile-theme-toggle').addEventListener('click', () => {
+  toggleProfileMenu(false);
+  toggleProfileTheme();
+});
 $('menu-delete-data').addEventListener('click', () => {
-  toggleAccountMenu(false);
+  toggleProfileMenu(false);
   deleteMyData();
 });
-document.addEventListener('click', () => toggleAccountMenu(false));
+document.addEventListener('click', () => toggleProfileMenu(false));
 $('btn-profile-sync').addEventListener('click', () => syncProfile(true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
-$('btn-inbox').addEventListener('click', () => loadBlendInbox(true));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 

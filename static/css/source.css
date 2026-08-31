@@ -2,6 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
+  /* ── Colour tokens ────────────────────────────────────────────────────
+     :root = the dark palette (values unchanged from before). Tailwind
+     colours resolve through these, so `.theme-light` on #view-profile can
+     swap the profile screen to a light look without touching the rest. */
+  :root {
+    --color-outline: 133 149 130;
+    --color-inverse-surface: 224 226 230;
+    --color-primary: 67 254 109;
+    --color-on-secondary-fixed-variant: 114 54 0;
+    --color-secondary-fixed: 255 220 199;
+    --color-on-secondary-container: 94 43 0;
+    --color-secondary-container: 255 128 0;
+    --color-surface-container-high: 39 42 45;
+    --color-surface-tint: 21 229 88;
+    --color-inverse-primary: 0 110 37;
+    --color-on-primary-container: 0 93 30;
+    --color-tertiary-container: 108 205 255;
+    --color-on-surface-variant: 186 203 182;
+    --color-primary-fixed-dim: 21 229 88;
+    --color-on-tertiary-container: 0 86 117;
+    --color-on-primary: 0 57 15;
+    --color-tertiary-fixed: 195 232 255;
+    --color-surface: 16 20 23;
+    --color-surface-dim: 16 20 23;
+    --color-on-surface: 224 226 230;
+    --color-error-container: 147 0 10;
+    --color-secondary-fixed-dim: 255 183 135;
+    --color-surface-container: 29 32 35;
+    --color-secondary: 255 183 135;
+    --color-primary-container: 0 224 84;
+    --color-on-primary-fixed-variant: 0 83 26;
+    --color-inverse-on-surface: 45 49 52;
+    --color-tertiary-fixed-dim: 122 208 255;
+    --color-on-tertiary-fixed-variant: 0 76 105;
+    --color-outline-variant: 60 75 58;
+    --color-surface-bright: 54 58 61;
+    --color-surface-container-low: 25 28 31;
+    --color-on-secondary-fixed: 49 19 0;
+    --color-on-primary-fixed: 0 33 6;
+    --color-on-secondary: 80 36 0;
+    --color-on-error: 105 0 5;
+    --color-on-tertiary-fixed: 0 30 44;
+    --color-error: 255 180 171;
+    --color-on-error-container: 255 218 214;
+    --color-surface-container-lowest: 11 15 17;
+    --color-on-tertiary: 0 53 73;
+    --color-surface-variant: 50 53 56;
+    --color-tertiary: 185 228 255;
+    --color-background: 16 20 23;
+    --color-on-background: 224 226 230;
+    --color-primary-fixed: 108 255 128;
+    --color-surface-container-highest: 50 53 56;
+  }
+
+  /* Opt-in light look, scoped to the profile screen. */
+  #view-profile.theme-light {
+    --color-surface: 249 250 248;
+    --color-surface-dim: 233 235 230;
+    --color-surface-bright: 255 255 255;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-low: 244 246 242;
+    --color-surface-container: 238 240 235;
+    --color-surface-container-high: 232 234 228;
+    --color-surface-container-highest: 226 229 221;
+    --color-surface-variant: 224 229 220;
+    --color-background: 249 250 248;
+    --color-on-surface: 26 28 25;
+    --color-on-background: 26 28 25;
+    --color-on-surface-variant: 66 74 63;
+    --color-outline: 114 122 110;
+    --color-outline-variant: 196 203 191;
+    --color-inverse-surface: 46 49 46;
+    --color-inverse-on-surface: 240 242 236;
+    --color-primary: 0 122 45;
+    --color-primary-container: 8 132 55;
+    --color-on-primary: 255 255 255;
+    --color-on-primary-container: 236 255 238;
+    --color-secondary-container: 176 78 0;
+    --color-on-secondary-container: 255 236 224;
+    --color-secondary: 140 70 20;
+    --color-tertiary-container: 0 116 179;
+    --color-on-tertiary-container: 232 246 255;
+    --color-tertiary: 0 92 143;
+    --color-error: 186 26 26;
+    --color-error-container: 255 218 214;
+    --color-on-error: 255 255 255;
+    --color-on-error-container: 65 0 2;
+
+    background-color: rgb(var(--color-surface-container-lowest));
+    color-scheme: light;
+  }
+  /* Profile ambient decoration adapts to the light look. */
+  #view-profile.theme-light .profile-ambient-glow { opacity: 0.5; }
+  #view-profile.theme-light .profile-ambient-grid {
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.045) 1px, transparent 1px) !important;
+  }
+  #view-profile.theme-light .ring-track { stroke: rgba(0, 0, 0, 0.10); }
+
   body {
     font-family: 'Space Grotesk', 'Geist', sans-serif;
     min-height: max(884px, 100dvh);
