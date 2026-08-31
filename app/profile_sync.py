@@ -33,8 +33,9 @@ MAX_CONCURRENT_JOBS = 1
 LEASE_SECONDS = 360
 # Cooldown after a hard failure before the job is retried.
 FAILURE_BACKOFF = timedelta(minutes=30)
-# Minimum gap between opportunistic incremental refreshes of a completed sweep.
-INCREMENTAL_MIN_INTERVAL = timedelta(hours=6)
+# Minimum gap between opportunistic incremental refreshes of a completed sweep —
+# short enough that "open the app" effectively means "check for new films".
+INCREMENTAL_MIN_INTERVAL = timedelta(minutes=20)
 
 _job_sem = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 _tasks: dict[int, asyncio.Task] = {}

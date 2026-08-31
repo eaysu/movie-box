@@ -2565,7 +2565,7 @@ $('menu-delete-data').addEventListener('click', () => {
   deleteMyData();
 });
 document.addEventListener('click', () => toggleProfileMenu(false));
-$('btn-profile-sync').addEventListener('click', () => syncProfile(true));
+$('btn-profile-sync').addEventListener('click', () => syncProfile(false));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));

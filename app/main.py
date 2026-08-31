@@ -1769,6 +1769,7 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
                         snapshot_behind
                         or job.get("state") != "done"
                         or profile_sync.job_is_resumable(job)
+                        or profile_sync.incremental_due(job)
                     )
                 ):
                     job = await profile_sync.ensure_started(
