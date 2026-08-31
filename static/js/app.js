@@ -496,6 +496,8 @@ function showView(name) {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
+  // Onboarding is a locked, full-screen takeover — no header to click away with.
+  $('app-header').classList.toggle('hidden', name === 'onboarding');
   setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
   if (name === 'profile') applyProfileTheme();
 }

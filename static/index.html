@@ -21,22 +21,20 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260831.8"/>
+<link rel="stylesheet" href="/static/app.css?v=20260831.9"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
 <!-- ═══════════════════════════  HEADER  ═══════════════════════════ -->
-<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
-  <div class="grid grid-cols-[1fr_auto_1fr] items-center px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto gap-2">
-    <button id="header-how-it-works" class="hidden justify-self-start font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors text-left" type="button">
+<header id="app-header" class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30">
+  <div class="relative flex items-center justify-center px-margin-mobile md:px-margin-desktop h-16 w-full max-w-[1200px] mx-auto">
+    <button id="header-how-it-works" class="hidden absolute left-margin-mobile md:left-margin-desktop font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors text-left" type="button">
       <span class="hidden sm:inline">Program </span>nasıl çalışır?
     </button>
-    <button id="btn-home" class="justify-self-center font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="Ana sayfa">
+    <button id="btn-home" class="font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="Ana sayfa">
       MOVIEBOXD · AI
     </button>
-    <div class="justify-self-end flex items-center">
-      <button id="header-privacy" class="hidden font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors" type="button">Gizlilik</button>
-    </div>
+    <button id="header-privacy" class="hidden absolute right-margin-mobile md:right-margin-desktop font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors" type="button">Gizlilik</button>
   </div>
 </header>
 
@@ -925,6 +923,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260831.8"></script>
+<script type="module" src="/static/js/app.js?v=20260831.9"></script>
 </body>
 </html>
