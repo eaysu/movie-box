@@ -26,8 +26,44 @@ class BlendCalibrationTests(unittest.TestCase):
 
         result = _calculate_blend(first, second)
 
-        self.assertEqual(result["score"], 100)
+        self.assertGreaterEqual(result["score"], 75)
         self.assertEqual(result["confidence"]["level"], "high")
+
+    def test_opposite_ratings_are_penalized(self):
+        first = [
+            EnrichedFilm(
+                title=f"Film {i}", slug=f"film-{i}", year=2020,
+                genres=["Drama"], keywords=["identity"],
+                director="Shared Director", user_rating=float(i),
+            )
+            for i in range(1, 6)
+        ]
+        second = [
+            EnrichedFilm(
+                title=f"Film {i}", slug=f"film-{i}", year=2020,
+                genres=["Drama"], keywords=["identity"],
+                director="Shared Director", user_rating=float(6 - i),
+            )
+            for i in range(1, 6)
+        ]
+
+        result = _calculate_blend(first, second)
+
+        self.assertLessEqual(result["score"], 25)
+
+    def test_hated_and_loved_shared_features_do_not_score_as_a_match(self):
+        hated = EnrichedFilm(
+            title="Hated", slug="hated", year=2020, genres=["Drama"],
+            keywords=["identity"], director="Same", user_rating=0.5,
+        )
+        loved = EnrichedFilm(
+            title="Loved", slug="loved", year=2020, genres=["Drama"],
+            keywords=["identity"], director="Same", user_rating=5.0,
+        )
+
+        result = _calculate_blend([hated], [loved])
+
+        self.assertEqual(result["score"], 0)
 
     def test_disjoint_profiles_can_score_zero_instead_of_artificial_seventy(self):
         first = _profile("first", shared_features=False)

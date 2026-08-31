@@ -21,6 +21,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL D
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS profile_sync_status TEXT NOT NULL DEFAULT 'pending';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS ownership_verified_at TIMESTAMPTZ;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS profile_synced_at TIMESTAMPTZ;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS onboarding_completed_at TIMESTAMPTZ;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS letterboxd_stats JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 -- User-curated "top 10 films" (ordered list of watched film slugs). Empty =
 -- fall back to the highest-rated watched films.
@@ -99,6 +101,7 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
   user_rating    REAL,
   rating_observed BOOLEAN NOT NULL DEFAULT FALSE,
   poster_url     TEXT,
+  poster_resolver_url TEXT,
   watched_rank   INTEGER,          -- diary position; 0 = most recent (chronological proxy)
   details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
   last_seen_run_id UUID,
@@ -111,6 +114,8 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
 ALTER TABLE public.user_watched_films
   ADD COLUMN IF NOT EXISTS poster_url TEXT;
 ALTER TABLE public.user_watched_films
+  ADD COLUMN IF NOT EXISTS poster_resolver_url TEXT;
+ALTER TABLE public.user_watched_films
   ADD COLUMN IF NOT EXISTS rating_observed BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE public.user_watched_films
   ADD COLUMN IF NOT EXISTS last_seen_run_id UUID;
@@ -122,17 +127,36 @@ CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
 CREATE INDEX IF NOT EXISTS idx_user_watched_films_director
   ON public.user_watched_films (user_id, director);
 
--- Shared film → poster pool. Filled by every enrichment path across all users;
--- poster lookups hit this first so a rate-limited gap for one user self-heals
--- once any user's enrichment resolves that film.
+-- Shared, account-independent film catalog. Filled by every scrape/enrichment
+-- path across all users. Public film metadata deliberately survives account
+-- deletion so the application gets faster as its catalog grows.
 CREATE TABLE IF NOT EXISTS public.film_posters (
   film_slug     TEXT PRIMARY KEY,
-  poster_url    TEXT NOT NULL,
+  poster_url    TEXT,
+  poster_resolver_url TEXT,
   tmdb_id       INTEGER,
   title         TEXT NOT NULL DEFAULT '',
   release_year  INTEGER,
+  overview      TEXT NOT NULL DEFAULT '',
+  director      TEXT NOT NULL DEFAULT '',
+  genres        JSONB NOT NULL DEFAULT '[]'::jsonb,
+  keywords      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  vote_average  REAL NOT NULL DEFAULT 0,
+  matched       BOOLEAN NOT NULL DEFAULT FALSE,
+  details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Idempotent upgrade from the former poster-only pool.
+ALTER TABLE public.film_posters ALTER COLUMN poster_url DROP NOT NULL;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS poster_resolver_url TEXT;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS overview TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS director TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS genres JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS keywords JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS vote_average REAL NOT NULL DEFAULT 0;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS matched BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.film_posters ADD COLUMN IF NOT EXISTS details_loaded BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_film_posters_tmdb_id
   ON public.film_posters (tmdb_id)
@@ -192,21 +216,40 @@ AS $$
 DECLARE
   v_count INTEGER;
 BEGIN
-  INSERT INTO public.film_posters (film_slug, poster_url, tmdb_id, title, release_year, updated_at)
+  INSERT INTO public.film_posters (
+    film_slug, poster_url, poster_resolver_url, tmdb_id, title, release_year, overview, director,
+    genres, keywords, vote_average, matched, details_loaded, updated_at
+  )
   SELECT
     item->>'slug',
-    item->>'poster_url',
+    NULLIF(item->>'poster_url', ''),
+    NULLIF(item->>'poster_resolver_url', ''),
     NULLIF(item->>'tmdb_id', '')::INTEGER,
     COALESCE(item->>'title', ''),
     NULLIF(item->>'release_year', '')::INTEGER,
+    COALESCE(item->>'overview', ''),
+    COALESCE(item->>'director', ''),
+    COALESCE(item->'genres', '[]'::jsonb),
+    COALESCE(item->'keywords', '[]'::jsonb),
+    COALESCE(NULLIF(item->>'vote_average', '')::REAL, 0),
+    COALESCE((item->>'matched')::BOOLEAN, FALSE),
+    COALESCE((item->>'details_loaded')::BOOLEAN, FALSE),
     now()
   FROM jsonb_array_elements(COALESCE(p_films, '[]'::jsonb)) AS item
-  WHERE COALESCE(item->>'slug', '') <> '' AND COALESCE(item->>'poster_url', '') <> ''
+  WHERE COALESCE(item->>'slug', '') <> ''
   ON CONFLICT (film_slug) DO UPDATE SET
-    poster_url = EXCLUDED.poster_url,
+    poster_url = COALESCE(EXCLUDED.poster_url, public.film_posters.poster_url),
+    poster_resolver_url = COALESCE(EXCLUDED.poster_resolver_url, public.film_posters.poster_resolver_url),
     tmdb_id = COALESCE(EXCLUDED.tmdb_id, public.film_posters.tmdb_id),
     title = CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title ELSE public.film_posters.title END,
     release_year = COALESCE(EXCLUDED.release_year, public.film_posters.release_year),
+    overview = CASE WHEN EXCLUDED.overview <> '' THEN EXCLUDED.overview ELSE public.film_posters.overview END,
+    director = CASE WHEN EXCLUDED.director <> '' THEN EXCLUDED.director ELSE public.film_posters.director END,
+    genres = CASE WHEN EXCLUDED.genres <> '[]'::jsonb THEN EXCLUDED.genres ELSE public.film_posters.genres END,
+    keywords = CASE WHEN EXCLUDED.keywords <> '[]'::jsonb THEN EXCLUDED.keywords ELSE public.film_posters.keywords END,
+    vote_average = CASE WHEN EXCLUDED.vote_average > 0 THEN EXCLUDED.vote_average ELSE public.film_posters.vote_average END,
+    matched = public.film_posters.matched OR EXCLUDED.matched,
+    details_loaded = public.film_posters.details_loaded OR EXCLUDED.details_loaded,
     updated_at = now();
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN v_count;
@@ -422,6 +465,10 @@ BEGIN
   UPDATE public.users SET
     display_name = COALESCE(NULLIF(p_profile->>'display_name', ''), display_name),
     avatar_url = COALESCE(NULLIF(p_profile->>'avatar_url', ''), avatar_url),
+    letterboxd_stats = CASE
+      WHEN p_profile ? 'stats' THEN COALESCE(p_profile->'stats', '{}'::jsonb)
+      ELSE letterboxd_stats
+    END,
     profile_sync_status = 'ready',
     profile_synced_at = now(),
     updated_at = now(),
@@ -457,7 +504,7 @@ BEGIN
 
   INSERT INTO public.user_watched_films (
     user_id, film_slug, title, release_year, tmdb_id, director, genres, keywords,
-    user_rating, rating_observed, poster_url, watched_rank, details_loaded,
+    user_rating, rating_observed, poster_url, poster_resolver_url, watched_rank, details_loaded,
     last_seen_run_id, is_active, updated_at
   )
   SELECT
@@ -472,6 +519,7 @@ BEGIN
     NULLIF(item->>'user_rating', '')::REAL,
     COALESCE((item->>'rating_observed')::BOOLEAN, FALSE),
     NULLIF(item->>'poster_url', ''),
+    NULLIF(item->>'poster_resolver_url', ''),
     NULLIF(item->>'watched_rank', '')::INTEGER,
     COALESCE((item->>'details_loaded')::BOOLEAN, FALSE),
     NULLIF(item->>'last_seen_run_id', '')::UUID,
@@ -492,6 +540,7 @@ BEGIN
     END,
     rating_observed = public.user_watched_films.rating_observed OR EXCLUDED.rating_observed,
     poster_url = COALESCE(EXCLUDED.poster_url, public.user_watched_films.poster_url),
+    poster_resolver_url = COALESCE(EXCLUDED.poster_resolver_url, public.user_watched_films.poster_resolver_url),
     watched_rank = COALESCE(EXCLUDED.watched_rank, public.user_watched_films.watched_rank),
     details_loaded = public.user_watched_films.details_loaded OR EXCLUDED.details_loaded,
     last_seen_run_id = COALESCE(EXCLUDED.last_seen_run_id, public.user_watched_films.last_seen_run_id),

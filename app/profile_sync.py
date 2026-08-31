@@ -22,8 +22,9 @@ log = logging.getLogger("uvicorn.error")
 
 # `/films/` grid pages fetched per crawl step (~72 posters per page).
 WATCHED_WINDOW_PAGES = 4
-# Hard ceiling on films analysed in one full sweep.
-FULL_MAX_FILMS = 10_000
+# Runaway-markup safety ceiling, intentionally above any realistic Letterboxd
+# library. The crawler otherwise walks until Letterboxd returns an empty page.
+FULL_MAX_FILMS = 50_000
 # Director/keyword detail calls per checkpointed batch.
 ENRICH_BATCH = 150
 # A running job whose heartbeat is older than this is treated as abandoned.
@@ -115,6 +116,13 @@ def progress_of(job: dict | None) -> dict | None:
         percent = min(99, round(processed / total * 100))
     else:
         percent = 0
+    # Onboarding may start after every Letterboxd history page has been crawled
+    # and the interim snapshot has been committed. Director/keyword/plot repair
+    # intentionally continues in the background after this durable milestone.
+    onboarding_ready = bool(
+        state == "done"
+        or (total > 0 and (job.get("phase") or "") in ("enrich", "aggregate"))
+    )
     return {
         "state": state,
         "phase": job.get("phase") or "diary",
@@ -122,6 +130,7 @@ def progress_of(job: dict | None) -> dict | None:
         "processed": processed,
         "total": total,
         "percent": percent,
+        "onboarding_ready": onboarding_ready,
         "error": job.get("last_error") or "",
     }
 
@@ -271,7 +280,10 @@ async def _crawl(pipeline, service, account, *, lease_token: str | None = None) 
     known: set[str] = set(await asyncio.to_thread(service.get_watched_slugs, uid))
     natural_end = phase != "diary"
 
-    # ── Phase 1 · walk the /films/ grid, search-enrich + persist each window ──
+    # ── Phase 1 · walk the /films/ grid and persist each window ───────────
+    # Do not put one TMDb search per film on the critical crawl path. Known
+    # catalog metadata is hydrated locally; genuine misses are enriched after
+    # all Letterboxd pages have been collected.
     while phase == "diary":
         window = await pipeline.scrape_watched_window(account.username, cursor)
         if not window:
@@ -301,7 +313,8 @@ async def _crawl(pipeline, service, account, *, lease_token: str | None = None) 
         if known_updates:
             await asyncio.to_thread(service.save_watched_films, uid, known_updates)
         if fresh:
-            enriched = await pipeline.enrich_search(fresh)
+            hydrate = getattr(pipeline, "hydrate_catalog", None)
+            enriched = await hydrate(fresh) if hydrate else fresh
             source_by_slug = {film["slug"]: film for film in fresh}
             for row in enriched:
                 source = source_by_slug.get(row.get("slug"), {})
@@ -328,11 +341,17 @@ async def _crawl(pipeline, service, account, *, lease_token: str | None = None) 
             phase = "enrich"
 
     # Interim aggregate: the profile should jump to the full film count as soon
-    # as the crawl is done, without waiting on (or depending on) the detail pass.
+    # as the crawl is done. Only the bounded data required by the onboarding
+    # slides is enriched here; the exhaustive metadata pass remains background.
     if phase == "enrich":
         with contextlib.suppress(Exception):
             await _touch(service, uid, lease_token, phase="aggregate")
-            interim_total = await pipeline.rebuild_snapshot(account, use_llm=False)
+            prepare = getattr(pipeline, "prepare_onboarding", None)
+            if prepare:
+                await prepare(account)
+            interim_total = await pipeline.rebuild_snapshot(
+                account, use_llm=False, repair_all=False
+            )
             await _touch(
                 service,
                 uid,
@@ -345,7 +364,9 @@ async def _crawl(pipeline, service, account, *, lease_token: str | None = None) 
     # ── Phase 2 · director/keyword details for rows still missing them ─────
     await _touch(service, uid, lease_token, phase="enrich")
     rows = await asyncio.to_thread(service.get_watched_films, uid)
-    pending = [r for r in rows if r.get("tmdb_id") and not r.get("details_loaded")]
+    # Rows without a TMDb id still need the background search step; restricting
+    # this list to known ids would permanently strand every cold-catalog film.
+    pending = [r for r in rows if not r.get("details_loaded")]
     for offset in range(0, len(pending), ENRICH_BATCH):
         batch = pending[offset : offset + ENRICH_BATCH]
         detailed = await pipeline.enrich_details(batch)

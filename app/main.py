@@ -48,6 +48,8 @@ from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
     AccessBlockedError,
+    ScrapedFilm,
+    ScrapedProfile,
     ScrapeError,
     scrape_diary,
     scrape_films,
@@ -409,7 +411,7 @@ TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftal�
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
 RECOMMENDER_VERSION = "v3-last100-director-affinity"
-BLEND_VERSION = "blend-v2-calibrated"
+BLEND_VERSION = "blend-v3-signed-db-full"
 
 
 def _make_persistent_cache(settings, client):
@@ -428,6 +430,37 @@ def _enriched_from_cache(rows: list[dict]) -> list[EnrichedFilm]:
             d["details_loaded"] = bool(d.get("director") or d.get("keywords"))
         out.append(EnrichedFilm(**d))
     return out
+
+
+def _enriched_from_watched_rows(
+    rows: list[dict], limit: int | None = None
+) -> list[EnrichedFilm]:
+    """Build a recent-first Blend profile from durable per-user rows."""
+    ordered = sorted(
+        rows,
+        key=lambda row: row.get("watched_rank")
+        if row.get("watched_rank") is not None
+        else 10**9,
+    )
+    if limit is not None:
+        ordered = ordered[:limit]
+    return [
+        EnrichedFilm(
+            title=row.get("title") or "",
+            year=row.get("release_year"),
+            slug=row.get("film_slug") or "",
+            tmdb_id=row.get("tmdb_id"),
+            genres=row.get("genres") or [],
+            director=row.get("director") or "",
+            keywords=row.get("keywords") or [],
+            poster_url=row.get("poster_url") or None,
+            matched=bool(row.get("tmdb_id")),
+            details_loaded=bool(row.get("details_loaded")),
+            user_rating=row.get("user_rating"),
+        )
+        for row in ordered
+        if row.get("film_slug")
+    ]
 
 
 def _detail_sample(films: list[EnrichedFilm], limit: int) -> list[EnrichedFilm]:
@@ -1044,6 +1077,22 @@ async def profile_me(request: Request) -> dict:
     return profile
 
 
+@app.post("/api/profile/onboarding-complete")
+async def complete_profile_onboarding(request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    job = await asyncio.to_thread(service.get_sync_job, account.id)
+    progress = profile_sync.progress_of(job)
+    if not progress or not progress.get("onboarding_ready"):
+        raise HTTPException(
+            status_code=409,
+            detail="Tüm Letterboxd geçmişi henüz taranmadı.",
+        )
+    completed_at = await asyncio.to_thread(service.complete_onboarding, account)
+    return {"ok": True, "completed_at": completed_at}
+
+
 @app.get("/api/profile/directors/{rank}/films")
 async def profile_director_films(
     rank: int, request: Request, limit: int = 60, offset: int = 0
@@ -1114,10 +1163,32 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
         _client, cache = _make_cache(settings)
         enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
         targets = rows[:count]
-        meta = await enricher.movie_meta_by_id(
-            [r["tmdb_id"] for r in targets if r.get("tmdb_id")]
+        assets = await asyncio.to_thread(
+            service.get_film_assets,
+            [row.get("slug") for row in targets if row.get("slug")],
         )
-        need_search = [r for r in targets if not r.get("tmdb_id") and r.get("title")]
+        for row in targets:
+            asset = assets.get(row.get("slug")) or {}
+            if asset.get("overview"):
+                row["overview"] = asset["overview"]
+            if not row.get("poster_url") and asset.get("poster_url"):
+                row["poster_url"] = asset["poster_url"]
+            if not row.get("director") and asset.get("director"):
+                row["director"] = asset["director"]
+            if not row.get("tmdb_id") and asset.get("tmdb_id"):
+                row["tmdb_id"] = asset["tmdb_id"]
+        meta = await enricher.movie_meta_by_id(
+            [
+                r["tmdb_id"]
+                for r in targets
+                if r.get("tmdb_id") and not r.get("overview")
+            ]
+        )
+        need_search = [
+            r
+            for r in targets
+            if not r.get("overview") and not r.get("tmdb_id") and r.get("title")
+        ]
         searched = []
         if need_search:
             searched = await enricher.enrich(
@@ -1128,7 +1199,9 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
                 include_details=True,
             )
         by_slug = {o.slug: o for o in searched if o.slug}
-        for row in rows:
+        for row in targets:
+            if row.get("overview"):
+                continue
             m = meta.get(row.get("tmdb_id"))
             if m:
                 if m.get("overview"):
@@ -1149,6 +1222,22 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
                 row["director"] = o.director
             if not row.get("tmdb_id") and o.tmdb_id:
                 row["tmdb_id"] = o.tmdb_id
+        await asyncio.to_thread(
+            service.save_film_posters,
+            [
+                {
+                    "slug": row.get("slug"),
+                    "title": row.get("title") or "",
+                    "release_year": row.get("year"),
+                    "tmdb_id": row.get("tmdb_id"),
+                    "poster_url": row.get("poster_url") or "",
+                    "overview": row.get("overview") or "",
+                    "director": row.get("director") or "",
+                }
+                for row in targets
+                if row.get("slug") and row.get("overview")
+            ],
+        )
 
 
 def _guess_lb_slug(title: str) -> str:
@@ -1253,10 +1342,9 @@ async def _diary_recent_rows(account: Account, service, settings, limit: int) ->
 
 @app.get("/api/profile/recent")
 async def profile_recent_films(
-    request: Request, preview: int = 1, fresh: bool = False
+    request: Request, preview: int = 10, fresh: bool = False
 ) -> dict:
-    """The user's last 10 films in real watch order — pulled from the Letterboxd
-    diary, not the swept list; the first `preview` carry a plot summary."""
+    """The user's last 10 films in real watch order, all with plot summaries."""
     account = await _require_account(request)
     service = _auth_service()
     settings = get_settings()
@@ -1284,6 +1372,11 @@ async def profile_recent_films(
 async def profile_stats(request: Request) -> dict:
     """Lightweight Letterboxd counters (total watched, films this year)."""
     account = await _require_account(request)
+    if account.letterboxd_stats:
+        return {
+            "films": int(account.letterboxd_stats.get("films", 0) or 0),
+            "this_year": int(account.letterboxd_stats.get("this_year", 0) or 0),
+        }
     settings = get_settings()
     supabase_client, _ = _make_cache(settings)
     pcache = _make_persistent_cache(settings, supabase_client)
@@ -1310,8 +1403,8 @@ async def profile_stats(request: Request) -> dict:
 
 
 @app.get("/api/profile/top-films")
-async def get_top_films(request: Request, preview: int = 1) -> dict:
-    """The user's curated (or highest-rated) top 10; first `preview` get a plot."""
+async def get_top_films(request: Request, preview: int = 10) -> dict:
+    """The user's curated (or highest-rated) top 10, all with plot summaries."""
     account = await _require_account(request)
     service = _auth_service()
     rows = await asyncio.to_thread(service.resolve_top_films, account)
@@ -1358,52 +1451,40 @@ async def save_top_films(req: TopFilmsRequest, request: Request) -> dict:
 async def _provisional_profile_sync(
     account: Account, settings, service, *, force: bool
 ) -> dict:
-    """The fast in-request pass: identity + Fav 4 + last-N watched → snapshot.
+    """Fast in-request bootstrap: identity + Fav 4 only.
 
-    This is the pre-existing behaviour; it keeps the profile useful within one
-    request while the full watched-history sweep runs in the background.
+    The complete watched history is intentionally owned by the checkpointed
+    background crawl. Doing a separate 250-film scrape here duplicated the
+    first pages and delayed the moment that the exhaustive crawl could start.
     """
     await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
     try:
-        profile = await scrape_profile(
-            account.username, max_retries=settings.scrape_max_retries
+        stored = await asyncio.to_thread(service.get_profile, account)
+        stored_favorites = stored.get("favorite_films") or []
+        profile = ScrapedProfile(
+            username=account.username,
+            display_name=account.display_name or account.username,
+            avatar_url=account.avatar_url or None,
+            favorite_films=[
+                ScrapedFilm(
+                    title=film.get("title") or "",
+                    year=film.get("release_year"),
+                    slug=film.get("slug") or "",
+                    poster_url=film.get("poster_url") or None,
+                )
+                for film in stored_favorites
+                if film.get("slug")
+            ],
+            stats=account.letterboxd_stats or {},
         )
-        supabase_client, cache = _make_cache(settings)
-        pcache = _make_persistent_cache(settings, supabase_client)
+        _supabase_client, cache = _make_cache(settings)
         enricher = (
             Enricher(settings.tmdb_api_key, cache, asset_store=service)
             if settings.has_tmdb else None
         )
-        watched, _from_cache = await _load_user_films(
-            account.username,
-            "watched",
-            settings=settings,
-            enricher=enricher,
-            pcache=pcache,
-            scrape_kwargs={
-                "delay": settings.scrape_delay,
-                "max_pages": max(settings.watched_max_pages, 10),
-                "film_limit": getattr(
-                    settings, "provisional_watched_film_limit", settings.watched_film_limit
-                ),
-                "max_retries": settings.scrape_max_retries,
-            },
-            force=force,
-        )
+        watched: list[EnrichedFilm] = []
         source_fingerprint = taste_source_fingerprint(profile, watched)
-        stored = await asyncio.to_thread(service.get_profile, account)
-        if (
-            stored.get("taste")
-            and stored["taste"].get("source_fingerprint") == source_fingerprint
-            and stored["taste"].get("algorithm_version") == TASTE_PROFILE_VERSION
-        ):
-            await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
-            account.profile_sync_status = "ready"
-            stored["account"] = account.__dict__
-            stored["letterboxd_stats"] = profile.stats
-            return stored
         if enricher is not None:
-            await enricher.ensure_details(_detail_sample(watched, 40))
             favorites = await enricher.enrich(
                 profile.favorite_films, include_details=False
             )
@@ -1434,9 +1515,14 @@ async def _provisional_profile_sync(
             favorites,
             taste,
         )
+        # save_profile_snapshot marks a normal completed refresh as ready. This
+        # bootstrap is different: keep the account locked in onboarding until
+        # the background job has crawled every Letterboxd history page and
+        # committed its interim snapshot.
+        await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
         account.display_name = profile.display_name
         account.avatar_url = profile.avatar_url or ""
-        account.profile_sync_status = "ready"
+        account.profile_sync_status = "syncing"
         return {
             "account": account.__dict__,
             "taste": taste.to_dict(),
@@ -1460,17 +1546,25 @@ async def _provisional_profile_sync(
 
 
 async def _stash_posters(films: list[dict]) -> None:
-    """Persist resolved posters into the shared film_posters pool (best effort)."""
+    """Promote public film metadata into the shared durable catalog."""
     rows = [
         {
             "slug": f.get("slug"),
             "poster_url": f.get("poster_url"),
+            "poster_resolver_url": f.get("poster_resolver_url"),
             "tmdb_id": f.get("tmdb_id"),
             "title": f.get("title"),
             "release_year": f.get("release_year"),
+            "overview": f.get("overview") or "",
+            "director": f.get("director") or "",
+            "genres": f.get("genres") or [],
+            "keywords": f.get("keywords") or [],
+            "vote_average": f.get("vote_average") or 0,
+            "matched": bool(f.get("matched") or f.get("tmdb_id")),
+            "details_loaded": bool(f.get("details_loaded")),
         }
         for f in films
-        if f.get("slug") and f.get("poster_url")
+        if f.get("slug")
     ]
     if not rows:
         return
@@ -1610,6 +1704,93 @@ class _SyncPipeline:
             if film.slug
         ]
 
+    async def hydrate_catalog(self, films: list[dict]) -> list[dict]:
+        """Merge durable shared metadata without making an external request."""
+        if not films:
+            return []
+        service = _auth_service()
+        try:
+            assets = await asyncio.to_thread(
+                service.get_film_assets,
+                [film.get("slug") for film in films if film.get("slug")],
+            )
+        except Exception:
+            assets = {}
+        out: list[dict] = []
+        for film in films:
+            asset = assets.get(film.get("slug")) or {}
+            out.append(
+                {
+                    "slug": film.get("slug") or "",
+                    "title": asset.get("title") or film.get("title") or "",
+                    "release_year": asset.get("release_year") or film.get("year"),
+                    "tmdb_id": asset.get("tmdb_id"),
+                    "overview": asset.get("overview") or "",
+                    "director": asset.get("director") or "",
+                    "genres": asset.get("genres") or [],
+                    "keywords": asset.get("keywords") or [],
+                    "vote_average": asset.get("vote_average") or 0,
+                    "poster_url": asset.get("poster_url") or film.get("poster_url") or "",
+                    "poster_resolver_url": film.get("poster_resolver_url") or asset.get("poster_resolver_url") or "",
+                    "user_rating": film.get("user_rating"),
+                    "watched_rank": film.get("watched_rank"),
+                    "details_loaded": bool(asset.get("details_loaded")),
+                }
+            )
+        return out
+
+    async def prepare_onboarding(self, account: Account) -> None:
+        """Bound the metadata work needed before the mandatory reveal slides.
+
+        The complete Letterboxd history is already persisted at this point. A
+        rating-first/recent sample provides the director and poster signals used
+        by onboarding; exhaustive plot/keyword repair continues afterwards.
+        """
+        service = _auth_service()
+        rows = await asyncio.to_thread(service.get_watched_films, account.id)
+        films = [
+            EnrichedFilm(
+                title=row.get("title") or "",
+                year=row.get("release_year"),
+                slug=row.get("film_slug") or "",
+                tmdb_id=row.get("tmdb_id"),
+                overview=row.get("overview") or "",
+                genres=row.get("genres") or [],
+                director=row.get("director") or "",
+                keywords=row.get("keywords") or [],
+                vote_average=float(row.get("vote_average") or 0),
+                poster_url=row.get("poster_url") or None,
+                matched=bool(row.get("tmdb_id")),
+                details_loaded=bool(row.get("details_loaded")),
+                user_rating=row.get("user_rating"),
+            )
+            for row in rows
+            if row.get("film_slug")
+        ]
+        sample = [film for film in _detail_sample(films, 60) if not film.details_loaded]
+        if not sample:
+            return
+        detailed = await self.enrich_details(
+            [
+                {
+                    "slug": film.slug,
+                    "title": film.title,
+                    "release_year": film.year,
+                    "poster_resolver_url": next(
+                        (
+                            row.get("poster_resolver_url") or ""
+                            for row in rows
+                            if row.get("film_slug") == film.slug
+                        ),
+                        "",
+                    ),
+                }
+                for film in sample
+            ]
+        )
+        if detailed:
+            await asyncio.to_thread(service.save_watched_films, account.id, detailed)
+
     async def enrich_search(self, films: list[dict]) -> list[dict]:
         enricher = self._enricher()
         if enricher is None:
@@ -1654,7 +1835,11 @@ class _SyncPipeline:
                     "release_year": ef.year or src.get("year"),
                     "tmdb_id": ef.tmdb_id,
                     "genres": ef.genres or [],
+                    "overview": ef.overview or "",
+                    "vote_average": ef.vote_average or 0,
+                    "matched": ef.matched,
                     "poster_url": ef.poster_url or src.get("poster_url") or "",
+                    "poster_resolver_url": src.get("poster_resolver_url") or "",
                     "user_rating": src.get("user_rating"),
                     "watched_rank": src.get("watched_rank"),
                     "details_loaded": False,
@@ -1674,11 +1859,26 @@ class _SyncPipeline:
                 "slug": row.get("film_slug") or row.get("slug") or "",
                 "title": row.get("title") or "",
                 "year": row.get("release_year"),
+                "poster_resolver_url": row.get("poster_resolver_url") or "",
             }
             for row in rows
             if row.get("film_slug") or row.get("slug")
         ]
         detailed = await enricher.enrich(seeds, include_details=True)
+        final_misses = [
+            source
+            for source, film in zip(seeds, detailed)
+            if not film.poster_url and source.get("poster_resolver_url")
+        ]
+        if final_misses:
+            await resolve_missing_posters(final_misses)
+            for source, film in zip(seeds, detailed):
+                if not film.poster_url and source.get("poster_url"):
+                    film.poster_url = source["poster_url"]
+        resolver_by_slug = {
+            source.get("slug"): source.get("poster_resolver_url") or ""
+            for source in seeds
+        }
         out = [
             {
                 "slug": film.slug,
@@ -1688,7 +1888,11 @@ class _SyncPipeline:
                 "director": film.director or "",
                 "genres": film.genres or [],
                 "keywords": film.keywords or [],
+                "overview": film.overview or "",
+                "vote_average": film.vote_average or 0,
+                "matched": film.matched,
                 "poster_url": film.poster_url or "",
+                "poster_resolver_url": resolver_by_slug.get(film.slug, ""),
                 "details_loaded": bool(film.details_loaded),
             }
             for film in detailed
@@ -1697,7 +1901,13 @@ class _SyncPipeline:
         await _stash_posters(out)
         return out
 
-    async def rebuild_snapshot(self, account: Account, *, use_llm: bool = True) -> int:
+    async def rebuild_snapshot(
+        self,
+        account: Account,
+        *,
+        use_llm: bool = True,
+        repair_all: bool = True,
+    ) -> int:
         service = _auth_service()
         rows = await asyncio.to_thread(service.get_watched_films, account.id)
         rows.sort(
@@ -1725,6 +1935,8 @@ class _SyncPipeline:
         # 1) shared pool (free), 2) TMDb only for unresolved rows. Every
         # successful repair is written back to both the user row and shared pool.
         missing = [f for f in watched if not f.poster_url]
+        if not repair_all:
+            missing = _detail_sample(missing, 60)
         if missing:
             with contextlib.suppress(Exception):
                 pool = await asyncio.to_thread(
@@ -1745,7 +1957,8 @@ class _SyncPipeline:
         # 2) direct /movie/{id} for rows that already have a tmdb_id — no
         # search ambiguity, so this recovers the famous films a rate-limited
         # search pass dropped.
-        by_id = [f for f in watched if not f.poster_url and f.tmdb_id]
+        repair_scope = watched if repair_all else _detail_sample(watched, 60)
+        by_id = [f for f in repair_scope if not f.poster_url and f.tmdb_id]
         if by_id and enricher is not None:
             for offset in range(0, len(by_id), 250):
                 with contextlib.suppress(Exception):
@@ -1772,7 +1985,7 @@ class _SyncPipeline:
                         )
 
         if enricher is not None:
-            need_poster = [film for film in watched if not film.poster_url]
+            need_poster = [film for film in repair_scope if not film.poster_url]
             for offset in range(0, len(need_poster), 150):
                 with contextlib.suppress(Exception):
                     batch = need_poster[offset : offset + 150]
@@ -2029,67 +2242,34 @@ async def _compute_accepted_blend(
     account: Account, request_id: str, service: AuthService
 ) -> dict:
     stored = await asyncio.to_thread(service.get_blend_result, request_id)
-    if stored is not None:
+    if stored is not None and stored.get("algorithm_version") == BLEND_VERSION:
+        if (stored.get("result") or {}).get("watchlist_pending"):
+            _schedule_blend_watchlist_completion(account, request_id, service)
         return {**stored["result"], "request_id": request_id, "cached": True}
 
     _request, first, second = await asyncio.to_thread(
         service.get_blend_participants, account, request_id
     )
     settings = get_settings()
-    supabase_client, cache = _make_cache(settings)
-    pcache = _make_persistent_cache(settings, supabase_client)
+    _supabase_client, cache = _make_cache(settings)
     enricher = (
         Enricher(settings.tmdb_api_key, cache, asset_store=service)
         if settings.has_tmdb else None
     )
-    watched_kwargs = {
-        "delay": settings.scrape_delay,
-        "max_pages": settings.watched_max_pages,
-        "film_limit": settings.watched_film_limit,
-        "max_retries": settings.scrape_max_retries,
-    }
-    watchlist_kwargs = {
-        "delay": settings.scrape_delay,
-        "max_pages": settings.scrape_max_pages,
-        "film_limit": settings.watchlist_film_limit,
-        "max_retries": settings.scrape_max_retries,
-    }
-
-    def load(username, list_type, kwargs):
-        return _load_user_films(
-            username,
-            list_type,
-            settings=settings,
-            enricher=enricher,
-            pcache=pcache,
-            scrape_kwargs=kwargs,
-        )
-
-    (watched1, _), (watched2, _), (watchlist1, _), (watchlist2, _) = (
-        await asyncio.gather(
-            load(first.username, "watched", watched_kwargs),
-            load(second.username, "watched", watched_kwargs),
-            load(first.username, "watchlist", watchlist_kwargs),
-            load(second.username, "watchlist", watchlist_kwargs),
-        )
+    rows1, rows2 = await asyncio.gather(
+        asyncio.to_thread(service.get_watched_films, first.id),
+        asyncio.to_thread(service.get_watched_films, second.id),
     )
+    watched1 = _enriched_from_watched_rows(rows1)
+    watched2 = _enriched_from_watched_rows(rows2)
     if not watched1 or not watched2:
-        raise ScrapeError("Blend için iki profilde de izlenen film verisi gerekli.")
+        raise ScrapeError("Blend için iki profil senkronunun da tamamlanması gerekli.")
     if enricher is not None:
-        await asyncio.gather(
-            enricher.ensure_details(_detail_sample(watched1, 40)),
-            enricher.ensure_details(_detail_sample(watched2, 40)),
+        watched1, watched2 = await asyncio.gather(
+            _complete_blend_profile_metadata(watched1, first.id, enricher, service),
+            _complete_blend_profile_metadata(watched2, second.id, enricher, service),
         )
     blend_result = _calculate_blend(watched1, watched2, top_n=10)
-    common_watchlist = _common_watchlist_films(watchlist1, watchlist2, limit=5)
-    bridge_films: list = []
-    if not common_watchlist:
-        bridge_films = await _blend_bridge_films(
-            watched1, watched2, watchlist1, watchlist2, enricher=enricher, n=5
-        )
-        if enricher is not None and bridge_films:
-            with contextlib.suppress(Exception):
-                await enricher.ensure_details(bridge_films)
     payload = {
         "username1": first.username,
         "username2": second.username,
@@ -2102,10 +2282,10 @@ async def _compute_accepted_blend(
         "top_director_count1": blend_result["top_director_count1"],
         "top_director_count2": blend_result["top_director_count2"],
         "films": [film.to_dict() for film in blend_result["films"]],
-        "common_watchlist_films": [film.to_dict() for film in common_watchlist],
-        "bridge_films": [film.to_dict() for film in bridge_films],
-        "watchlist_public": bool(watchlist1) and bool(watchlist2),
-        "watchlist_pending": False,
+        "common_watchlist_films": [],
+        "bridge_films": [],
+        "watchlist_public": False,
+        "watchlist_pending": True,
     }
     result_id = await asyncio.to_thread(
         service.save_blend_result,
@@ -2114,12 +2294,144 @@ async def _compute_accepted_blend(
         payload,
         algorithm_version=BLEND_VERSION,
     )
-    return {
+    response = {
         **payload,
         "request_id": request_id,
         "result_id": result_id,
         "cached": False,
     }
+    _schedule_blend_watchlist_completion(account, request_id, service)
+    return response
+
+
+async def _complete_blend_profile_metadata(
+    films: list[EnrichedFilm],
+    user_id: int,
+    enricher: Enricher,
+    service: AuthService,
+) -> list[EnrichedFilm]:
+    """Hydrate every incomplete Blend row, reusing the shared catalog first."""
+    missing = [film for film in films if not film.details_loaded]
+    if not missing:
+        return films
+    completed = await enricher.enrich(missing, include_details=True)
+    by_slug = {film.slug: film for film in completed if film.slug}
+    merged = [by_slug.get(film.slug, film) for film in films]
+    rows = [
+        {
+            "slug": film.slug,
+            "title": film.title,
+            "release_year": film.year,
+            "tmdb_id": film.tmdb_id,
+            "director": film.director,
+            "genres": film.genres,
+            "keywords": film.keywords,
+            "poster_url": film.poster_url or "",
+            "overview": film.overview,
+            "vote_average": film.vote_average,
+            "matched": film.matched,
+            "details_loaded": film.details_loaded,
+        }
+        for film in completed
+        if film.slug
+    ]
+    if rows:
+        await asyncio.to_thread(service.save_watched_films, user_id, rows)
+    return merged
+
+
+_blend_watchlist_tasks: dict[str, asyncio.Task] = {}
+
+
+def _schedule_blend_watchlist_completion(
+    account: Account, request_id: str, service: AuthService
+) -> None:
+    current = _blend_watchlist_tasks.get(request_id)
+    if current and not current.done():
+        return
+    task = asyncio.create_task(
+        _complete_blend_watchlists(account, request_id, service)
+    )
+    _blend_watchlist_tasks[request_id] = task
+
+    def _clear(done_task, key=request_id):
+        if _blend_watchlist_tasks.get(key) is done_task:
+            _blend_watchlist_tasks.pop(key, None)
+        with contextlib.suppress(asyncio.CancelledError):
+            exc = done_task.exception()
+            if exc:
+                log.warning("blend watchlist completion failed request=%s: %s", key, exc)
+
+    task.add_done_callback(_clear)
+
+
+async def _complete_blend_watchlists(
+    account: Account, request_id: str, service: AuthService
+) -> None:
+    stored = await asyncio.to_thread(service.get_blend_result, request_id)
+    if not stored or not (stored.get("result") or {}).get("watchlist_pending"):
+        return
+    _request, first, second = await asyncio.to_thread(
+        service.get_blend_participants, account, request_id
+    )
+    settings = get_settings()
+    supabase_client, cache = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    enricher = (
+        Enricher(settings.tmdb_api_key, cache, asset_store=service)
+        if settings.has_tmdb else None
+    )
+    watchlist_kwargs = {
+        "delay": settings.scrape_delay,
+        "max_pages": settings.scrape_max_pages,
+        "film_limit": settings.watchlist_film_limit,
+        "max_retries": settings.scrape_max_retries,
+    }
+
+    async def load_watchlist(username: str):
+        try:
+            return await _load_user_films(
+                username,
+                "watchlist",
+                settings=settings,
+                enricher=enricher,
+                pcache=pcache,
+                scrape_kwargs=watchlist_kwargs,
+            )
+        except ScrapeError:
+            return [], False
+
+    rows1, rows2, (watchlist1, _), (watchlist2, _) = await asyncio.gather(
+        asyncio.to_thread(service.get_watched_films, first.id),
+        asyncio.to_thread(service.get_watched_films, second.id),
+        load_watchlist(first.username),
+        load_watchlist(second.username),
+    )
+    watched1 = _enriched_from_watched_rows(rows1)
+    watched2 = _enriched_from_watched_rows(rows2)
+    common_watchlist = _common_watchlist_films(watchlist1, watchlist2, limit=5)
+    bridge_films: list = []
+    if not common_watchlist:
+        bridge_films = await _blend_bridge_films(
+            watched1, watched2, watchlist1, watchlist2, enricher=enricher, n=5
+        )
+        if enricher is not None and bridge_films:
+            with contextlib.suppress(Exception):
+                await enricher.ensure_details(bridge_films)
+    completed = {
+        **stored["result"],
+        "common_watchlist_films": [film.to_dict() for film in common_watchlist],
+        "bridge_films": [film.to_dict() for film in bridge_films],
+        "watchlist_public": bool(watchlist1) and bool(watchlist2),
+        "watchlist_pending": False,
+    }
+    await asyncio.to_thread(
+        service.save_blend_result,
+        account,
+        request_id,
+        completed,
+        algorithm_version=BLEND_VERSION,
+    )
 
 
 _accepted_blend_flights: dict[str, asyncio.Task] = {}
@@ -2195,6 +2507,26 @@ async def retry_blend_result(request_id: str, request: Request) -> dict:
         _raise_blend_http(exc)
     except ScrapeError as exc:
         _raise_scrape_http(exc)
+
+
+@app.get("/api/blends/requests/{request_id}/result")
+async def get_blend_result_status(request_id: str, request: Request) -> dict:
+    account = await _require_account(request)
+    service = _auth_service()
+    try:
+        # Consent/participant guard before reading the stored result.
+        await asyncio.to_thread(
+            service.get_blend_participants, account, request_id
+        )
+        stored = await asyncio.to_thread(service.get_blend_result, request_id)
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    if not stored:
+        return {"status": "preparing", "result": None}
+    result = {**stored["result"], "request_id": request_id, "cached": True}
+    if result.get("watchlist_pending"):
+        _schedule_blend_watchlist_completion(account, request_id, service)
+    return {"status": "preparing" if result.get("watchlist_pending") else "ready", "result": result}
 
 
 @app.delete("/api/data")
@@ -2685,9 +3017,11 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
         return float(cosine_similarity(v1.reshape(1, -1), v2.reshape(1, -1))[0][0])
 
     def _rating_weight(f) -> float:
-        """Puanlı filmler daha fazla ağırlık taşır; puan yoksa nötr (3.0) kabul et."""
+        """Signed preference: dislikes subtract, loves add, unrated is weak interest."""
         r = f.user_rating
-        return (r / 3.0) if r else 1.0
+        if r is None:
+            return 0.20
+        return max(-1.0, min(1.0, (float(r) - 3.0) / 2.0))
 
     # ── Ortak filmler ──────────────────────────────────────────────────────
     # 1. Slug eşleşmesi (birincil)
@@ -2735,21 +3069,37 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
                 c[k] += w
         return c
 
-    genre_sim = _cos(
-        _weighted_counter(watched1, lambda f: f.genres or []),
-        _weighted_counter(watched2, lambda f: f.genres or []),
+    genre1 = _weighted_counter(watched1, lambda f: f.genres or [])
+    genre2 = _weighted_counter(watched2, lambda f: f.genres or [])
+    keyword1 = _weighted_counter(watched1, lambda f: f.keywords or [])
+    keyword2 = _weighted_counter(watched2, lambda f: f.keywords or [])
+    director1 = _weighted_counter(
+        watched1, lambda f: [f.director] if f.director else []
     )
-    kw_sim = _cos(
-        _weighted_counter(watched1, lambda f: f.keywords or []),
-        _weighted_counter(watched2, lambda f: f.keywords or []),
+    director2 = _weighted_counter(
+        watched2, lambda f: [f.director] if f.director else []
     )
-    dir_sim = _cos(
-        _weighted_counter(watched1, lambda f: [f.director] if f.director else []),
-        _weighted_counter(watched2, lambda f: [f.director] if f.director else []),
+    era1 = _weighted_counter(
+        watched1, lambda f: [(f.year // 10) * 10] if f.year else []
     )
-    era_sim = _cos(
-        _weighted_counter(watched1, lambda f: [(f.year // 10) * 10] if f.year else []),
-        _weighted_counter(watched2, lambda f: [(f.year // 10) * 10] if f.year else []),
+    era2 = _weighted_counter(
+        watched2, lambda f: [(f.year // 10) * 10] if f.year else []
+    )
+    genre_sim = _cos(genre1, genre2)
+    kw_sim = _cos(keyword1, keyword2)
+    dir_sim = _cos(director1, director2)
+    era_sim = _cos(era1, era2)
+
+    # A bounded direct-overlap signal prevents metadata-only coincidences from
+    # dominating while still recognizing two people who watched the same films.
+    identities1 = {
+        f.slug or f"{f.title.lower().strip()}:{f.year}" for f in watched1
+    }
+    identities2 = {
+        f.slug or f"{f.title.lower().strip()}:{f.year}" for f in watched2
+    }
+    overlap_sim = (
+        len(identities1 & identities2) / max(len(identities1 | identities2), 1)
     )
 
     # Sinyal 5: Ortak filmlerde rating korelasyonu (Pearson)
@@ -2775,16 +3125,27 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
         # Pearson correlation: NaN güvenliği için std kontrolü
         if r1.std() > 0 and r2.std() > 0:
             rating_corr = float(np.corrcoef(r1, r2)[0, 1])
-            rating_corr = max(rating_corr, 0.0)  # negatif korelasyon → 0 (ceza vermiyoruz)
             rating_signal_available = True
 
-    # Genre ve era sinyalleri çok non-discriminating (herkes Drama/Comedy, herkes 2010s izliyor).
-    # Keyword ve director gerçek zevk ayrımını yapar — ağırlıkları yükselt.
+    # Rating correlation is the strongest signal when enough common ratings
+    # exist. Unlike v2, negative correlation is a real incompatibility penalty.
     if rating_signal_available:
-        raw = (genre_sim * 0.04 + kw_sim * 0.37 + dir_sim * 0.37
-               + era_sim * 0.02 + rating_corr * 0.20)
+        raw = (
+            genre_sim * 0.05
+            + kw_sim * 0.20
+            + dir_sim * 0.20
+            + era_sim * 0.05
+            + rating_corr * 0.35
+            + overlap_sim * 0.15
+        )
     else:
-        raw = genre_sim * 0.05 + kw_sim * 0.47 + dir_sim * 0.47 + era_sim * 0.01
+        raw = (
+            genre_sim * 0.10
+            + kw_sim * 0.30
+            + dir_sim * 0.30
+            + era_sim * 0.10
+            + overlap_sim * 0.20
+        )
 
     # Kalibre skor: yapay taban/tavan yok; ağırlıklı benzerlik doğrudan 0–100'e
     # çevrilir. Skorun ne kadar güvenilir olduğu ayrıca raporlanır.
@@ -2825,15 +3186,27 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
         confidence_level = "low"
 
     # ── Ortak en sevilen yönetmen ───────────────────────────────────────────
-    directors1 = Counter(f.director for f in watched1 if f.director)
-    directors2 = Counter(f.director for f in watched2 if f.director)
-    common_dirs = set(directors1) & set(directors2)
+    def _loved_directors(films) -> Counter:
+        loved: Counter = Counter()
+        for film in films:
+            if not film.director:
+                continue
+            weight = _rating_weight(film)
+            if weight > 0:
+                loved[film.director] += weight
+        return loved
+
+    director_love1 = _loved_directors(watched1)
+    director_love2 = _loved_directors(watched2)
+    director_counts1 = Counter(f.director for f in watched1 if f.director)
+    director_counts2 = Counter(f.director for f in watched2 if f.director)
+    common_dirs = set(director_love1) & set(director_love2)
 
     if common_dirs:
         # min(d1, d2): her iki kullanıcının da gerçekten sevdiği yönetmeni öne çıkar.
         # Toplam (d1+d2) yerine min kullanmak tek taraflı baskınlığı engeller.
         # Eşitlikte toplam tiebreaker olarak kullanılır.
-        scored = {d: (min(directors1[d], directors2[d]), directors1[d] + directors2[d])
+        scored = {d: (min(director_love1[d], director_love2[d]), director_love1[d] + director_love2[d])
                   for d in common_dirs}
         top_dir = max(scored, key=scored.get)
     else:
@@ -2850,8 +3223,8 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
         },
         "common_count": common_count,
         "top_director": top_dir,
-        "top_director_count1": directors1.get(top_dir, 0) if top_dir else 0,
-        "top_director_count2": directors2.get(top_dir, 0) if top_dir else 0,
+        "top_director_count1": director_counts1.get(top_dir, 0) if top_dir else 0,
+        "top_director_count2": director_counts2.get(top_dir, 0) if top_dir else 0,
         "films": top_common,
     }
 

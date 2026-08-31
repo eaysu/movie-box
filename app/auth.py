@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import re
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -57,6 +57,8 @@ class Account:
     avatar_url: str = ""
     account_status: str = "active"
     profile_sync_status: str = "pending"
+    onboarding_completed_at: str | None = None
+    letterboxd_stats: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -117,7 +119,7 @@ class AuthService:
         """Verify the account schema without exposing or reading user records."""
         service = self._service_client()
         required = {
-            "users": "id,auth_user_id,account_status",
+            "users": "id,auth_user_id,account_status,onboarding_completed_at,letterboxd_stats",
             "taste_profiles": "user_id,source_fingerprint,top_directors",
             "profile_favorites": "user_id,position",
             "blend_requests": "id,status",
@@ -137,13 +139,16 @@ class AuthService:
         """
         service = self._service_client()
         service.table("user_watched_films").select(
-            "user_id,film_slug,details_loaded,watched_rank"
+            "user_id,film_slug,details_loaded,watched_rank,poster_resolver_url"
         ).limit(0).execute()
         service.table("profile_sync_jobs").select(
             "user_id,state,phase,cursor_page,scope,sync_run_id,lease_token,lease_expires_at"
         ).limit(0).execute()
         service.table("director_images").select(
             "normalized_name,photo_url,tmdb_person_id"
+        ).limit(0).execute()
+        service.table("film_posters").select(
+            "film_slug,poster_url,poster_resolver_url,tmdb_id,overview,director,genres,keywords,details_loaded"
         ).limit(0).execute()
         return True
 
@@ -171,6 +176,8 @@ class AuthService:
             avatar_url=row.get("avatar_url") or "",
             account_status=row.get("account_status") or "anonymous",
             profile_sync_status=row.get("profile_sync_status") or "pending",
+            onboarding_completed_at=row.get("onboarding_completed_at"),
+            letterboxd_stats=row.get("letterboxd_stats") or {},
         )
 
     @staticmethod
@@ -182,7 +189,7 @@ class AuthService:
             client.table("users")
             .select(
                 "id,auth_user_id,username,display_name,avatar_url,"
-                "account_status,profile_sync_status"
+                "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
             )
             .eq("username", username)
             .limit(1)
@@ -334,6 +341,7 @@ class AuthService:
                 "avatar_url": profile.avatar_url,
                 "account_status": "active",
                 "profile_sync_status": "pending",
+                "letterboxd_stats": profile.stats or {},
                 "ownership_verified_at": now,
                 "updated_at": now,
             }
@@ -341,6 +349,29 @@ class AuthService:
         updated = self._first(account_result) or self._account_row_by_username(
             service, username
         )
+        try:
+            service.table("profile_favorites").delete().eq(
+                "user_id", row["id"]
+            ).execute()
+            favorites = [
+                {
+                    "user_id": int(row["id"]),
+                    "position": position,
+                    "slug": film.slug,
+                    "title": film.title,
+                    "release_year": film.year,
+                    "poster_url": film.poster_url,
+                }
+                for position, film in enumerate(profile.favorite_films[:4], start=1)
+                if film.slug and film.title
+            ]
+            if favorites:
+                service.table("profile_favorites").insert(favorites).execute()
+        except Exception:
+            # Ownership is already proven. A transient snapshot write must not
+            # turn a valid account into an unrecoverable half-registration;
+            # the background profile rebuild will repair favorites.
+            pass
         self._audit(service, int(row["id"]), f"{kind}_verified", ip_hash)
         return self._account(updated)
 
@@ -425,7 +456,7 @@ class AuthService:
                 service.table("users")
                 .select(
                     "id,auth_user_id,username,display_name,avatar_url,"
-                    "account_status,profile_sync_status"
+                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
                 )
                 .eq("auth_user_id", auth_user_id)
                 .eq("account_status", "active")
@@ -474,6 +505,16 @@ class AuthService:
             }
         ).eq("id", user_id).execute()
 
+    def complete_onboarding(self, account: Account) -> str:
+        completed_at = datetime.now(timezone.utc).isoformat()
+        self._service_client().table("users").update(
+            {
+                "onboarding_completed_at": completed_at,
+                "updated_at": completed_at,
+            }
+        ).eq("id", account.id).execute()
+        return completed_at
+
     def delete_account(self, account: Account) -> None:
         """Delete the Supabase Auth identity and its cascading profile rows."""
         service = self._service_client()
@@ -493,6 +534,7 @@ class AuthService:
                 "p_profile": {
                     "display_name": profile.display_name,
                     "avatar_url": profile.avatar_url,
+                    "stats": profile.stats or {},
                 },
                 "p_taste": taste.to_dict(),
                 "p_favorites": [
@@ -742,21 +784,28 @@ class AuthService:
             "upsert_watched_films",
             {"p_user_id": user_id, "p_films": films},
         ).execute()
-        # Every successful poster observation—scraper or TMDb—feeds the shared
-        # cross-user catalog. Keeping this at the persistence boundary prevents
-        # a new call path from accidentally bypassing asset promotion.
+        # Every public film observation feeds the account-independent catalog.
+        # Keeping promotion at this boundary means account deletion can remove
+        # personal ratings/history without discarding reusable film metadata.
         self.save_film_posters(
             [
                 {
                     "slug": row.get("slug") or row.get("film_slug"),
                     "poster_url": row.get("poster_url"),
+                    "poster_resolver_url": row.get("poster_resolver_url"),
                     "tmdb_id": row.get("tmdb_id"),
                     "title": row.get("title") or "",
                     "release_year": row.get("release_year") or row.get("year"),
+                    "overview": row.get("overview") or "",
+                    "director": row.get("director") or "",
+                    "genres": row.get("genres") or [],
+                    "keywords": row.get("keywords") or [],
+                    "vote_average": row.get("vote_average") or 0,
+                    "matched": bool(row.get("tmdb_id") or row.get("matched")),
+                    "details_loaded": bool(row.get("details_loaded")),
                 }
                 for row in films
-                if (row.get("slug") or row.get("film_slug"))
-                and row.get("poster_url")
+                if row.get("slug") or row.get("film_slug")
             ]
         )
         try:
@@ -789,7 +838,7 @@ class AuthService:
                 service.table("user_watched_films")
                 .select(
                     "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
-                    "user_rating,poster_url,watched_rank,details_loaded"
+                    "user_rating,poster_url,poster_resolver_url,watched_rank,details_loaded"
                 )
                 .eq("user_id", user_id)
                 .eq("is_active", True)
@@ -824,9 +873,9 @@ class AuthService:
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
 
-    # ── Shared film → poster pool ────────────────────────────────────────
+    # ── Shared account-independent film catalog ─────────────────────────
     def save_film_posters(self, films: list[dict]) -> int:
-        rows = [f for f in films if f.get("slug") and f.get("poster_url")]
+        rows = [f for f in films if f.get("slug")]
         if not rows:
             return 0
         try:
@@ -865,7 +914,10 @@ class AuthService:
         for i in range(0, len(wanted), 200):
             rows = (
                 service.table("film_posters")
-                .select("film_slug,poster_url,tmdb_id,title,release_year")
+                .select(
+                    "film_slug,poster_url,poster_resolver_url,tmdb_id,title,release_year,overview,"
+                    "director,genres,keywords,vote_average,matched,details_loaded"
+                )
                 .in_("film_slug", wanted[i : i + 200])
                 .execute()
             ).data or []
@@ -1186,7 +1238,7 @@ class AuthService:
             service.table("users")
             .select(
                 "id,auth_user_id,username,display_name,avatar_url,"
-                "account_status,profile_sync_status"
+                "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
             )
             .in_(
                 "id",

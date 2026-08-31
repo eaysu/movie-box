@@ -742,7 +742,8 @@ function renderPersistedProfile(data) {
     $('profile-directors-list').innerHTML = '';
     $('profile-analysis').classList.add('hidden');
   }
-  if (!_statsLoaded) loadProfileStats();
+  const deferAuxiliary = !$('view-onboarding').classList.contains('hidden');
+  if (!deferAuxiliary && !_statsLoaded) loadProfileStats();
 
   const personality = (taste && taste.personality || '').trim();
   if (personality) {
@@ -789,8 +790,8 @@ function renderPersistedProfile(data) {
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 
-  if (!_topFilmsLoaded) loadTopFilms();
-  if (!_recentLoaded) loadRecentFilms();
+  if (!deferAuxiliary && !_topFilmsLoaded) loadTopFilms();
+  if (!deferAuxiliary && !_recentLoaded) loadRecentFilms();
   applySyncJob(data.sync_job);
 }
 
@@ -1366,9 +1367,11 @@ async function syncProfile(force = false) {
     });
     if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
     renderPersistedProfile(data);
-    _topFilmsLoaded = false; loadTopFilms();
-    _recentLoaded = false; loadRecentFilms(true);
-    _statsLoaded = false; loadProfileStats();
+    if ($('view-onboarding').classList.contains('hidden')) {
+      _topFilmsLoaded = false; loadTopFilms();
+      _recentLoaded = false; loadRecentFilms(true);
+      _statsLoaded = false; loadProfileStats();
+    }
     return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
@@ -1405,7 +1408,8 @@ function enterApp(account, opts = {}) {
   if (opts.fromRegistration) sessionStorage.removeItem(key);
   if (
     opts.fromRegistration ||
-    (account.profile_sync_status === 'pending' && !sessionStorage.getItem(key))
+    !account.onboarding_completed_at ||
+    (['pending', 'syncing'].includes(account.profile_sync_status) && !sessionStorage.getItem(key))
   ) {
     startOnboarding();
     return;
@@ -1427,7 +1431,6 @@ let _obReveal = null;         // { slides:[fn], index, token } — tarama sonras
 const OB_SLIDE_MS = 15000;
 const OB_FACT_MS = 7000;
 const OB_POLL_MS = 5000;
-const OB_MAX_WAIT_MS = 5 * 60 * 1000;   // "derin analiz" beklemesi için üst sınır
 
 const OB_BUCKETS = [
   { max: 250,      text: 'Kısa ve tatlı bir geçmişin var. Analizin birazdan hazır, daha esnemeye fırsat bulamadan döneriz.' },
@@ -1478,6 +1481,23 @@ function finishOnboarding() {
   openProfilePanel('watch');
   if (_persistedProfile) renderPersistedProfile(_persistedProfile);
   else loadProfile();
+}
+
+async function completeOnboarding() {
+  const button = $('ob-skip');
+  button.disabled = true;
+  try {
+    const data = await apiJSON('/api/profile/onboarding-complete', {
+      method: 'POST',
+      headers: csrfHeaders(),
+    });
+    if (_account) _account.onboarding_completed_at = data.completed_at;
+    finishOnboarding();
+  } catch (error) {
+    $('ob-bg-note').textContent = error.message || 'Onboarding tamamlanamadı. Lütfen tekrar dene.';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function _obStage(html) {
@@ -1639,18 +1659,17 @@ function _obRevealNav(delta) {
   if (_obReveal) _obShowRevealSlide(_obReveal.index + delta);
 }
 
-// Tam izleme geçmişi taraması bitene (ya da OB_MAX_WAIT_MS dolana) kadar bekler.
-// Döner: taze profil (job 'done') | null (süre doldu / iptal edildi).
+// Tüm Letterboxd sayfaları taranıp onboarding snapshot'ı commit edilene kadar
+// bekler. Ağır katalog enrichment'i bu milestone'dan sonra arka planda sürer.
 function _obAwaitFullSweep(token, provisional) {
   return new Promise(resolve => {
     const job0 = provisional && provisional.sync_job;
-    if (job0 && job0.state === 'done') {
+    if (job0 && job0.onboarding_ready) {
       apiJSON('/api/profile/me')
         .then(p => { if (p) _persistedProfile = p; resolve(p); })
         .catch(() => resolve(provisional));
       return;
     }
-    const deadline = Date.now() + OB_MAX_WAIT_MS;
     let lastMilestone = '';
 
     const tick = async () => {
@@ -1665,16 +1684,11 @@ function _obAwaitFullSweep(token, provisional) {
         const ml = $('ob-milestone-line');
         if (ml && mt && mt !== lastMilestone) { ml.textContent = mt; lastMilestone = mt; }
       }
-      if (job && job.state === 'done') {
+      if (job && job.onboarding_ready) {
         if (_obPollTimer) { clearInterval(_obPollTimer); _obPollTimer = null; }
         _obStopFacts();
         resolve(profile);
         return;
-      }
-      if (Date.now() >= deadline) {
-        if (_obPollTimer) { clearInterval(_obPollTimer); _obPollTimer = null; }
-        _obStopFacts();
-        resolve(null);
       }
     };
 
@@ -1695,14 +1709,21 @@ async function startOnboarding() {
   $('ob-bg-note').textContent = 'Zevk analizin arka planda hazırlanıyor…';
   $('ob-dots').innerHTML = '';
 
-  // ── Bekleme: provisional + tüm izleme geçmişi taraması bitene kadar tek ekran.
+  // ── Bekleme: tüm Letterboxd geçmişi taranana ve reveal verisi hazır olana kadar.
   //    Slaytlar (Merhaba, rakamlar, favori 4, kişilik, yönetmen) tarama
   //    tamamlandıktan sonra sırayla sunulur.
   _obRenderWaiting('Zevk profilin hazırlanıyor');
 
   const data = await syncProfile();       // provisional: stats + tam sweep'i başlatır
   if (!_obLive(token)) return;
-  if (!data) { finishOnboarding(); return; }
+  if (!data) {
+    _obRenderWaiting('Bağlantı yeniden kuruluyor');
+    $('ob-bg-note').textContent = 'Geçmiş taraması tamamlanmadan devam edilmeyecek.';
+    _obSlideTimer = setTimeout(() => {
+      if (_obLive(token)) startOnboarding();
+    }, 8000);
+    return;
+  }
 
   const total0 = Math.max(
     (data.letterboxd_stats || {}).films || 0,
@@ -1712,12 +1733,12 @@ async function startOnboarding() {
   const bl = $('ob-bucket-line');
   if (bl) bl.textContent = _obBucketText(total0);
 
-  const full = await _obAwaitFullSweep(token, data);
+  const readyProfile = await _obAwaitFullSweep(token, data);
   if (!_obLive(token)) return;
   _obStopFacts();
 
   // ── Tarama bitti — slaytları sırayla sun (ileri/geri gezinilebilir) ──
-  const profile = full || _persistedProfile || data;
+  const profile = readyProfile || _persistedProfile || data;
   const taste = profile.taste || data.taste || {};
   const stats = data.letterboxd_stats || {};
   const favs = (profile.favorite_films || data.favorite_films || []).slice(0, 4);
@@ -1740,7 +1761,7 @@ async function startOnboarding() {
     favs.length ? () => _obRenderFavs(favs) : null,
     personality ? () => _obRenderPersonality(personality) : null,
     (dir && dir.name) ? () => _obRenderDirector(dir) : null,
-    () => _obRenderOutro(full),
+    () => _obRenderOutro(profile?.sync_job?.state === 'done'),
   ].filter(Boolean);
 
   _obReveal = { slides, index: 0, token };
@@ -1964,6 +1985,7 @@ async function renderBlendResult(data) {
     $('br-wishlist-loading').classList.remove('hidden');
     $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.add('hidden');
+    if (data.request_id) pollBlendWatchlist(data.request_id);
   } else {
     renderBlendWatchlist({ common_watchlist_films, bridge_films, watchlist_public });
   }
@@ -1994,6 +2016,22 @@ async function renderBlendResult(data) {
   await new Promise(r => setTimeout(r, 150));
   $('br-stats').classList.remove('opacity-0');
   $('br-stats').classList.add('blend-fade-up');
+}
+
+let _blendWatchlistPollToken = 0;
+async function pollBlendWatchlist(requestId) {
+  const token = ++_blendWatchlistPollToken;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    if (token !== _blendWatchlistPollToken || $('view-blend-result').classList.contains('hidden')) return;
+    try {
+      const data = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`);
+      if (data.result && !data.result.watchlist_pending) {
+        renderBlendWatchlist(data.result);
+        return;
+      }
+    } catch (_) { /* transient; the persisted task is safely retryable */ }
+  }
 }
 
 function renderBlendWatchlist({ common_watchlist_films = [], bridge_films = [], watchlist_public = false }) {
@@ -2659,7 +2697,7 @@ $('top-films-search').addEventListener('input', () => {
   _topFilmsSearchTimer = setTimeout(_searchTopFilms, 250);
 });
 $('top-films-save').addEventListener('click', saveTopFilms);
-$('ob-skip').addEventListener('click', finishOnboarding);
+$('ob-skip').addEventListener('click', completeOnboarding);
 $('ob-prev').addEventListener('click', () => _obRevealNav(-1));
 $('ob-next').addEventListener('click', () => _obRevealNav(1));
 document.addEventListener('keydown', event => {

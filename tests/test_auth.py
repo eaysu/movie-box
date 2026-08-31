@@ -79,6 +79,9 @@ def test_full_history_sync_schema_is_service_role_only():
         "CREATE OR REPLACE FUNCTION public.finalize_profile_sync_run(",
         "COALESCE(last_seen_run_id = p_sync_run_id, FALSE)",
         "CREATE INDEX IF NOT EXISTS idx_film_posters_tmdb_id",
+        "ALTER TABLE public.film_posters ALTER COLUMN poster_url DROP NOT NULL;",
+        "ADD COLUMN IF NOT EXISTS overview TEXT NOT NULL DEFAULT '';",
+        "details_loaded = public.film_posters.details_loaded OR EXCLUDED.details_loaded",
     ):
         assert line in schema
 
@@ -112,7 +115,9 @@ def test_check_sync_schema_probes_only_the_new_tables_with_zero_rows():
     service = AuthService(_settings(), client_factory=lambda *_args: client)
     assert service.check_sync_schema() is True
     probed = {name for name, _cols in client.calls}
-    assert probed == {"user_watched_films", "profile_sync_jobs", "director_images"}
+    assert probed == {
+        "user_watched_films", "profile_sync_jobs", "director_images", "film_posters"
+    }
 
 
 def test_login_sets_http_only_session_and_readable_csrf_cookies():
@@ -361,6 +366,61 @@ def test_password_reset_mismatch_stops_before_profile_scrape():
 
     assert response.status_code == 422
     scrape.assert_not_awaited()
+
+
+def test_onboarding_completion_requires_full_crawl_milestone():
+    account = _account()
+    completed = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        get_sync_job=lambda _uid: {
+            "state": "running", "phase": "diary",
+            "films_processed": 100, "films_total": 0,
+        },
+        complete_onboarding=lambda value: completed.append(value.id),
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/profile/onboarding-complete",
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 409
+    assert completed == []
+
+
+def test_onboarding_completion_is_persisted_after_reveal_is_ready():
+    account = _account()
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        get_sync_job=lambda _uid: {
+            "state": "running", "phase": "enrich",
+            "films_processed": 250, "films_total": 250,
+        },
+        complete_onboarding=lambda _account: "2026-08-31T12:00:00+00:00",
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/profile/onboarding-complete",
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["completed_at"].startswith("2026-08-31")
 
 
 def test_authenticated_delete_removes_auth_identity_and_clears_session():

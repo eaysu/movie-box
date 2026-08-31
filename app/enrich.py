@@ -118,9 +118,16 @@ class Enricher:
                 "tmdb_id": film.tmdb_id,
                 "title": film.title,
                 "release_year": film.year,
+                "overview": film.overview,
+                "director": film.director,
+                "genres": film.genres,
+                "keywords": film.keywords,
+                "vote_average": film.vote_average,
+                "matched": film.matched,
+                "details_loaded": film.details_loaded,
             }
             for film in films
-            if film.slug and film.poster_url
+            if film.slug
         ]
         if not saver or not rows:
             return
@@ -315,6 +322,7 @@ class Enricher:
         asset: Optional[dict] = None,
     ) -> EnrichedFilm:
         cache_key = slug or f"{title}:{year}"
+        fallback_poster: Optional[str] = None
         # Successful metadata is durable. TMDb poster/credit data changes rarely,
         # and re-fetching a known film defeats the shared-cache speedup.
         cached = await asyncio.to_thread(self.cache.get, "tmdb", cache_key)
@@ -331,33 +339,55 @@ class Enricher:
             self._cache_hits = getattr(self, "_cache_hits", 0) + 1
             film = EnrichedFilm(**cached)
             if include_details and not film.details_loaded:
-                return await self._load_details(client, film, cache_key)
-            return film
+                if film.tmdb_id:
+                    return await self._load_details(client, film, cache_key)
+                # A Letterboxd-only poster is useful, but it is not a complete
+                # metadata hit. Continue to title/year search so this record can
+                # acquire a stable TMDb id, overview and credits.
+                fallback_poster = film.poster_url
+            else:
+                return film
 
-        # The shared asset catalog is also an identity cache. A known TMDb id
-        # lets us avoid the ambiguous /search/movie call entirely. Detail-less
-        # sweeps need no TMDb request; detailed paths make one direct id lookup.
-        if asset and asset.get("poster_url") and asset.get("tmdb_id"):
+        # The shared catalog is a durable identity + metadata cache. Detail-less
+        # paths can return any known catalog row immediately. Detailed paths
+        # make no request when another user has already completed the record.
+        if asset and (
+            asset.get("tmdb_id")
+            or asset.get("poster_url")
+            or asset.get("details_loaded")
+        ):
             film = EnrichedFilm(
-                title=title,
+                title=asset.get("title") or title,
                 year=year or asset.get("release_year"),
                 slug=slug,
-                tmdb_id=int(asset["tmdb_id"]),
-                poster_url=asset["poster_url"],
-                matched=True,
+                tmdb_id=int(asset["tmdb_id"]) if asset.get("tmdb_id") else None,
+                overview=asset.get("overview") or "",
+                genres=asset.get("genres") or [],
+                director=asset.get("director") or "",
+                keywords=asset.get("keywords") or [],
+                vote_average=float(asset.get("vote_average") or 0.0),
+                poster_url=asset.get("poster_url") or None,
+                matched=bool(asset.get("matched") or asset.get("tmdb_id")),
+                details_loaded=bool(asset.get("details_loaded")),
             )
             self._asset_hits += 1
-            if include_details:
+            if include_details and not film.details_loaded and film.tmdb_id:
                 return await self._load_details(client, film, cache_key)
-            return film
+            if not include_details or film.details_loaded:
+                return film
+            fallback_poster = film.poster_url or fallback_poster
 
         negative = await asyncio.to_thread(
             self.cache.get, "tmdb_negative", cache_key, ttl=NEGATIVE_LOOKUP_TTL
         )
         if negative:
-            return EnrichedFilm(title=title, year=year, slug=slug)
+            return EnrichedFilm(
+                title=title, year=year, slug=slug, poster_url=fallback_poster
+            )
 
-        film = EnrichedFilm(title=title, year=year, slug=slug)
+        film = EnrichedFilm(
+            title=title, year=year, slug=slug, poster_url=fallback_poster
+        )
 
         try:
             await self._load_genre_map(client)

@@ -159,6 +159,107 @@ class SharedAssetTests(unittest.IsolatedAsyncioTestCase):
         )
         enricher._get.assert_not_awaited()
 
+    async def test_complete_shared_catalog_record_skips_search_and_details(self):
+        class MemoryCache:
+            def get(self, _namespace, _key, ttl=None):
+                return None
+
+            def set(self, _namespace, _key, _value):
+                return None
+
+        class Assets:
+            def get_film_assets(self, _slugs):
+                return {
+                    "perfect-days": {
+                        "film_slug": "perfect-days",
+                        "title": "Perfect Days",
+                        "release_year": 2023,
+                        "tmdb_id": 976893,
+                        "poster_url": "https://image.tmdb.org/t/p/w500/perfect.jpg",
+                        "overview": "A quiet life in Tokyo.",
+                        "director": "Wim Wenders",
+                        "genres": ["Drama"],
+                        "keywords": ["tokyo"],
+                        "vote_average": 7.8,
+                        "matched": True,
+                        "details_loaded": True,
+                    }
+                }
+
+            def save_film_posters(self, _rows):
+                return 1
+
+        enricher = Enricher("key", MemoryCache(), asset_store=Assets())
+        enricher._get = AsyncMock(side_effect=AssertionError("TMDb should not run"))
+        with patch("app.enrich._get_tmdb_client", new=AsyncMock(return_value=object())):
+            films = await enricher.enrich(
+                [ScrapedFilm(title="Perfect Days", year=2023, slug="perfect-days")],
+                include_details=True,
+            )
+
+        self.assertEqual(films[0].director, "Wim Wenders")
+        self.assertEqual(films[0].overview, "A quiet life in Tokyo.")
+        self.assertTrue(films[0].details_loaded)
+        enricher._get.assert_not_awaited()
+
+    async def test_poster_only_l1_hit_does_not_block_metadata_completion(self):
+        class MemoryCache:
+            def __init__(self):
+                self.values = {
+                    ("tmdb", "perfect-days"): {
+                        "title": "Perfect Days",
+                        "year": 2023,
+                        "slug": "perfect-days",
+                        "poster_url": "https://letterboxd.example/poster.jpg",
+                        "details_loaded": False,
+                    }
+                }
+
+            def get(self, namespace, key, ttl=None):
+                return self.values.get((namespace, str(key)))
+
+            def set(self, namespace, key, value):
+                self.values[(namespace, str(key))] = value
+
+        async def fake_get(_client, path, **_params):
+            if path == "/search/movie":
+                return {
+                    "results": [{
+                        "id": 976893,
+                        "title": "Perfect Days",
+                        "release_date": "2023-01-01",
+                        "genre_ids": [1],
+                        "overview": "A quiet life in Tokyo.",
+                        "vote_average": 7.8,
+                        "poster_path": None,
+                    }]
+                }
+            self.assertEqual(path, "/movie/976893")
+            return {
+                "overview": "A quiet life in Tokyo.",
+                "genres": [{"name": "Drama"}],
+                "keywords": {"keywords": [{"name": "daily life"}]},
+                "credits": {"crew": [{"job": "Director", "name": "Wim Wenders"}]},
+            }
+
+        enricher = Enricher("key", MemoryCache())
+        enricher._genre_map = {1: "Drama"}
+        enricher._get = AsyncMock(side_effect=fake_get)
+        with patch("app.enrich._get_tmdb_client", new=AsyncMock(return_value=object())):
+            films = await enricher.enrich(
+                [ScrapedFilm(title="Perfect Days", year=2023, slug="perfect-days")],
+                include_details=True,
+            )
+
+        self.assertEqual(films[0].tmdb_id, 976893)
+        self.assertEqual(films[0].overview, "A quiet life in Tokyo.")
+        self.assertEqual(films[0].director, "Wim Wenders")
+        self.assertEqual(
+            films[0].poster_url, "https://letterboxd.example/poster.jpg"
+        )
+        self.assertTrue(films[0].details_loaded)
+        self.assertEqual(enricher._get.await_count, 2)
+
     async def test_director_filmography_uses_shared_person_id_and_durable_cache(self):
         class MemoryCache:
             def __init__(self):

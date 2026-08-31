@@ -91,6 +91,11 @@ class JobHelperTests(unittest.TestCase):
         )
         self.assertEqual(mid["percent"], 20)
         self.assertEqual(mid["phase"], "diary")
+        self.assertFalse(mid["onboarding_ready"])
+        reveal = profile_sync.progress_of(
+            {"state": "running", "phase": "enrich", "films_processed": 200, "films_total": 200}
+        )
+        self.assertTrue(reveal["onboarding_ready"])
         done = profile_sync.progress_of(
             {"state": "done", "films_processed": 812, "films_total": 812}
         )
@@ -168,6 +173,7 @@ class FakePipeline:
         self.pages = pages
         self.window_calls = []
         self.rebuilt_with = None
+        self.search_calls = 0
 
     async def scrape_watched_window(self, username, start_page):
         self.window_calls.append(start_page)
@@ -177,6 +183,7 @@ class FakePipeline:
         return [dict(f) for f in getattr(self, "recent", [])]
 
     async def enrich_search(self, films):
+        self.search_calls += 1
         out = []
         for i, film in enumerate(films):
             out.append(
@@ -205,9 +212,10 @@ class FakePipeline:
             for row in rows
         ]
 
-    async def rebuild_snapshot(self, account, *, use_llm=True):
+    async def rebuild_snapshot(self, account, *, use_llm=True, repair_all=True):
         self.rebuilt_with = account.id
         self.rebuilt_llm = use_llm
+        self.rebuilt_repair_all = repair_all
         return len(self.service.films)
 
 
@@ -258,6 +266,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(row["details_loaded"] for row in service.films.values()))
         self.assertEqual(service.films["b"]["director"], "Some Director")
         self.assertEqual(pipeline.rebuilt_with, 7)
+        self.assertEqual(pipeline.search_calls, 0)
 
     async def test_resume_starts_from_checkpoint_without_refetching_page_one(self):
         service = FakeService()

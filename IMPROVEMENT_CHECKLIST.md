@@ -14,6 +14,38 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
 - Önce kendi doğrudan scraper'ımız iyileştirilir. Açık kaynak Letterboxd
   kütüphaneleri ancak ölçülmüş bir güvenilirlik avantajı sunarsa değerlendirilir.
 
+## P0 — Aktivasyon, Blend v3 ve öğrenen katalog — 2026-08-31
+
+- [x] İlk `/profile/sync` isteğindeki tekrarlı 250-film ön taramasını kaldır;
+  kimlik + Fav 4 bootstrap'ından sonra checkpoint'li full crawl'u hemen başlat.
+- [x] Tüm Letterboxd film sayfalarını TMDb zenginleştirmesinden önce ham ve
+  kayıpsız kaydet; film başına TMDb çağrısını crawl kritik yolundan çıkar.
+- [x] Full crawl bittiğinde onboarding için rating-first/recent 60 filmlik sınırlı
+  metadata örneğini hazırla ve `onboarding_ready` milestone'u yayınla.
+- [x] Zorunlu onboarding slaytlarını bu milestone'da başlat; kalan poster, konu,
+  yönetmen ve keyword tamamlama işini arka planda sürdür.
+- [x] Onboarding sırasında `recent`, `stats` ve `top-films` isteklerini ertele;
+  Letterboxd global request bütçesini full crawl ile yarıştırma.
+- [x] Onboarding tamamlanmasını DB'de kalıcılaştır; yenileme/yeni oturum ile son
+  slayt ve tamamlanma endpoint'i atlanamasın.
+- [x] Blend v3'te düşük puanları negatif, puansız izlemeyi zayıf pozitif sinyal
+  yap; negatif rating korelasyonunu gerçek uyumsuzluk cezası olarak koru.
+- [x] Kayıtlı Blend'i Letterboxd scrape yerine iki hesabın DB'deki tüm aktif film
+  geçmişi üzerinden hesapla; eksik metadata'yı önce ortak katalogdan tamamla,
+  yalnız katalog miss'lerinde TMDb'ye git ve temel sonucu kaydet.
+- [x] Ana profildeki son izlenen ve favori/top film bölümlerinde gösterilen 10
+  filmin tamamının konusunu ortak katalog → kesin TMDb id → başlık+yıl sırasıyla
+  doğrula; başarıyla çözülen konuları ortak kataloğa geri yaz.
+- [x] Ortak watchlist/bridge filmlerini temel Blend sonucundan ayırıp arka planda
+  tamamla; sonuç kaydını idempotent biçimde güncelle.
+- [x] Hesaptan bağımsız ortak film havuzunu poster-only yapıdan kalıcı kataloğa
+  genişlet: başlık, yıl, TMDb id, afiş, konu, yönetmen, tür, keyword ve puan.
+- [x] Katalog upsert'lerinde boş/geçici sonuçların sağlam metadata'yı silmesini
+  engelle; kullanıcı hesabı silinse de public film/yönetmen kataloğunu koru.
+- [ ] **MANUEL UYGULAMA:** Güncel `supabase/schema.sql` dosyasını SQL Editor'da
+  çalıştır; `onboarding_completed_at` ve genişletilmiş ortak katalog kolonlarını
+  Render deploy'undan önce oluştur.
+
 ## Hesap tabanlı ürün yol haritası — 2026-08-30
 
 Bu bölüm anonim username aracından kalıcı kullanıcı profili ürününe geçişin
@@ -203,7 +235,8 @@ onayı gelmeden uygulanmaz.
 - [x] İki aşamalı enrichment uygula:
   - [x] Search metadata ile ilk candidate ranking.
   - [x] Director/keyword detayını yalnızca 24 güçlü profil referansı ve top 10 aday
-    için çek; Blend'de kullanıcı başına 40 filmle sınırla.
+    için çek; kayıtlı Blend hesabında ise iki kullanıcının tüm aktif geçmişini
+    analiz et.
 - [x] User film cache'inde stale-while-revalidate uygula.
 - [x] İçerik tabanlı `profile + watchlist + model + sonuç sayısı + algoritma sürümü`
   anahtarı ile recommendation/LLM sonucunu cache'le; filtreler eklendiğinde aynı
