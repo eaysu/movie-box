@@ -228,7 +228,12 @@ function openProfilePanel(which) {
   $('profile-act-blend').classList.toggle('border-outline-variant/25', !blend);
   profileActionNotice(null);
   profileActionError(null);
-  if (watch) setProfileWatchMode(_profileWatchMode);
+  if (watch) {
+    setProfileWatchMode(_profileWatchMode);
+    // Bugünün zevk önerisi hâlâ geçerliyse paneli kapatma, geri yükle.
+    const cached = _loadTasteReco();
+    if (cached) _showTasteReco(cached.at || 0);
+  }
   if (blend) setTimeout(() => $('profile-blend-username').focus(), 40);
 }
 
@@ -394,50 +399,72 @@ function _discoverNote(on) {
     : '';
 }
 
-// Zevk profili: tek film göster; beğenilmezse 2 yedek hak (toplam 3).
+// ── Zevk profili önerisi — gün boyu sabit, 3 film arası gezilebilir ──────
+const _TASTE_RECO_KEY = 'mb_taste_reco';
+function _todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function _loadTasteReco() {
+  try {
+    const o = JSON.parse(localStorage.getItem(_TASTE_RECO_KEY) || 'null');
+    if (!o || o.day !== _todayKey() || !Array.isArray(o.pool) || !o.pool.length) return null;
+    if (_account && o.username && o.username !== _account.username) return null;
+    return o;
+  } catch (_) { return null; }
+}
+function _saveTasteReco(pool, summary, discover) {
+  try {
+    localStorage.setItem(_TASTE_RECO_KEY, JSON.stringify({
+      day: _todayKey(),
+      username: (_account && _account.username) || '',
+      pool, summary, discover: !!discover, at: 0,
+    }));
+  } catch (_) {}
+}
+function _clearTasteReco() { try { localStorage.removeItem(_TASTE_RECO_KEY); } catch (_) {} }
+
 function renderInlineTaste(data) {
-  const body = $('profile-reco-body');
   const pool = (data.recommendations || []).slice(0, 3);
   if (!pool.length) {
-    body.innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Sana uygun bir öneri çıkaramadık.</div>${_recoResetBtn()}`;
+    $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Sana uygun bir öneri çıkaramadık.</div>${_recoResetBtn()}`;
     return;
   }
-  body.dataset.tastePool = JSON.stringify(pool);
-  body.dataset.tasteAttempt = '0';
-  body.dataset.tasteSummary = data.taste_summary || '';
-  body.dataset.discover = data.discover_fallback ? '1' : '';
-  _paintInlineTaste();
+  _saveTasteReco(pool, data.taste_summary || '', data.discover_fallback);
+  _showTasteReco(0);
 }
 
-function _paintInlineTaste() {
-  const body = $('profile-reco-body');
-  const pool = JSON.parse(body.dataset.tastePool || '[]');
-  const attempt = parseInt(body.dataset.tasteAttempt || '0', 10);
-  const left = pool.length - attempt - 1;
-  body.innerHTML = `
-    ${_discoverNote(body.dataset.discover === '1')}
-    ${body.dataset.tasteSummary ? `<p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(body.dataset.tasteSummary)}</p>` : ''}
-    <div class="line-rise">${buildHeroCard(pool[attempt])}</div>
-    ${left > 0
-      ? `<button type="button" id="profile-reco-next" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span>Beğenmedim — başka öner (${left} hak kaldı)</button>`
-      : '<p class="mt-4 text-center font-label-sm text-label-sm text-on-surface-variant/50">Bu gecelik öneri hakların doldu.</p>'}
+function _showTasteReco(index) {
+  const o = _loadTasteReco();
+  if (!o) return;
+  const i = Math.max(0, Math.min(index, o.pool.length - 1));
+  o.at = i;
+  try { localStorage.setItem(_TASTE_RECO_KEY, JSON.stringify(o)); } catch (_) {}
+  $('profile-reco-panel').classList.add('open');
+  $('profile-reco-body').innerHTML = `
+    ${_discoverNote(o.discover)}
+    ${o.summary ? `<p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(o.summary)}</p>` : ''}
+    <div class="line-rise">${buildHeroCard(o.pool[i])}</div>
+    <div class="mt-4 flex items-center justify-between gap-3">
+      <button type="button" data-taste-nav="-1" ${i === 0 ? 'disabled' : ''} class="w-10 h-10 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+      <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${i + 1} / ${o.pool.length}</span>
+      <button type="button" data-taste-nav="1" ${i === o.pool.length - 1 ? 'disabled' : ''} class="w-10 h-10 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+    </div>
     ${_recoResetBtn()}`;
 }
 
-// Rastgele: tek hak. Beğenmezse zevkine göre öneriye geçebilir.
+// Rastgele: tek hak — günün filmi. Yeni öneri yok; sadece zevke geçiş.
 function renderInlineRandom(data) {
-  const body = $('profile-reco-body');
   const films = data.films || [];
   if (!films.length) {
-    body.innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Film bulunamadı.</div>${_recoResetBtn()}`;
+    $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Film bulunamadı.</div>${_recoResetBtn()}`;
     return;
   }
-  body.innerHTML = `
+  $('profile-reco-body').innerHTML = `
     ${_discoverNote(data.discover_fallback)}
     <p class="mb-4 font-body-md text-body-md text-on-surface-variant">🎬 Günün filmi bu — ona bir şans ver. Sevmezsen zevkine göre öneriye geç.</p>
     <div class="line-rise">${buildRandomCard(films[0])}</div>
-    <button type="button" id="profile-reco-totaste" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">psychology</span>Zevkime göre öner</button>
-    ${_recoResetBtn()}`;
+    <button type="button" id="profile-reco-totaste" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">psychology</span>Zevkime göre öner</button>`;
 }
 
 function runProfileWatch() {
@@ -784,16 +811,14 @@ function _filmHero(f) {
   const rating = f.user_rating ? Number(f.user_rating).toFixed(1) : '';
   const href = letterboxdFilmURL(f.slug);
   const art = poster
-    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-24 aspect-[2/3] rounded-lg object-cover bg-surface-container shrink-0"/>`
-    : `<div class="w-24 aspect-[2/3] rounded-lg bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[28px]">movie</span></div>`;
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl object-cover bg-surface-container"/>`
+    : `<div class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[40px]">movie</span></div>`;
   return `
-    <div class="flex gap-4">
-      ${href ? `<a href="${href}" target="_blank" rel="noopener" class="shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
-      <div class="min-w-0 flex-grow">
-        <h3 class="font-headline-md text-[17px] md:text-[19px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
-        ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
-        ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
-      </div>
+    ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block" title="${title} — Letterboxd">${art}</a>` : art}
+    <div class="mt-4 text-center">
+      <h3 class="font-headline-md text-[18px] md:text-[20px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
+      ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
+      ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
     </div>
     ${f.overview
       ? `<p class="mt-3 font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(f.overview)}</p>`
@@ -828,14 +853,16 @@ function _filmDetailCard(boxId, films, opts) {
   }
   const rest = list.slice(1);
   box.innerHTML = `
-    ${_filmHero(list[0])}
+    <div>${_filmHero(list[0])}</div>
     ${rest.length ? `
-      <button type="button" data-film-expand class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors">
-        <span data-film-expand-label>Diğer ${rest.length} film</span>
-        <span data-film-expand-chevron class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
-      </button>
-      <div data-film-rest class="hidden mt-2 flex flex-col divide-y divide-outline-variant/20">
-        ${rest.map((f, i) => _filmMiniRow(f, opts.numbered ? i + 2 : 0)).join('')}
+      <div class="mt-auto pt-4">
+        <button type="button" data-film-expand class="w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors">
+          <span data-film-expand-label>Diğer ${rest.length} film</span>
+          <span data-film-expand-chevron class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
+        </button>
+        <div data-film-rest class="hidden mt-2 flex flex-col divide-y divide-outline-variant/20">
+          ${rest.map((f, i) => _filmMiniRow(f, opts.numbered ? i + 2 : 0)).join('')}
+        </div>
       </div>` : ''}`;
 }
 
@@ -2649,18 +2676,15 @@ $('profile-directors-panel').addEventListener('click', async event => {
 });
 $('profile-reco-body').addEventListener('click', event => {
   if (event.target.closest('#profile-reco-again')) {
+    _clearTasteReco();
     resetRecoPanel();
     openProfilePanel('watch');
     return;
   }
-  if (event.target.closest('#profile-reco-next')) {
-    const body = $('profile-reco-body');
-    const pool = JSON.parse(body.dataset.tastePool || '[]');
-    const attempt = parseInt(body.dataset.tasteAttempt || '0', 10);
-    if (attempt < pool.length - 1) {
-      body.dataset.tasteAttempt = String(attempt + 1);
-      _paintInlineTaste();
-    }
+  const nav = event.target.closest('[data-taste-nav]');
+  if (nav) {
+    const cur = _loadTasteReco();
+    if (cur) _showTasteReco((cur.at || 0) + Number(nav.dataset.tasteNav));
     return;
   }
   if (event.target.closest('#profile-reco-totaste')) {

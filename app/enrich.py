@@ -275,7 +275,7 @@ class Enricher:
             details = await self._get(
                 client,
                 f"/movie/{film.tmdb_id}",
-                append_to_response="keywords,credits,translations",
+                append_to_response="keywords,credits",
             )
         except httpx.HTTPError:
             return film
@@ -283,13 +283,7 @@ class Enricher:
         film.keywords = [
             k["name"] for k in details.get("keywords", {}).get("keywords", [])
         ][:12]
-        # Prefer the Turkish plot; fall back to TMDb's default (English).
-        tr_overview = ""
-        for tr in details.get("translations", {}).get("translations", []):
-            if tr.get("iso_639_1") == "tr":
-                tr_overview = (tr.get("data") or {}).get("overview", "") or ""
-                break
-        film.overview = tr_overview or details.get("overview", "") or film.overview
+        film.overview = details.get("overview", "") or film.overview
         film.vote_average = float(details.get("vote_average", 0.0) or film.vote_average)
         film.genres = [
             genre.get("name", "")
@@ -498,8 +492,17 @@ class Enricher:
                 self.cache.get, "tmdb", cache_key
             )
             if cached and cached.get("details_loaded"):
-                film.director = cached.get("director", "")
-                film.keywords = cached.get("keywords", [])
+                film.director = cached.get("director", "") or film.director
+                film.keywords = cached.get("keywords", []) or film.keywords
+                film.overview = cached.get("overview", "") or film.overview
+                film.genres = cached.get("genres", []) or film.genres
+                film.vote_average = float(
+                    cached.get("vote_average", 0.0) or film.vote_average
+                )
+                if not film.year and cached.get("year"):
+                    film.year = cached.get("year")
+                if not film.poster_url and cached.get("poster_url"):
+                    film.poster_url = cached.get("poster_url")
                 film.details_loaded = True
                 self._cache_hits += 1
                 return film
