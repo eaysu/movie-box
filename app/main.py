@@ -1124,13 +1124,63 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
                 row["overview"] = by_slug[row["slug"]]
 
 
+async def _diary_recent_rows(account: Account, service, settings, limit: int) -> list[dict]:
+    """Last `limit` diary entries in true watch order, hydrated from the DB."""
+    try:
+        films, _ = await scrape_diary(
+            account.username, max_pages=1, film_limit=max(limit + 5, 15),
+            max_retries=settings.scrape_max_retries,
+        )
+    except ScrapeError:
+        films = []
+    scraped = [f for f in films if f.slug][:limit]
+    if not scraped:
+        # Diary private/blocked → fall back to the swept-history order.
+        return await asyncio.to_thread(service.list_recent_watched, account.id, limit)
+    by_slug = await asyncio.to_thread(
+        service.watched_films_by_slugs, account.id, [f.slug for f in scraped]
+    )
+    out: list[dict] = []
+    for f in scraped:
+        d = by_slug.get(f.slug, {})
+        rating = f.user_rating if f.user_rating is not None else d.get("user_rating")
+        out.append({
+            "slug": f.slug,
+            "title": f.title or d.get("title", ""),
+            "year": f.year or d.get("year"),
+            "director": d.get("director", ""),
+            "poster_url": d.get("poster_url") or f.poster_url or "",
+            "user_rating": rating,
+            "tmdb_id": d.get("tmdb_id"),
+        })
+    return out
+
+
 @app.get("/api/profile/recent")
-async def profile_recent_films(request: Request, preview: int = 1) -> dict:
-    """The user's last 10 watched films (by log order, not release date);
-    the first `preview` carry a plot summary."""
+async def profile_recent_films(
+    request: Request, preview: int = 1, fresh: bool = False
+) -> dict:
+    """The user's last 10 films in real watch order — pulled from the Letterboxd
+    diary, not the swept list; the first `preview` carry a plot summary."""
     account = await _require_account(request)
     service = _auth_service()
-    rows = await asyncio.to_thread(service.list_recent_watched, account.id, 10)
+    settings = get_settings()
+    supabase_client, _ = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    cached = None
+    if not fresh:
+        with contextlib.suppress(Exception):
+            cached = await asyncio.to_thread(
+                pcache.get, "films_diary_recent", account.username, 3600
+            )
+    if cached:
+        rows = cached
+    else:
+        rows = await _diary_recent_rows(account, service, settings, 10)
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(
+                pcache.set, "films_diary_recent", account.username, rows
+            )
     await _fill_overviews(service, rows, max(0, min(preview, 10)))
     return {"films": rows}
 

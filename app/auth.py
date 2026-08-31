@@ -549,6 +549,19 @@ class AuthService:
             "tmdb_id": row.get("tmdb_id"),
         }
 
+    def watched_films_by_slugs(self, user_id: int, slugs: list[str]) -> dict[str, dict]:
+        if not slugs:
+            return {}
+        rows = (
+            self._service_client()
+            .table("user_watched_films")
+            .select(self._WATCHED_PICK_COLS)
+            .eq("user_id", user_id)
+            .in_("film_slug", list(slugs)[:50])
+            .execute()
+        ).data or []
+        return {r["film_slug"]: self._film_row(r) for r in rows if r.get("film_slug")}
+
     def watched_film_by_slug(self, user_id: int, slug: str) -> dict | None:
         rows = (
             self._service_client()

@@ -890,9 +890,9 @@ async function loadTopFilms() {
   } catch (_) { /* sonraki render tekrar dener */ }
 }
 
-async function loadRecentFilms() {
+async function loadRecentFilms(fresh) {
   try {
-    const data = await apiJSON('/api/profile/recent');
+    const data = await apiJSON(`/api/profile/recent${fresh ? '?fresh=1' : ''}`);
     const films = data.films || [];
     renderRecentFilms(films);
     if (films.length) _recentLoaded = true;
@@ -1266,7 +1266,7 @@ async function syncProfile(force = false) {
     if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
     renderPersistedProfile(data);
     _topFilmsLoaded = false; loadTopFilms();
-    _recentLoaded = false; loadRecentFilms();
+    _recentLoaded = false; loadRecentFilms(true);
     return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
