@@ -1101,32 +1101,63 @@ async def profile_watched_films(request: Request, q: str = "", limit: int = 60) 
     return {"films": films}
 
 
+async def _fill_overviews(service, rows: list[dict], count: int) -> None:
+    """Best-effort: pull TMDb plots for the first `count` rows via shared cache."""
+    settings = get_settings()
+    if not (count and settings.has_tmdb and rows):
+        return
+    with contextlib.suppress(Exception):
+        _client, cache = _make_cache(settings)
+        enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+        objs = [
+            EnrichedFilm(
+                title=r["title"], year=r.get("year"),
+                slug=r["slug"], tmdb_id=r["tmdb_id"],
+            )
+            for r in rows[:count]
+            if r.get("tmdb_id")
+        ]
+        await enricher.ensure_details(objs)
+        by_slug = {o.slug: o.overview for o in objs if o.overview}
+        for row in rows:
+            if row["slug"] in by_slug:
+                row["overview"] = by_slug[row["slug"]]
+
+
 @app.get("/api/profile/recent")
-async def profile_recent_films(request: Request, preview: int = 4) -> dict:
-    """The user's last 10 diary films; the first `preview` carry a plot."""
+async def profile_recent_films(request: Request, preview: int = 1) -> dict:
+    """The user's last 10 watched films (by log order, not release date);
+    the first `preview` carry a plot summary."""
     account = await _require_account(request)
-    preview = max(0, min(preview, 10))
     service = _auth_service()
     rows = await asyncio.to_thread(service.list_recent_watched, account.id, 10)
-    settings = get_settings()
-    if preview and settings.has_tmdb and rows:
-        with contextlib.suppress(Exception):
-            _client, cache = _make_cache(settings)
-            enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
-            wanted = [r for r in rows[:preview] if r.get("tmdb_id")]
-            objs = [
-                EnrichedFilm(
-                    title=r["title"], year=r.get("year"),
-                    slug=r["slug"], tmdb_id=r["tmdb_id"],
-                )
-                for r in wanted
-            ]
-            await enricher.ensure_details(objs)
-            by_slug = {o.slug: o.overview for o in objs if o.overview}
-            for row in rows:
-                if row["slug"] in by_slug:
-                    row["overview"] = by_slug[row["slug"]]
+    await _fill_overviews(service, rows, max(0, min(preview, 10)))
     return {"films": rows}
+
+
+@app.get("/api/profile/top-films")
+async def get_top_films(request: Request, preview: int = 1) -> dict:
+    """The user's curated (or highest-rated) top 10; first `preview` get a plot."""
+    account = await _require_account(request)
+    service = _auth_service()
+    rows = await asyncio.to_thread(service.resolve_top_films, account)
+    await _fill_overviews(service, rows, max(0, min(preview, 10)))
+    return {"films": rows}
+
+
+@app.get("/api/profile/film-overview")
+async def profile_film_overview(request: Request, slug: str) -> dict:
+    """One film's plot, resolved lazily when a list row is expanded."""
+    account = await _require_account(request)
+    clean = slug.strip().lower()
+    if not re.match(r"^[a-z0-9][a-z0-9-]{0,159}$", clean):
+        raise HTTPException(status_code=422, detail="Geçersiz film.")
+    service = _auth_service()
+    row = await asyncio.to_thread(service.watched_film_by_slug, account.id, clean)
+    if not row:
+        return {"overview": ""}
+    await _fill_overviews(service, [row], 1)
+    return {"overview": row.get("overview", "")}
 
 
 @app.put("/api/profile/top-films")

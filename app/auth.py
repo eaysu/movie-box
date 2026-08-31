@@ -529,11 +529,12 @@ class AuthService:
             "account": account.__dict__,
             "taste": taste,
             "favorite_films": favorites,
-            "top_films": self.resolve_top_films(account),
         }
 
     # ── "Top 10 films" — user-curated, falls back to highest rated ────────
-    _WATCHED_PICK_COLS = "film_slug,title,release_year,director,user_rating,poster_url"
+    _WATCHED_PICK_COLS = (
+        "film_slug,title,release_year,director,user_rating,poster_url,tmdb_id"
+    )
     _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,159}$")
 
     @staticmethod
@@ -545,7 +546,20 @@ class AuthService:
             "year": row.get("release_year"),
             "user_rating": row.get("user_rating"),
             "poster_url": row.get("poster_url") or "",
+            "tmdb_id": row.get("tmdb_id"),
         }
+
+    def watched_film_by_slug(self, user_id: int, slug: str) -> dict | None:
+        rows = (
+            self._service_client()
+            .table("user_watched_films")
+            .select(self._WATCHED_PICK_COLS)
+            .eq("user_id", user_id)
+            .eq("film_slug", slug)
+            .limit(1)
+            .execute()
+        ).data or []
+        return self._film_row(rows[0]) if rows else None
 
     def _default_top_films(self, user_id: int, limit: int = 10) -> list[dict]:
         rows = (

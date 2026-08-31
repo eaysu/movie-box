@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260901.5"/>
+<link rel="stylesheet" href="/static/app.css?v=20260901.6"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -462,7 +462,7 @@
             <span class="material-symbols-outlined text-[18px]">edit</span>
           </button>
         </div>
-        <div id="profile-top-films" class="flex flex-col divide-y divide-outline-variant/15"></div>
+        <div id="profile-top-films"></div>
       </section>
 
       <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
@@ -473,11 +473,7 @@
           </div>
           <span class="material-symbols-outlined text-tertiary-container/40 text-[24px]">history</span>
         </div>
-        <div id="profile-recent-films" class="flex flex-col divide-y divide-outline-variant/15"></div>
-        <button id="profile-recent-more" type="button" class="hidden mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors">
-          <span id="profile-recent-more-label">Tümünü göster</span>
-          <span id="profile-recent-more-chevron" class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
-        </button>
+        <div id="profile-recent-films"></div>
       </section>
     </div>
   </main>
@@ -975,6 +971,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260901.5"></script>
+<script type="module" src="/static/js/app.js?v=20260901.6"></script>
 </body>
 </html>

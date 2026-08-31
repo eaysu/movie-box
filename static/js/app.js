@@ -755,59 +755,139 @@ function renderPersistedProfile(data) {
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 
-  renderTopFilms(data.top_films);
+  if (!_topFilmsLoaded) loadTopFilms();
   if (!_recentLoaded) loadRecentFilms();
   applySyncJob(data.sync_job);
 }
 
-// ── "Son filmler" — Letterboxd güncesinden son 10, ilk 4'ünde konu ───────
+// ── "Başucu filmleri" & "Son filmler" — 1 odak film + açılır liste ───────
 let _recentFilms = [];
 let _recentLoaded = false;
+let _topFilms = [];
+let _topFilmsLoaded = false;
+let _topFilmsSel = new Set();
+let _topFilmsPool = new Map();
+let _topFilmsSearchTimer = null;
 
-function _recentFilmRow(film, withOverview) {
-  const poster = safeImageURL(film.poster_url);
-  const title = escapeHTML(film.title || '');
-  const director = escapeHTML(film.director || '');
-  const year = film.year ? escapeHTML(String(film.year)) : '';
-  const rating = film.user_rating ? Number(film.user_rating).toFixed(1) : '';
-  const href = letterboxdFilmURL(film.slug);
+function _filmHero(f) {
+  const poster = safeImageURL(f.poster_url);
+  const title = escapeHTML(f.title || '');
+  const year = f.year ? escapeHTML(String(f.year)) : '';
+  const director = escapeHTML(f.director || '');
+  const rating = f.user_rating ? Number(f.user_rating).toFixed(1) : '';
+  const href = letterboxdFilmURL(f.slug);
   const art = poster
-    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-11 h-[66px] rounded object-cover bg-surface-container shrink-0"/>`
-    : `<div class="w-11 h-[66px] rounded bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30 text-[18px]">movie</span></div>`;
-  const overview = (withOverview && film.overview)
-    ? `<p class="mt-1.5 font-label-sm text-label-sm text-on-surface-variant/55 leading-relaxed line-clamp-3">${escapeHTML(film.overview)}</p>`
-    : '';
-  return `<div class="flex gap-3 py-3">
-    ${href ? `<a href="${href}" target="_blank" rel="noopener" class="shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
-    <div class="min-w-0 flex-grow">
-      <div class="flex items-start gap-2">
-        <p class="min-w-0 flex-grow font-label-md text-label-md text-on-surface truncate">${title}${year ? ` <span class="text-on-surface-variant/45">${year}</span>` : ''}</p>
-        ${rating ? `<span class="shrink-0 inline-flex items-center gap-0.5 font-label-sm text-label-sm text-primary-container"><span class="material-symbols-outlined text-[13px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</span>` : ''}
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-24 aspect-[2/3] rounded-lg object-cover bg-surface-container shrink-0"/>`
+    : `<div class="w-24 aspect-[2/3] rounded-lg bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[28px]">movie</span></div>`;
+  return `
+    <div class="flex gap-4">
+      ${href ? `<a href="${href}" target="_blank" rel="noopener" class="shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
+      <div class="min-w-0 flex-grow">
+        <h3 class="font-headline-md text-[17px] md:text-[19px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
+        ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
+        ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
       </div>
-      ${director ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 truncate">${director}</p>` : ''}
-      ${overview}
     </div>
+    ${f.overview
+      ? `<p class="mt-3 font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(f.overview)}</p>`
+      : '<p class="mt-3 font-label-sm text-label-sm text-on-surface-variant/40">Konu bilgisi hazırlanıyor…</p>'}`;
+}
+
+function _filmMiniRow(f, n) {
+  const poster = safeImageURL(f.poster_url);
+  const title = escapeHTML(f.title || '');
+  const year = f.year ? escapeHTML(String(f.year)) : '';
+  const rating = f.user_rating ? Number(f.user_rating).toFixed(1) : '';
+  return `<div class="py-2">
+    <button type="button" data-film-row="${escapeHTML(f.slug)}" class="w-full flex items-center gap-3 text-left">
+      ${n ? `<span class="w-4 shrink-0 text-center font-label-sm text-label-sm text-on-surface-variant/40">${n}</span>` : ''}
+      ${poster
+        ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-8 h-12 rounded object-cover bg-surface-container shrink-0"/>`
+        : '<div class="w-8 h-12 rounded bg-surface-container shrink-0"></div>'}
+      <span class="min-w-0 flex-grow font-label-md text-label-md text-on-surface truncate">${title}${year ? ` <span class="text-on-surface-variant/40">${year}</span>` : ''}</span>
+      ${rating ? `<span class="shrink-0 font-label-sm text-label-sm text-primary-container">★${rating}</span>` : ''}
+      <span data-film-row-chevron class="material-symbols-outlined text-[16px] text-on-surface-variant/40 transition-transform shrink-0">expand_more</span>
+    </button>
+    <p data-film-row-plot class="hidden mt-1.5 pl-7 font-label-sm text-label-sm text-on-surface-variant/60 leading-relaxed"></p>
   </div>`;
+}
+
+function _filmDetailCard(boxId, films, opts) {
+  const box = $(boxId);
+  const list = Array.isArray(films) ? films.slice(0, 10) : [];
+  if (!list.length) {
+    box.innerHTML = `<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">${opts.emptyText}</p>`;
+    return;
+  }
+  const rest = list.slice(1);
+  box.innerHTML = `
+    ${_filmHero(list[0])}
+    ${rest.length ? `
+      <button type="button" data-film-expand class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors">
+        <span data-film-expand-label>Diğer ${rest.length} film</span>
+        <span data-film-expand-chevron class="material-symbols-outlined text-[18px] transition-transform">expand_more</span>
+      </button>
+      <div data-film-rest class="hidden mt-2 flex flex-col divide-y divide-outline-variant/20">
+        ${rest.map((f, i) => _filmMiniRow(f, opts.numbered ? i + 2 : 0)).join('')}
+      </div>` : ''}`;
+}
+
+async function handleFilmCardClick(event) {
+  const box = event.currentTarget;
+  const expand = event.target.closest('[data-film-expand]');
+  if (expand) {
+    const holder = box.querySelector('[data-film-rest]');
+    if (!holder) return;
+    const shown = !holder.classList.toggle('hidden');
+    box.querySelector('[data-film-expand-chevron]').style.transform = shown ? 'rotate(180deg)' : '';
+    const lbl = box.querySelector('[data-film-expand-label]');
+    if (lbl) {
+      if (!lbl.dataset.full) lbl.dataset.full = lbl.textContent;
+      lbl.textContent = shown ? 'Daha az' : lbl.dataset.full;
+    }
+    return;
+  }
+  const row = event.target.closest('[data-film-row]');
+  if (!row) return;
+  const wrap = row.parentElement;
+  const plot = wrap.querySelector('[data-film-row-plot]');
+  const chev = row.querySelector('[data-film-row-chevron]');
+  if (!plot) return;
+  const open = !plot.classList.toggle('hidden');
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+  if (open && !plot.dataset.loaded) {
+    plot.textContent = 'Yükleniyor…';
+    try {
+      const data = await apiJSON(`/api/profile/film-overview?slug=${encodeURIComponent(row.dataset.filmRow)}`);
+      plot.textContent = data.overview || 'Konu bilgisi bulunamadı.';
+    } catch (_) { plot.textContent = 'Konu alınamadı.'; }
+    plot.dataset.loaded = '1';
+  }
+}
+
+function renderTopFilms(list) {
+  _topFilms = Array.isArray(list) ? list : [];
+  _filmDetailCard('profile-top-films', _topFilms, {
+    numbered: true,
+    emptyText: 'Puanladığın filmler tarandıkça en sevdiğin 10 film burada. Kalemle kendin de seçebilirsin.',
+  });
 }
 
 function renderRecentFilms(list) {
   _recentFilms = Array.isArray(list) ? list : [];
-  const box = $('profile-recent-films');
-  if (!_recentFilms.length) {
-    box.innerHTML = '<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">İzleme geçmişin tarandıkça son filmlerin burada görünür.</p>';
-    $('profile-recent-more').classList.add('hidden');
-    return;
-  }
-  const head = _recentFilms.slice(0, 4);
-  const rest = _recentFilms.slice(4);
-  box.innerHTML =
-    head.map(f => _recentFilmRow(f, true)).join('')
-    + (rest.length
-      ? `<div id="profile-recent-rest" class="hidden">${rest.map(f => _recentFilmRow(f, false)).join('')}</div>`
-      : '');
-  $('profile-recent-more').classList.toggle('hidden', rest.length === 0);
-  $('profile-recent-more-label').textContent = 'Tümünü göster';
-  $('profile-recent-more-chevron').style.transform = '';
+  _filmDetailCard('profile-recent-films', _recentFilms, {
+    numbered: false,
+    emptyText: 'İzleme geçmişin tarandıkça son izlediğin filmler burada görünür.',
+  });
+}
+
+async function loadTopFilms() {
+  try {
+    const data = await apiJSON('/api/profile/top-films');
+    const films = data.films || [];
+    renderTopFilms(films);
+    if (films.length) _topFilmsLoaded = true;
+  } catch (_) { /* sonraki render tekrar dener */ }
 }
 
 async function loadRecentFilms() {
@@ -815,42 +895,8 @@ async function loadRecentFilms() {
     const data = await apiJSON('/api/profile/recent');
     const films = data.films || [];
     renderRecentFilms(films);
-    if (films.length) _recentLoaded = true;   // else keep retrying on the next render
-  } catch (_) { /* bırak, sonraki render dener */ }
-}
-
-// ── "En sevdiğin 10 film" — satır listesi + düzenleyici ────────────────
-let _topFilms = [];
-let _topFilmsSel = new Set();
-let _topFilmsPool = new Map();
-let _topFilmsSearchTimer = null;
-
-function _topFilmRow(film, i) {
-  const poster = safeImageURL(film.poster_url);
-  const title = escapeHTML(film.title || '');
-  const director = escapeHTML(film.director || '');
-  const year = film.year ? escapeHTML(String(film.year)) : '';
-  const rating = film.user_rating ? Number(film.user_rating).toFixed(1) : '';
-  const href = letterboxdFilmURL(film.slug);
-  const art = poster
-    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-10 h-[60px] rounded object-cover bg-surface-container shrink-0"/>`
-    : `<div class="w-10 h-[60px] rounded bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30 text-[18px]">movie</span></div>`;
-  return `<div class="flex items-center gap-3 py-3">
-    <span class="w-4 shrink-0 text-center font-label-sm text-label-sm text-on-surface-variant/45">${i + 1}</span>
-    ${href ? `<a href="${href}" target="_blank" rel="noopener" class="shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
-    <div class="min-w-0 flex-grow">
-      <p class="font-label-md text-label-md text-on-surface truncate">${title}${year ? ` <span class="text-on-surface-variant/45">${year}</span>` : ''}</p>
-      ${director ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 truncate">${director}</p>` : ''}
-    </div>
-    ${rating ? `<span class="shrink-0 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[14px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</span>` : ''}
-  </div>`;
-}
-
-function renderTopFilms(list) {
-  _topFilms = Array.isArray(list) ? list : [];
-  $('profile-top-films').innerHTML = _topFilms.length
-    ? _topFilms.slice(0, 10).map(_topFilmRow).join('')
-    : '<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">Puanladığın filmler tarandıkça buraya en sevdiğin 10 film gelir. Kalemle kendin de seçebilirsin.</p>';
+    if (films.length) _recentLoaded = true;
+  } catch (_) { /* sonraki render tekrar dener */ }
 }
 
 function _topFilmsPickRow(film) {
@@ -929,7 +975,8 @@ async function saveTopFilms() {
       body: JSON.stringify({ slugs: [..._topFilmsSel] }),
     });
     renderTopFilms(data.top_films);
-    if (_persistedProfile) _persistedProfile.top_films = data.top_films;
+    _topFilmsLoaded = false;
+    loadTopFilms();                       // re-pull so the new focus film gets its plot
     $('dialog-top-films').close();
   } catch (error) {
     _topFilmsNote(error.message || 'Liste kaydedilemedi.');
@@ -1218,7 +1265,8 @@ async function syncProfile(force = false) {
     });
     if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
     renderPersistedProfile(data);
-    loadRecentFilms();
+    _topFilmsLoaded = false; loadTopFilms();
+    _recentLoaded = false; loadRecentFilms();
     return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
@@ -2417,6 +2465,7 @@ async function logoutAccount() {
   _persistedProfile = null;
   _pendingRegPassword = null;
   _recentLoaded = false;
+  _topFilmsLoaded = false;
   _obToken += 1;
   _obClearTimers();
   $('ob-skip').classList.add('hidden');
@@ -2525,13 +2574,8 @@ $('profile-directors-more').addEventListener('click', () => {
   const open = $('profile-directors-panel').classList.toggle('open');
   $('profile-directors-more-chevron').style.transform = open ? 'rotate(180deg)' : '';
 });
-$('profile-recent-more').addEventListener('click', () => {
-  const rest = $('profile-recent-rest');
-  if (!rest) return;
-  const shown = !rest.classList.toggle('hidden');
-  $('profile-recent-more-label').textContent = shown ? 'Daha az göster' : 'Tümünü göster';
-  $('profile-recent-more-chevron').style.transform = shown ? 'rotate(180deg)' : '';
-});
+$('profile-top-films').addEventListener('click', handleFilmCardClick);
+$('profile-recent-films').addEventListener('click', handleFilmCardClick);
 
 async function loadAllDirectorFilms(rank, films, trigger) {
   if (!films || films.dataset.fullLoaded === 'true') return;
