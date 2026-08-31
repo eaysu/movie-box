@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260831.9"/>
+<link rel="stylesheet" href="/static/app.css?v=20260901.1"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -48,9 +48,11 @@
       <button type="button" data-close-dialog="dialog-how-it-works" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
     </div>
     <ol class="mt-5 space-y-3 font-body-md text-body-md text-on-surface-variant">
-      <li><strong class="text-on-surface">1.</strong> Letterboxd kullanıcı adınla profil sahipliğini doğrularsın.</li>
-      <li><strong class="text-on-surface">2.</strong> Herkese açık izleme geçmişin ve watchlist’in doğrudan Letterboxd’dan okunur.</li>
-      <li><strong class="text-on-surface">3.</strong> Zevk profilin çıkarılır; watchlist’inden sana uygun beş film önerilir.</li>
+      <li><strong class="text-on-surface">1.</strong> Letterboxd kullanıcı adını girer, bio alanına tek seferlik bir kod ekleyerek profilin senin olduğunu doğrularsın.</li>
+      <li><strong class="text-on-surface">2.</strong> Herkese açık izleme geçmişin ve watchlist’in doğrudan Letterboxd’dan okunur — hiçbir dosya yüklemen gerekmez.</li>
+      <li><strong class="text-on-surface">3.</strong> Tüm geçmişin taranıp sinematik zevk profilin çıkarılır: favori yönetmenler, türler ve kısa bir kişilik okuması.</li>
+      <li><strong class="text-on-surface">4.</strong> “Bu gece ne izlesem?” dediğinde watchlist’inden ya da tüm kütüphanenden zevkine en uygun filmler önerilir.</li>
+      <li><strong class="text-on-surface">5.</strong> Blend ile başka bir kullanıcının zevkiyle uyumunu ölçebilirsin — yalnızca o kişi isteğini kabul ederse.</li>
     </ol>
   </div>
 </dialog>
@@ -65,9 +67,11 @@
       <button type="button" data-close-dialog="dialog-privacy" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
     </div>
     <div class="mt-5 space-y-3 font-body-md text-body-md text-on-surface-variant">
-      <p>Yalnızca herkese açık Letterboxd profil verileri okunur. Letterboxd parolan hiçbir zaman istenmez.</p>
-      <p>Movieboxd parolan Supabase Auth tarafından korunur; uygulama tablolarına parola veya parola özeti yazılmaz.</p>
-      <p>Hesabındaki “Verimi sil” seçeneğiyle profilini, tercihlerini ve ilişkili verilerini silebilirsin.</p>
+      <p>Yalnızca herkese açık Letterboxd profil verileri okunur. Letterboxd parolan hiçbir zaman istenmez, hiçbir yere kaydedilmez.</p>
+      <p>Veriyi kendi sunucumuz doğrudan okur; üçüncü taraf bir scraping servisi ya da ücretli API kullanılmaz.</p>
+      <p>Movieboxd parolan Supabase Auth tarafından saklanır; uygulama tablolarına parola ya da parola özeti yazılmaz.</p>
+      <p>Film verileri (afiş, tür, yönetmen) TMDb’den zenginleştirilir ve tekrar kullanılmak üzere ortak bir havuzda tutulur.</p>
+      <p>“Ayarlar › Verimi sil” ile profilini, zevk analizini ve ilişkili tüm verini kalıcı olarak silebilirsin.</p>
     </div>
   </div>
 </dialog>
@@ -114,6 +118,25 @@
   </div>
 </dialog>
 
+<dialog id="dialog-top-films" class="auth-info-dialog">
+  <div class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl flex flex-col max-h-[85vh]">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Başucu filmleri</span>
+        <h2 class="font-headline-md text-headline-md text-on-surface mt-2">En sevdiğin 10 filmi seç</h2>
+      </div>
+      <button type="button" data-close-dialog="dialog-top-films" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <input id="top-films-search" type="text" placeholder="İzlediğin filmlerde ara…" class="mt-4 w-full rounded-lg bg-surface border border-outline-variant/30 text-on-surface py-3 px-4"/>
+    <p id="top-films-count" class="mt-2 font-label-sm text-label-sm text-on-surface-variant/60">0 / 10 seçili</p>
+    <div id="top-films-list" class="mt-2 flex-grow overflow-y-auto flex flex-col gap-1 pr-1 min-h-[180px]"></div>
+    <div class="mt-4 flex gap-2 shrink-0">
+      <button type="button" data-close-dialog="dialog-top-films" class="flex-1 rounded-lg border border-outline-variant/30 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface transition-colors">Vazgeç</button>
+      <button id="top-films-save" type="button" class="flex-1 rounded-lg bg-primary-container text-black py-3 font-label-md text-label-md uppercase tracking-wide hover:opacity-90 transition-opacity disabled:opacity-40">Kaydet</button>
+    </div>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
 <div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <div class="absolute inset-0 z-[2] pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
@@ -130,9 +153,9 @@
     </div>
 
     <form id="login-form" class="flex flex-col gap-3">
-      <input id="login-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
+      <input id="login-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 px-4" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
       <div class="relative">
-        <input id="login-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parola" type="password" autocomplete="current-password" required/>
+        <input id="login-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 pl-4 pr-12" placeholder="Parola" type="password" autocomplete="current-password" required/>
         <button type="button" data-password-toggle="login-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility_off</span></button>
       </div>
       <button id="btn-login" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Giriş yap</button>
@@ -140,13 +163,13 @@
     </form>
 
     <form id="register-form" class="hidden flex-col gap-3">
-      <input id="register-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
+      <input id="register-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 px-4" placeholder="Letterboxd kullanıcı adı" autocomplete="username" required/>
       <div class="relative">
-        <input id="register-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10" required/>
+        <input id="register-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 pl-4 pr-12" placeholder="Parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10" required/>
         <button type="button" data-password-toggle="register-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility_off</span></button>
       </div>
       <div class="relative">
-        <input id="register-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10" required/>
+        <input id="register-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 pl-4 pr-12" placeholder="Parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10" required/>
         <button type="button" data-password-toggle="register-password-confirm" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility_off</span></button>
       </div>
       <button id="btn-register" class="w-full bg-primary-container text-black py-3.5 rounded-lg font-label-md text-label-md uppercase tracking-wider disabled:opacity-40">Hesabı oluştur</button>
@@ -161,16 +184,16 @@
 
     <div id="reset-panel" class="hidden flex-col gap-3">
       <p class="font-body-md text-body-md text-on-surface-variant">Sahipliği Letterboxd bio koduyla doğrulayarak yeni parola belirle.</p>
-      <input id="reset-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface" placeholder="Letterboxd kullanıcı adı" autocomplete="username"/>
+      <input id="reset-username" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 px-4" placeholder="Letterboxd kullanıcı adı" autocomplete="username"/>
       <button id="btn-reset-start" class="w-full bg-surface-variant text-on-surface py-3 rounded-lg border border-outline-variant/30 font-label-md text-label-md uppercase">Kod oluştur</button>
       <div id="reset-finish-fields" class="hidden flex-col gap-3">
         <button id="reset-code-display" type="button" class="w-full p-3 rounded-lg bg-surface-container text-primary-container font-mono tracking-wider border border-primary-container/30"></button>
         <div class="relative">
-          <input id="reset-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Yeni parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10"/>
+          <input id="reset-password" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 pl-4 pr-12" placeholder="Yeni parola · en az 10 karakter" type="password" autocomplete="new-password" minlength="10"/>
           <button type="button" data-password-toggle="reset-password" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility_off</span></button>
         </div>
         <div class="relative">
-          <input id="reset-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface pr-12" placeholder="Yeni parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10"/>
+          <input id="reset-password-confirm" class="auth-input w-full rounded-lg bg-surface border-outline-variant/30 text-on-surface py-3.5 pl-4 pr-12" placeholder="Yeni parolayı tekrar yaz" type="password" autocomplete="new-password" minlength="10"/>
           <button type="button" data-password-toggle="reset-password-confirm" class="absolute inset-y-0 right-0 px-3 text-on-surface-variant hover:text-primary" aria-label="Şifreyi göster" aria-pressed="false"><span class="material-symbols-outlined text-[20px]">visibility_off</span></button>
         </div>
         <button id="btn-reset-finish" class="w-full bg-primary-container text-black py-3 rounded-lg font-label-md text-label-md uppercase">Parolayı değiştir</button>
@@ -324,7 +347,7 @@
     </section>
 
     <!-- ── En sevilen yönetmenler + Favori dört film ──────────────────── -->
-    <div class="profile-rise grid lg:grid-cols-[minmax(300px,340px)_1fr] gap-6 mt-6" style="animation-delay:.06s">
+    <div class="profile-rise grid items-start lg:grid-cols-[minmax(300px,340px)_1fr] gap-6 mt-6" style="animation-delay:.06s">
       <section class="rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8">
         <div class="flex items-start justify-between gap-4 mb-7">
           <div>
@@ -359,6 +382,20 @@
         </div>
       </section>
     </div>
+
+    <!-- ── Başucu filmleri · en sevilen 10 ──────────────────────────────── -->
+    <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.09s">
+      <div class="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Başucu filmleri</span>
+          <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">En sevdiğin 10 film</h2>
+        </div>
+        <button id="profile-top-films-edit" type="button" class="w-9 h-9 shrink-0 rounded-full border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors flex items-center justify-center" aria-label="Listeyi düzenle" title="Listeyi düzenle">
+          <span class="material-symbols-outlined text-[18px]">edit</span>
+        </button>
+      </div>
+      <div id="profile-top-films" class="flex flex-col divide-y divide-outline-variant/15"></div>
+    </section>
 
     <!-- ── BU GECE · ne izlesen? / Blend ─────────────────────────────── -->
     <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.12s">
@@ -923,6 +960,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260831.9"></script>
+<script type="module" src="/static/js/app.js?v=20260901.1"></script>
 </body>
 </html>

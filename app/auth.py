@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -528,7 +529,110 @@ class AuthService:
             "account": account.__dict__,
             "taste": taste,
             "favorite_films": favorites,
+            "top_films": self.resolve_top_films(account),
         }
+
+    # ── "Top 10 films" — user-curated, falls back to highest rated ────────
+    _WATCHED_PICK_COLS = "film_slug,title,release_year,director,user_rating,poster_url"
+    _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,159}$")
+
+    @staticmethod
+    def _film_row(row: dict) -> dict:
+        return {
+            "slug": row.get("film_slug") or "",
+            "title": row.get("title") or "",
+            "director": row.get("director") or "",
+            "year": row.get("release_year"),
+            "user_rating": row.get("user_rating"),
+            "poster_url": row.get("poster_url") or "",
+        }
+
+    def _default_top_films(self, user_id: int, limit: int = 10) -> list[dict]:
+        rows = (
+            self._service_client()
+            .table("user_watched_films")
+            .select(self._WATCHED_PICK_COLS)
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .not_.is_("user_rating", "null")
+            .order("user_rating", desc=True)
+            .order("watched_rank")
+            .limit(limit)
+            .execute()
+        ).data or []
+        return [self._film_row(r) for r in rows]
+
+    def resolve_top_films(self, account: Account) -> list[dict]:
+        service = self._service_client()
+        slugs: list[str] = []
+        try:  # the top_films column may predate the migration
+            row = self._first(
+                service.table("users").select("top_films").eq("id", account.id).execute()
+            ) or {}
+            slugs = [
+                s for s in (row.get("top_films") or [])
+                if isinstance(s, str) and self._SLUG_RE.match(s)
+            ][:10]
+        except Exception:
+            slugs = []
+        try:
+            if not slugs:
+                return self._default_top_films(account.id)
+            picked = (
+                service.table("user_watched_films")
+                .select(self._WATCHED_PICK_COLS)
+                .eq("user_id", account.id)
+                .in_("film_slug", slugs)
+                .execute()
+            ).data or []
+            by_slug = {r["film_slug"]: self._film_row(r) for r in picked}
+            return [by_slug[s] for s in slugs if s in by_slug]
+        except Exception:
+            return []
+
+    def list_watched_for_picker(
+        self, user_id: int, query: str = "", limit: int = 60
+    ) -> list[dict]:
+        builder = (
+            self._service_client()
+            .table("user_watched_films")
+            .select(self._WATCHED_PICK_COLS)
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+        )
+        if query:
+            builder = builder.ilike("title", f"%{query}%")
+        rows = (
+            builder.order("user_rating", desc=True, nullsfirst=False)
+            .order("watched_rank")
+            .limit(limit)
+            .execute()
+        ).data or []
+        return [self._film_row(r) for r in rows]
+
+    def set_top_films(self, account: Account, slugs: list) -> list[dict]:
+        clean: list[str] = []
+        for raw in slugs or []:
+            s = str(raw or "").strip().lower()
+            if s and s not in clean and self._SLUG_RE.match(s):
+                clean.append(s)
+            if len(clean) >= 10:
+                break
+        if clean:
+            watched = (
+                self._service_client()
+                .table("user_watched_films")
+                .select("film_slug")
+                .eq("user_id", account.id)
+                .in_("film_slug", clean)
+                .execute()
+            ).data or []
+            valid = {r["film_slug"] for r in watched}
+            clean = [s for s in clean if s in valid]
+        self._service_client().table("users").update(
+            {"top_films": clean, "updated_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", account.id).execute()
+        return self.resolve_top_films(account)
 
     # ── Full-history background sync ──────────────────────────────────────
     def get_sync_job(self, user_id: int) -> dict | None:

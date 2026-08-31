@@ -22,6 +22,9 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS profile_sync_status TEXT NOT N
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS ownership_verified_at TIMESTAMPTZ;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS profile_synced_at TIMESTAMPTZ;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+-- User-curated "top 10 films" (ordered list of watched film slugs). Empty =
+-- fall back to the highest-rated watched films.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_user_id
   ON public.users (auth_user_id) WHERE auth_user_id IS NOT NULL;

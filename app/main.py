@@ -1085,6 +1085,39 @@ async def profile_director_films(
     }
 
 
+class TopFilmsRequest(BaseModel):
+    slugs: list[str] = []
+
+
+@app.get("/api/profile/watched")
+async def profile_watched_films(request: Request, q: str = "", limit: int = 60) -> dict:
+    """Watched films for the 'top 10' picker — the user's own library."""
+    account = await _require_account(request)
+    if limit < 1 or limit > 120:
+        raise HTTPException(status_code=422, detail="Geçersiz sayfalama.")
+    films = await asyncio.to_thread(
+        _auth_service().list_watched_for_picker, account.id, q.strip()[:80], limit
+    )
+    return {"films": films}
+
+
+@app.put("/api/profile/top-films")
+async def save_top_films(req: TopFilmsRequest, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    if len(req.slugs) > 10:
+        raise HTTPException(status_code=422, detail="En fazla 10 film seçebilirsin.")
+    try:
+        films = await asyncio.to_thread(
+            _auth_service().set_top_films, account, req.slugs
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail="Liste kaydedilemedi. Lütfen tekrar dene."
+        ) from exc
+    return {"ok": True, "top_films": films}
+
+
 async def _provisional_profile_sync(
     account: Account, settings, service, *, force: bool
 ) -> dict:
