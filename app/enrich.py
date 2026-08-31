@@ -191,6 +191,67 @@ class Enricher:
             self._genre_map = {g["id"]: g["name"] for g in data.get("genres", [])}
             await asyncio.to_thread(self.cache.set, "tmdb", "genre_map", self._genre_map)
 
+    async def discover_pool(
+        self, *, genre_names: Optional[list[str]] = None, limit: int = 50
+    ) -> list["EnrichedFilm"]:
+        """Well-known films from TMDb Discover, for cold-start fallbacks.
+
+        Discover results already carry overview / genres / poster / vote, so no
+        per-film detail call is needed. Optionally biased toward `genre_names`.
+        """
+        client = await _get_tmdb_client()
+        await self._load_genre_map(client)
+        name_to_id = {v.lower(): k for k, v in self._genre_map.items()}
+        with_genres = ",".join(
+            str(name_to_id[n.lower()])
+            for n in (genre_names or [])
+            if n and n.lower() in name_to_id
+        )
+
+        out: list[EnrichedFilm] = []
+        for page in (1, 2, 3):
+            params = {
+                "sort_by": "popularity.desc",
+                "vote_count.gte": 400,
+                "vote_average.gte": 6.0,
+                "include_adult": "false",
+                "language": "en-US",
+                "page": page,
+            }
+            if with_genres:
+                params["with_genres"] = with_genres
+            try:
+                data = await self._get(client, "/discover/movie", **params)
+            except Exception:
+                break
+            for r in data.get("results", []):
+                if not r.get("id") or not r.get("title"):
+                    continue
+                rel = r.get("release_date") or ""
+                year = int(rel[:4]) if rel[:4].isdigit() else None
+                genres = [
+                    self._genre_map[g]
+                    for g in r.get("genre_ids", [])
+                    if g in self._genre_map
+                ]
+                poster_path = r.get("poster_path")
+                out.append(EnrichedFilm(
+                    title=r["title"],
+                    year=year,
+                    tmdb_id=int(r["id"]),
+                    overview=r.get("overview") or "",
+                    genres=genres,
+                    vote_average=float(r.get("vote_average") or 0.0),
+                    poster_url=(
+                        f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else None
+                    ),
+                    matched=True,
+                    details_loaded=bool(genres),
+                ))
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
     @staticmethod
     def _score_match(result: dict, title: str, year: Optional[int]) -> float:
         """Rough relevance score for picking the right search hit."""

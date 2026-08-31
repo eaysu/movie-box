@@ -383,11 +383,18 @@ async function startInlineReco(mode) {
   );
 }
 
+function _discoverNote(on) {
+  return on
+    ? `<div class="mb-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 px-4 py-3 font-body-md text-body-md text-tertiary-container">Watchlist'in boş görünüyor — bunları TMDb'den, daha önce izlemediğin filmlerden seçtik.</div>`
+    : '';
+}
+
 function renderInlineTaste(data) {
   const all = data.recommendations || [];
   const hero = all[0];
   const alts = all.slice(1, 5);
   $('profile-reco-body').innerHTML = `
+    ${_discoverNote(data.discover_fallback)}
     <p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(data.taste_summary || 'Bu akşam için seçim hazır.')}</p>
     <div class="line-rise">${hero ? buildHeroCard(hero) : ''}</div>
     ${alts.length ? `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">${alts.map((f, i) => `<div class="line-rise" style="animation-delay:${(i + 1) * 70}ms">${buildAltCard(f, i)}</div>`).join('')}</div>` : ''}
@@ -402,6 +409,7 @@ function renderInlineRandom(data) {
   }
   $('profile-reco-body').dataset.pool = JSON.stringify(films);
   $('profile-reco-body').dataset.attempt = '0';
+  $('profile-reco-body').dataset.discover = data.discover_fallback ? '1' : '';
   _paintInlineRandom();
 }
 
@@ -411,6 +419,7 @@ function _paintInlineRandom() {
   let attempt = parseInt(body.dataset.attempt || '0', 10);
   const remaining = films.length - attempt - 1;
   body.innerHTML = `
+    ${_discoverNote(body.dataset.discover === '1')}
     <div class="line-rise">${buildRandomCard(films[attempt])}</div>
     <div class="mt-4 flex gap-2">
       <button type="button" id="profile-reco-retry" class="flex-1 rounded-xl bg-tertiary-container text-on-tertiary-container py-3 font-label-md text-label-md uppercase tracking-wide disabled:opacity-40" ${remaining <= 0 ? 'disabled' : ''}>Başka bir tane (${Math.max(remaining, 0)})</button>
@@ -1727,7 +1736,9 @@ const { buildHeroCard, buildAltCard, buildRandomCard } =
 function renderResults(data) {
   $('result-username').textContent = '@' + data.username;
 
-  $('taste-summary').textContent = data.taste_summary || 'Film zevkin analiz edildi.';
+  $('taste-summary').textContent =
+    (data.discover_fallback ? 'Watchlist’in boştu; TMDb’den, izlemediklerinden seçtik. ' : '')
+    + (data.taste_summary || 'Film zevkin analiz edildi.');
 
   const all = data.recommendations;
   const hero = all[0];

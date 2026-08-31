@@ -1124,6 +1124,65 @@ async def _fill_overviews(service, rows: list[dict], count: int) -> None:
                 row["overview"] = by_slug[row["slug"]]
 
 
+def _guess_lb_slug(title: str) -> str:
+    """Best-effort Letterboxd slug from a title (usually just the slugified name)."""
+    return re.sub(r"[^a-z0-9]+", "-", (title or "").lower()).strip("-")[:160]
+
+
+async def _discover_fallback_films(
+    enricher, service, account, watched_films, *, genre_names=None, limit=40
+):
+    """TMDb Discover films the user hasn't watched — for an empty watchlist."""
+    if enricher is None:
+        return []
+    pool = []
+    with contextlib.suppress(Exception):
+        pool = await enricher.discover_pool(genre_names=genre_names, limit=limit + 25)
+    if not pool:
+        return []
+    watched_slugs: set[str] = set()
+    watched_tmdb: set[int] = set()
+    if account is not None and service is not None:
+        with contextlib.suppress(Exception):
+            watched_slugs = await asyncio.to_thread(
+                service.get_watched_slugs, account.id
+            )
+    for f in watched_films or []:
+        if getattr(f, "slug", ""):
+            watched_slugs.add(f.slug)
+        if getattr(f, "tmdb_id", None):
+            watched_tmdb.add(int(f.tmdb_id))
+    picks = []
+    for film in pool:
+        film.slug = _guess_lb_slug(film.title)
+        if film.slug in watched_slugs:
+            continue
+        if film.tmdb_id and int(film.tmdb_id) in watched_tmdb:
+            continue
+        picks.append(film)
+        if len(picks) >= limit:
+            break
+    return picks
+
+
+async def _random_discover_pick(settings, service, account, cache, n: int = 3):
+    """A few unseen TMDb films for the 'random' mode when the watchlist is empty."""
+    if not settings.has_tmdb:
+        return []
+    enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+    picks = await _discover_fallback_films(
+        enricher, service, account, [], genre_names=None, limit=30
+    )
+    if not picks:
+        return []
+    with_poster = [f for f in picks if f.poster_url]
+    pool = with_poster if len(with_poster) >= n else picks
+    chosen = _random.sample(pool, min(n, len(pool)))
+    with contextlib.suppress(Exception):
+        await enricher.ensure_details(chosen)
+    return chosen
+
+
 async def _diary_recent_rows(account: Account, service, settings, limit: int) -> list[dict]:
     """Last `limit` diary entries in true watch order, hydrated from the DB."""
     try:
@@ -2197,11 +2256,8 @@ async def recommend(req: RecommendRequest, request: Request):
                             time.perf_counter() - t1, len(watched_films), w_cached,
                             len(watchlist_films), wl_cached)
 
-                if not watchlist_films:
-                    yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
-                    return
-
                 favorite_directors: list[str] = []
+                top_genres: list[str] = []
                 if service is not None and account is not None:
                     with contextlib.suppress(Exception):
                         stored_profile = await asyncio.to_thread(
@@ -2211,6 +2267,21 @@ async def recommend(req: RecommendRequest, request: Request):
                         favorite_directors = [
                             name for name in taste.get("top_directors", []) if name
                         ][:3]
+                        top_genres = [g for g in taste.get("top_genres", []) if g][:3]
+
+                discover_fallback = False
+                if not watchlist_films:
+                    # No watchlist → recommend from TMDb Discover, biased by taste,
+                    # excluding everything the user has already watched.
+                    watchlist_films = await _discover_fallback_films(
+                        enricher, service, account, watched_films,
+                        genre_names=top_genres,
+                        limit=max(12, settings.num_recommendations * 6),
+                    )
+                    discover_fallback = True
+                    if not watchlist_films:
+                        yield _sse({"type": "error", "detail": "Watchlist boş; alternatif öneri de bulunamadı."})
+                        return
 
                 recommendation_key = _recommendation_cache_key(
                     req.username,
@@ -2249,6 +2320,7 @@ async def recommend(req: RecommendRequest, request: Request):
                         "watchlist_count": watchlist_count,
                         "taste_summary": cached_recommendation["taste_summary"],
                         "recommendations": cached_recommendation["recommendations"],
+                        "discover_fallback": discover_fallback,
                         "meta": {
                             "tmdb_enabled": settings.has_tmdb,
                             "llm_used": cached_recommendation.get("llm_used", False),
@@ -2335,6 +2407,7 @@ async def recommend(req: RecommendRequest, request: Request):
                     "watchlist_count": watchlist_count,
                     "taste_summary": result["taste_summary"],
                     "recommendations": result["recommendations"],
+                    "discover_fallback": discover_fallback,
                     "meta": {
                         "tmdb_enabled": settings.has_tmdb,
                         "llm_used": result.get("llm_used", False),
@@ -2361,11 +2434,12 @@ async def recommend(req: RecommendRequest, request: Request):
 @app.post("/api/random")
 async def random_pick(req: RandomRequest, request: Request):
     """SSE stream: watchlist'ten 3 rastgele film seç ve zenginleştir."""
-    await _enforce_account_username(request, req.username)
+    account = await _enforce_account_username(request, req.username)
     await _enforce_heavy_rate_limit(request)
 
     async def generate():
         settings = get_settings()
+        service = _auth_service() if account is not None else None
         supabase_client, cache = _make_cache(settings)
         pcache = _make_persistent_cache(settings, supabase_client)
 
@@ -2409,15 +2483,21 @@ async def random_pick(req: RandomRequest, request: Request):
             watchlist_count = len(enriched)
             with_poster = [f for f in enriched if f.poster_url]
             pool = with_poster if len(with_poster) >= 3 else enriched
+            discover_fallback = False
             if not pool:
-                yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
-                return
-            chosen = _random.sample(pool, min(3, len(pool)))
+                chosen = await _random_discover_pick(settings, service, account, cache)
+                discover_fallback = True
+                if not chosen:
+                    yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
+                    return
+            else:
+                chosen = _random.sample(pool, min(3, len(pool)))
             log.warning("cache HIT  watchlist/%s (random pick)", req.username)
             yield _sse({
                 "type": "result",
                 "username": req.username,
                 "watchlist_count": watchlist_count,
+                "discover_fallback": discover_fallback,
                 "films": [f.to_dict() for f in chosen],
             })
             return
@@ -2443,7 +2523,17 @@ async def random_pick(req: RandomRequest, request: Request):
 
         watchlist_count = len(scraped_watchlist)
         if not scraped_watchlist:
-            yield _sse({"type": "error", "detail": "Watchlist boş veya gizli."})
+            chosen = await _random_discover_pick(settings, service, account, cache)
+            if not chosen:
+                yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
+                return
+            yield _sse({
+                "type": "result",
+                "username": req.username,
+                "watchlist_count": 0,
+                "discover_fallback": True,
+                "films": [f.to_dict() for f in chosen],
+            })
             return
 
         # Posteri olan filmler varsa onlardan seç — postersize film göstermemek için.
