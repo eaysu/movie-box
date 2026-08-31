@@ -1306,8 +1306,7 @@ function _obRenderWaiting(heading) {
   _obStage(`
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">${escapeHTML(heading)}</p>
     <p id="ob-bucket-line" class="mt-3 font-body-md text-body-md text-on-surface/90 leading-relaxed min-h-[1.5em]"></p>
-    <p id="ob-progress-line" class="mt-3 font-label-sm text-label-sm text-on-surface-variant/80"></p>
-    <p id="ob-milestone-line" class="mt-1 font-label-sm text-label-sm text-primary-container/90 min-h-[1.25em]"></p>
+    <p id="ob-milestone-line" class="mt-3 font-label-sm text-label-sm text-primary-container/90 min-h-[1.25em]"></p>
     <div id="ob-fact-card" style="transition:opacity .3s ease" class="mt-6 rounded-2xl border border-outline-variant/20 bg-surface-container/50 p-5 text-left">
       <span id="ob-fact-badge" class="font-label-sm text-label-sm text-on-surface-variant/60"></span>
       <p id="ob-fact-text" class="mt-2 font-body-md text-body-md text-on-surface/90 leading-relaxed"></p>
@@ -1443,12 +1442,6 @@ function _obAwaitFullSweep(token, provisional) {
       if (profile) _persistedProfile = profile;
       const job = profile && profile.sync_job;
       if (job) {
-        const pl = $('ob-progress-line');
-        if (pl) {
-          pl.textContent = job.total
-            ? `${(job.processed || 0).toLocaleString('tr-TR')} / ${job.total.toLocaleString('tr-TR')} film tarandı`
-            : `${(job.processed || 0).toLocaleString('tr-TR')} film tarandı`;
-        }
         const mt = _obMilestoneText(job.processed || 0);
         const ml = $('ob-milestone-line');
         if (ml && mt && mt !== lastMilestone) { ml.textContent = mt; lastMilestone = mt; }
