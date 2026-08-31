@@ -590,6 +590,19 @@ class AuthService:
         except Exception:
             return []
 
+    def list_recent_watched(self, user_id: int, limit: int = 10) -> list[dict]:
+        rows = (
+            self._service_client()
+            .table("user_watched_films")
+            .select(self._WATCHED_PICK_COLS)
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .order("watched_rank", nullsfirst=False)
+            .limit(limit)
+            .execute()
+        ).data or []
+        return [self._film_row(r) for r in rows]
+
     def list_watched_for_picker(
         self, user_id: int, query: str = "", limit: int = 60
     ) -> list[dict]:

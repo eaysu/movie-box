@@ -1101,6 +1101,34 @@ async def profile_watched_films(request: Request, q: str = "", limit: int = 60) 
     return {"films": films}
 
 
+@app.get("/api/profile/recent")
+async def profile_recent_films(request: Request, preview: int = 4) -> dict:
+    """The user's last 10 diary films; the first `preview` carry a plot."""
+    account = await _require_account(request)
+    preview = max(0, min(preview, 10))
+    service = _auth_service()
+    rows = await asyncio.to_thread(service.list_recent_watched, account.id, 10)
+    settings = get_settings()
+    if preview and settings.has_tmdb and rows:
+        with contextlib.suppress(Exception):
+            _client, cache = _make_cache(settings)
+            enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            wanted = [r for r in rows[:preview] if r.get("tmdb_id")]
+            objs = [
+                EnrichedFilm(
+                    title=r["title"], year=r.get("year"),
+                    slug=r["slug"], tmdb_id=r["tmdb_id"],
+                )
+                for r in wanted
+            ]
+            await enricher.ensure_details(objs)
+            by_slug = {o.slug: o.overview for o in objs if o.overview}
+            for row in rows:
+                if row["slug"] in by_slug:
+                    row["overview"] = by_slug[row["slug"]]
+    return {"films": rows}
+
+
 @app.put("/api/profile/top-films")
 async def save_top_films(req: TopFilmsRequest, request: Request) -> dict:
     _require_csrf(request)

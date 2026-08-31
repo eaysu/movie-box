@@ -756,7 +756,67 @@ function renderPersistedProfile(data) {
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 
   renderTopFilms(data.top_films);
+  if (!_recentLoaded) loadRecentFilms();
   applySyncJob(data.sync_job);
+}
+
+// ── "Son filmler" — Letterboxd güncesinden son 10, ilk 4'ünde konu ───────
+let _recentFilms = [];
+let _recentLoaded = false;
+
+function _recentFilmRow(film, withOverview) {
+  const poster = safeImageURL(film.poster_url);
+  const title = escapeHTML(film.title || '');
+  const director = escapeHTML(film.director || '');
+  const year = film.year ? escapeHTML(String(film.year)) : '';
+  const rating = film.user_rating ? Number(film.user_rating).toFixed(1) : '';
+  const href = letterboxdFilmURL(film.slug);
+  const art = poster
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-11 h-[66px] rounded object-cover bg-surface-container shrink-0"/>`
+    : `<div class="w-11 h-[66px] rounded bg-surface-container shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/30 text-[18px]">movie</span></div>`;
+  const overview = (withOverview && film.overview)
+    ? `<p class="mt-1.5 font-label-sm text-label-sm text-on-surface-variant/55 leading-relaxed line-clamp-3">${escapeHTML(film.overview)}</p>`
+    : '';
+  return `<div class="flex gap-3 py-3">
+    ${href ? `<a href="${href}" target="_blank" rel="noopener" class="shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
+    <div class="min-w-0 flex-grow">
+      <div class="flex items-start gap-2">
+        <p class="min-w-0 flex-grow font-label-md text-label-md text-on-surface truncate">${title}${year ? ` <span class="text-on-surface-variant/45">${year}</span>` : ''}</p>
+        ${rating ? `<span class="shrink-0 inline-flex items-center gap-0.5 font-label-sm text-label-sm text-primary-container"><span class="material-symbols-outlined text-[13px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</span>` : ''}
+      </div>
+      ${director ? `<p class="font-label-sm text-label-sm text-on-surface-variant/70 truncate">${director}</p>` : ''}
+      ${overview}
+    </div>
+  </div>`;
+}
+
+function renderRecentFilms(list) {
+  _recentFilms = Array.isArray(list) ? list : [];
+  const box = $('profile-recent-films');
+  if (!_recentFilms.length) {
+    box.innerHTML = '<p class="py-8 text-center font-body-md text-body-md text-on-surface-variant/60">İzleme geçmişin tarandıkça son filmlerin burada görünür.</p>';
+    $('profile-recent-more').classList.add('hidden');
+    return;
+  }
+  const head = _recentFilms.slice(0, 4);
+  const rest = _recentFilms.slice(4);
+  box.innerHTML =
+    head.map(f => _recentFilmRow(f, true)).join('')
+    + (rest.length
+      ? `<div id="profile-recent-rest" class="hidden">${rest.map(f => _recentFilmRow(f, false)).join('')}</div>`
+      : '');
+  $('profile-recent-more').classList.toggle('hidden', rest.length === 0);
+  $('profile-recent-more-label').textContent = 'Tümünü göster';
+  $('profile-recent-more-chevron').style.transform = '';
+}
+
+async function loadRecentFilms() {
+  try {
+    const data = await apiJSON('/api/profile/recent');
+    const films = data.films || [];
+    renderRecentFilms(films);
+    if (films.length) _recentLoaded = true;   // else keep retrying on the next render
+  } catch (_) { /* bırak, sonraki render dener */ }
 }
 
 // ── "En sevdiğin 10 film" — satır listesi + düzenleyici ────────────────
@@ -1158,6 +1218,7 @@ async function syncProfile(force = false) {
     });
     if (data.taste && !data.taste.updated_at) data.taste.updated_at = new Date().toISOString();
     renderPersistedProfile(data);
+    loadRecentFilms();
     return data;
   } catch (error) {
     $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
@@ -2355,6 +2416,7 @@ async function logoutAccount() {
   _account = null;
   _persistedProfile = null;
   _pendingRegPassword = null;
+  _recentLoaded = false;
   _obToken += 1;
   _obClearTimers();
   $('ob-skip').classList.add('hidden');
@@ -2462,6 +2524,13 @@ $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('profile-directors-more').addEventListener('click', () => {
   const open = $('profile-directors-panel').classList.toggle('open');
   $('profile-directors-more-chevron').style.transform = open ? 'rotate(180deg)' : '';
+});
+$('profile-recent-more').addEventListener('click', () => {
+  const rest = $('profile-recent-rest');
+  if (!rest) return;
+  const shown = !rest.classList.toggle('hidden');
+  $('profile-recent-more-label').textContent = shown ? 'Daha az göster' : 'Tümünü göster';
+  $('profile-recent-more-chevron').style.transform = shown ? 'rotate(180deg)' : '';
 });
 
 async function loadAllDirectorFilms(rank, films, trigger) {
