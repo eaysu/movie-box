@@ -92,7 +92,7 @@ function buildAltCard(film, idx) {
        </div>`
     : '';
   return `
-    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col">
+    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col overflow-safe">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${posterLink(poster, film)}
         <div class="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-surface-container-lowest/80 to-transparent pointer-events-none"></div>

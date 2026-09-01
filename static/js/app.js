@@ -1287,8 +1287,8 @@ function peerAvatar(peer) {
   const poster = safeImageURL(peer?.avatar_url);
   const name = escapeHTML(peer?.display_name || peer?.username || '?');
   return poster
-    ? `<img src="${poster}" alt="${name}" class="w-11 h-11 rounded-full object-cover border border-outline-variant/30"/>`
-    : `<div class="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center text-primary-container font-bold">${name[0] || '?'}</div>`;
+    ? `<img src="${poster}" alt="${name}" class="w-11 h-11 shrink-0 rounded-full object-cover border border-outline-variant/30"/>`
+    : `<div class="w-11 h-11 shrink-0 rounded-full bg-surface-container flex items-center justify-center text-primary-container font-bold">${name[0] || '?'}</div>`;
 }
 
 function blendRequestCard(item, kind) {
@@ -1297,20 +1297,22 @@ function blendRequestCard(item, kind) {
   const displayName = escapeHTML(peer.display_name || peer.username || 'Bilinmeyen kullanıcı');
   const id = escapeHTML(item.id);
   let actions = '';
-  const safety = `<button data-blend-action="report" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-secondary-container text-xs" title="Kullanıcıyı bildir">Bildir</button>
-    <button data-blend-action="block" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-error text-xs" title="Kullanıcıyı engelle">Engelle</button>`;
+  const safety = `<button data-blend-action="report" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-secondary-container text-xs" title="Kullanıcıyı bildir">Bildir</button>
+    <button data-blend-action="block" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error text-xs" title="Kullanıcıyı engelle">Engelle</button>`;
   if (kind === 'incoming') {
-    actions = `<div class="flex gap-2 ml-auto">
+    actions = `<div class="inbox-card-actions">
       ${safety}
-      <button data-blend-action="rejected" data-request-id="${id}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">Reddet</button>
-      <button data-blend-action="accepted" data-request-id="${id}" class="px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Kabul et</button>
+      <button data-blend-action="rejected" data-request-id="${id}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">Reddet</button>
+      <button data-blend-action="accepted" data-request-id="${id}" class="min-h-[42px] px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Kabul et</button>
     </div>`;
   } else if (kind === 'outgoing') {
-    actions = `<div class="flex gap-2 ml-auto">${safety}<button data-blend-action="cancel" data-request-id="${id}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">İptal et</button></div>`;
+    actions = `<div class="inbox-card-actions">${safety}<button data-blend-action="cancel" data-request-id="${id}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-error text-xs uppercase">İptal et</button></div>`;
   }
-  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
-    ${peerAvatar(peer)}
-    <div class="min-w-0"><strong class="text-on-surface block truncate">${displayName}</strong><span class="text-on-surface-variant text-sm">@${username}</span></div>
+  return `<article class="glass-panel rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 overflow-safe">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      ${peerAvatar(peer)}
+      <div class="min-w-0"><strong class="text-on-surface block truncate">${displayName}</strong><span class="text-on-surface-variant text-sm block truncate">@${username}</span></div>
+    </div>
     ${actions}
   </article>`;
 }
@@ -1318,21 +1320,24 @@ function blendRequestCard(item, kind) {
 function blendHistoryCard(item) {
   const peer = item.peer || {};
   const result = item.blend_result;
-  const score = result ? `<strong class="text-primary-container text-xl">${Number(result.score) || 0}</strong>` : '';
+  const score = result ? `<div class="shrink-0 text-right"><strong class="text-primary-container text-2xl leading-none">${Number(result.score) || 0}</strong><span class="block text-[9px] uppercase tracking-wide text-on-surface-variant/60 mt-1">% uyum</span></div>` : '';
   const labels = { accepted: 'Kabul edildi', rejected: 'Reddedildi', cancelled: 'İptal edildi', expired: 'Süresi doldu' };
   const dateValue = result?.created_at || item.decided_at || item.created_at;
   const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
   const resultButton = result
-    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
+    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
     : item.status === 'accepted'
-      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
+      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
       : '';
   const username = escapeHTML(peer.username || '');
-  const buttons = `<div class="ml-auto flex items-center gap-1"><button data-blend-action="report" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="px-2 py-2 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}</div>`;
-  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
-    ${peerAvatar(peer)}
-    <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(peer.display_name || peer.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm">${labels[item.status] || item.status}${dateLabel ? ` · ${escapeHTML(dateLabel)}` : ''}</span></div>
-    ${score}${buttons}
+  const buttons = `<div class="inbox-card-actions"><button data-blend-action="report" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}</div>`;
+  return `<article class="glass-panel rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 overflow-safe">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      ${peerAvatar(peer)}
+      <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(peer.display_name || peer.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm block">${labels[item.status] || item.status}</span>${dateLabel ? `<time class="text-on-surface-variant/60 text-xs block mt-0.5">${escapeHTML(dateLabel)}</time>` : ''}</div>
+      ${score}
+    </div>
+    ${buttons}
   </article>`;
 }
 
@@ -1407,10 +1412,12 @@ async function loadMyBlends(show = true) {
 function blockedUserCard(item) {
   const user = item.user || {};
   const username = escapeHTML(user.username || '');
-  return `<article class="glass-panel rounded-xl p-4 flex items-center gap-3">
-    ${peerAvatar(user)}
-    <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(user.display_name || user.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm">@${username}</span></div>
-    <button data-blend-action="unblock" data-peer-username="${username}" class="px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs uppercase">Engeli kaldır</button>
+  return `<article class="glass-panel rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 overflow-safe">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      ${peerAvatar(user)}
+      <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(user.display_name || user.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm block truncate">@${username}</span></div>
+    </div>
+    <button data-blend-action="unblock" data-peer-username="${username}" class="w-full sm:w-auto min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs uppercase">Engeli kaldır</button>
   </article>`;
 }
 
@@ -2120,7 +2127,7 @@ function buildBlendFilmCard(film, idx) {
           src="${posterURL}"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container"><span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span></div>`;
   return `
-    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col"
+    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col overflow-safe"
       style="opacity:0;animation:blend-card-in .5s cubic-bezier(.22,1,.36,1) both;animation-delay:${idx * 80}ms">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${poster}
