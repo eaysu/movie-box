@@ -51,6 +51,53 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   çalıştır; `onboarding_completed_at` ve genişletilmiş ortak katalog kolonlarını
   Render deploy'undan önce oluştur.
 
+## P0 — Onboarding sonrası performans denetimi — 2026-09-01
+
+Chrome DevTools mobil laboratuvar ölçümü (`Slow 4G`, `4x CPU`) giriş kabuğunda
+`LCP 1.286 sn`, `CLS 0.0566` ve `1.260 sn` kritik ağ zinciri verdi. İlk uygulama
+kabuğu yaklaşık `1.22 MB`; bunun `889 KB` kadarı giriş arka planı. Erişilebilirlik,
+best-practices ve SEO skorları `100`; yalnız logo düğmesinin görünür adı ile
+`aria-label` değeri eşleşmiyor. Giriş sonrası canlı trace, DevTools'un izole
+profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
+
+- [ ] Profil açılışında yalnız bildirim rozeti için yapılan tam `/api/blends`
+  çağrısını kaldır; ilk girişte küçük `/api/blends/pending-count` kullan ve tüm
+  inbox/Blend geçmişini ancak kullanıcı ilgili ekranı açınca lazy-load et.
+- [ ] Uygulama başlangıcındaki sıralı `/api/health` → `/api/auth/me` zincirini
+  paralelleştir veya auth durumunu ilk HTML bootstrap verisine ekle. Mobil testte
+  ağ gecikmesiyle bu iki istek sırasıyla yaklaşık `656 ms` ve `1.232 sn` sürdü.
+- [ ] Statik dosyalara güvenli browser cache politikası ekle. Şu anda arka plan,
+  CSS ve bütün JS modülleri `TTL=0`; tekrar ziyaretler için içerik hash'li dosya
+  adları + `public, max-age=31536000, immutable`, HTML için `no-cache` kullan.
+- [ ] **KARAR GEREKLİ — OTURUM CACHE'İ:** Her korumalı endpoint'in tekrar ettiği
+  Supabase Auth token doğrulaması + `users` hesap sorgusunu azalt. Öneri: token
+  hash'iyle process içi en fazla `30–60 sn` hesap cache'i; logout/hesap silmede
+  invalidation. Daha güçlü sonraki adım: Supabase JWKS ile yerel JWT doğrulama.
+- [ ] Supabase service client'ını her sorguda yeniden oluşturmak yerine güvenli,
+  bağlantı havuzunu yeniden kullanan process-scope istemciye geçir; kullanıcı
+  oturumu taşıyan auth client'ını paylaşma ve concurrency testleri ekle.
+- [ ] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
+  "yüklendi" kabul et. Mevcut flag'ler yalnız dolu sonuçta kapanıyor; profil yeniden
+  render edilirse aynı başarılı boş istekler tekrar çalışabiliyor.
+- [ ] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
+  liste kartında yalnız özet alanları getir, tam sonucu karta tıklanınca mevcut
+  `/result` endpoint'inden yükle.
+- [ ] **KARAR GEREKLİ — WATCHLIST TAZELİĞİ:** Her yeni sekme/oturumda Letterboxd
+  ilk sayfasını kontrol eden çağrı UI'ı bloklamıyor fakat dış istek bütçesi tüketiyor.
+  Sunucu tarafında kalıcı `last_checked_at` ile önerilen minimum aralık `30–60 dk`;
+  “Profili yenile” her zaman zorunlu kontrol yapmaya devam etsin.
+- [ ] Inbox badge polling'ini görünür sekmede `20 sn` yerine `60 sn` yapıp pencere
+  focus/visibility dönüşünde anında yenile; böylece kullanıcı başına saatteki boş
+  polling isteğini `180`den yaklaşık `60`a indir.
+- [ ] Google fontlarını self-host/subset edip kritik fontları preload et veya font
+  metriklerini fallback ile eşleştir. Ölçülen `0.0566 CLS` tamamen dört web fontunun
+  geç yüklenmesinden kaynaklandı.
+- [ ] İlk kabukta kullanılmayan `share-cards.js` gibi modülleri dinamik import et;
+  `criterion-closet-bg.jpg` için görsel kaliteyi koruyan AVIF/WebP varyantı üret.
+- [ ] Giriş yapılmış, onboarding'i tamamlanmış gerçek profilde cold/warm trace al;
+  `/profile/me`, stats, top/recent, watchlist head-check ve Blend badge süre/payload
+  değerlerini kaydedip warm profile `p95 <500 ms` hedefini doğrula.
+
 ## Hesap tabanlı ürün yol haritası — 2026-08-30
 
 Bu bölüm anonim username aracından kalıcı kullanıcı profili ürününe geçişin
