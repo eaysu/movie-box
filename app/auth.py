@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -104,11 +105,23 @@ class AuthService:
             client_factory = create_client
         self.settings = settings
         self._client_factory = client_factory
+        # Service-role requests do not carry a user's mutable auth session, so
+        # the underlying HTTP connection pool can safely be reused. Auth clients
+        # remain per-operation below to avoid sharing session state across users.
+        self._service_client_instance = None
+        self._service_client_ready = False
+        self._service_client_lock = threading.Lock()
 
     def _service_client(self):
-        return self._client_factory(
-            self.settings.supabase_url, self.settings.supabase_key
-        )
+        if self._service_client_ready:
+            return self._service_client_instance
+        with self._service_client_lock:
+            if not self._service_client_ready:
+                self._service_client_instance = self._client_factory(
+                    self.settings.supabase_url, self.settings.supabase_key
+                )
+                self._service_client_ready = True
+        return self._service_client_instance
 
     def _auth_client(self):
         return self._client_factory(

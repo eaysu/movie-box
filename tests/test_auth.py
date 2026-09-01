@@ -1,9 +1,11 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from app import main
 from app.auth import Account, AuthService, AuthSession, validate_password
@@ -49,6 +51,50 @@ def test_synthetic_identity_is_stable_and_does_not_expose_username():
     assert first != service.identity_email("other_user")
     assert "film_fan" not in first
     assert first.endswith("@users.movieboxd.invalid")
+
+
+def test_service_role_client_reuses_connection_pool_but_auth_client_does_not():
+    created = []
+
+    def factory(_url, key):
+        client = SimpleNamespace(key=key, number=len(created) + 1)
+        created.append(client)
+        return client
+
+    service = AuthService(_settings(), client_factory=factory)
+    assert service._service_client() is service._service_client()
+    assert len(created) == 1
+    assert service._auth_client() is not service._auth_client()
+    assert len(created) == 3
+
+
+def test_short_account_cache_avoids_repeat_validation_and_can_be_invalidated():
+    token = "unique-account-cache-token"
+    account = _account("cached_fan")
+    calls = []
+    fake_service = SimpleNamespace(
+        current_account=lambda value: calls.append(value) or account
+    )
+
+    def request_for(value):
+        return Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/api/auth/me",
+            "headers": [(b"cookie", f"mb_access={value}".encode())],
+        })
+
+    main._invalidate_account_cache(token)
+    with patch("app.main._auth_service", return_value=fake_service):
+        assert asyncio.run(main._require_account(request_for(token))) == account
+        assert asyncio.run(main._require_account(request_for(token))) == account
+        assert calls == [token]
+        assert token not in repr(main._account_cache)
+
+        main._invalidate_account_cache(token)
+        assert asyncio.run(main._require_account(request_for(token))) == account
+        assert calls == [token, token]
+    main._invalidate_account_cache(token)
 
 
 def test_full_history_sync_schema_is_service_role_only():

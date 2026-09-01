@@ -20,6 +20,7 @@ import os
 import random as _random
 import re
 import secrets
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -182,11 +183,74 @@ async def _enforce_auth_rate_limit(request: Request) -> None:
         )
 
 
+_auth_service_instance: AuthService | None = None
+_auth_service_settings_id: int | None = None
+_auth_service_lock = threading.Lock()
+
+
 def _auth_service():
+    global _auth_service_instance, _auth_service_settings_id
     settings = get_settings()
     if not getattr(settings, "has_auth", False):
         raise HTTPException(status_code=503, detail="Hesap sistemi yapılandırılmamış.")
-    return AuthService(settings)
+    settings_id = id(settings)
+    if _auth_service_instance is not None and _auth_service_settings_id == settings_id:
+        return _auth_service_instance
+    with _auth_service_lock:
+        if _auth_service_instance is None or _auth_service_settings_id != settings_id:
+            _auth_service_instance = AuthService(settings)
+            _auth_service_settings_id = settings_id
+    return _auth_service_instance
+
+
+# A profile page fans out into several protected API calls. Validating the same
+# Supabase access token remotely for every call multiplied latency and upstream
+# traffic. Cache only the token digest (never the raw credential) for a very short
+# period; logout/account deletion explicitly invalidate it.
+ACCOUNT_CACHE_TTL_SECONDS = 30.0
+ACCOUNT_CACHE_MAX_ENTRIES = 2048
+_account_cache_lock = threading.Lock()
+_account_cache: dict[tuple[int, str], tuple[float, Account]] = {}
+
+
+def _account_cache_digest(access_token: str) -> str:
+    return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+
+
+def _cached_account(service, access_token: str) -> Account | None:
+    now = time.monotonic()
+    key = (id(service), _account_cache_digest(access_token))
+    with _account_cache_lock:
+        entry = _account_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, account = entry
+        if expires_at <= now:
+            _account_cache.pop(key, None)
+            return None
+        return account
+
+
+def _cache_account(service, access_token: str, account: Account) -> None:
+    now = time.monotonic()
+    key = (id(service), _account_cache_digest(access_token))
+    with _account_cache_lock:
+        expired = [cache_key for cache_key, value in _account_cache.items() if value[0] <= now]
+        for cache_key in expired:
+            _account_cache.pop(cache_key, None)
+        if len(_account_cache) >= ACCOUNT_CACHE_MAX_ENTRIES and key not in _account_cache:
+            oldest = min(_account_cache, key=lambda cache_key: _account_cache[cache_key][0])
+            _account_cache.pop(oldest, None)
+        _account_cache[key] = (now + ACCOUNT_CACHE_TTL_SECONDS, account)
+
+
+def _invalidate_account_cache(access_token: str) -> None:
+    if not access_token:
+        return
+    digest = _account_cache_digest(access_token)
+    with _account_cache_lock:
+        for key in [key for key in _account_cache if key[1] == digest]:
+            _account_cache.pop(key, None)
 
 
 def _ip_hash(request: Request) -> str:
@@ -251,12 +315,16 @@ async def _require_account(request: Request) -> Account:
     access_token = request.cookies.get(ACCESS_COOKIE, "")
     if not access_token:
         raise HTTPException(status_code=401, detail="Oturum açman gerekiyor.")
+    service = _auth_service()
+    cached = _cached_account(service, access_token)
+    if cached is not None:
+        return cached
     try:
-        return await asyncio.to_thread(
-            _auth_service().current_account, access_token
-        )
+        account = await asyncio.to_thread(service.current_account, access_token)
     except InvalidCredentialsError as exc:
         raise HTTPException(status_code=401, detail="Oturum geçersiz.") from exc
+    _cache_account(service, access_token, account)
+    return account
 
 
 def _validated_share_image_url(value: str) -> str:
@@ -1166,6 +1234,7 @@ async def logout(request: Request, response: Response) -> dict:
         await asyncio.to_thread(
             _auth_service().revoke, access_token, refresh_token
         )
+    _invalidate_account_cache(access_token)
     _clear_session_cookies(response)
     return {"ok": True}
 
@@ -3043,6 +3112,7 @@ async def delete_data(req: DeleteDataRequest, request: Request, response: Respon
         )
     log.warning("user data deleted username=%s", req.username)
     if getattr(settings, "has_auth", False):
+        _invalidate_account_cache(request.cookies.get(ACCESS_COOKIE, ""))
         _clear_session_cookies(response)
     return {
         "ok": True,

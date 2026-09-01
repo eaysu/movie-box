@@ -69,11 +69,11 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [ ] Statik dosyalara güvenli browser cache politikası ekle. Şu anda arka plan,
   CSS ve bütün JS modülleri `TTL=0`; tekrar ziyaretler için içerik hash'li dosya
   adları + `public, max-age=31536000, immutable`, HTML için `no-cache` kullan.
-- [ ] **KARAR GEREKLİ — OTURUM CACHE'İ:** Her korumalı endpoint'in tekrar ettiği
+- [x] **KARAR ONAYLANDI — OTURUM CACHE'İ:** Her korumalı endpoint'in tekrar ettiği
   Supabase Auth token doğrulaması + `users` hesap sorgusunu azalt. Öneri: token
   hash'iyle process içi en fazla `30–60 sn` hesap cache'i; logout/hesap silmede
   invalidation. Daha güçlü sonraki adım: Supabase JWKS ile yerel JWT doğrulama.
-- [ ] Supabase service client'ını her sorguda yeniden oluşturmak yerine güvenli,
+- [x] Supabase service client'ını her sorguda yeniden oluşturmak yerine güvenli,
   bağlantı havuzunu yeniden kullanan process-scope istemciye geçir; kullanıcı
   oturumu taşıyan auth client'ını paylaşma ve concurrency testleri ekle.
 - [x] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
