@@ -61,6 +61,8 @@ def rank_watchlist(
     n: int = 8,
     favorite_directors: list[str] | None = None,
     director_boost: float = 0.08,
+    favorite_slugs: list[str] | set[str] | None = None,
+    favorite_four_slugs: list[str] | set[str] | None = None,
 ) -> list[EnrichedFilm]:
     """Watchlist filmlerini izleme geçmişine benzerliğe göre sırala.
 
@@ -111,6 +113,18 @@ def rank_watchlist(
         np.clip((2.5 - ratings) / 2.5, 0.0, 1.0),
     )
 
+    # Explicit picks are a stronger preference signal than a passive watch.
+    # Fav 4 deliberately carries more weight than the wider, curated Top 10.
+    favorite_set = {slug for slug in (favorite_slugs or []) if slug}
+    favorite_four_set = {slug for slug in (favorite_four_slugs or []) if slug}
+    for index, film in enumerate(watched):
+        if film.slug in favorite_set:
+            positive_weights[index] = max(positive_weights[index], 1.0) * 2.0
+            negative_weights[index] = 0.0
+        if film.slug in favorite_four_set:
+            positive_weights[index] = max(positive_weights[index], 1.0) * 2.0
+            negative_weights[index] = 0.0
+
     if positive_weights.sum() > 0:
         taste = np.asarray(
             watched_matrix.multiply(positive_weights[:, None]).sum(axis=0)
@@ -126,6 +140,26 @@ def rank_watchlist(
             / negative_weights.sum()
         )
         scores -= 0.6 * cosine_similarity(negative_taste, watchlist_matrix)[0]
+
+    # Add a bounded direct affinity bonus. This keeps the recent 100 films as
+    # the profile base while allowing explicit favorites to decide close calls.
+    favorite_indices = [
+        index for index, film in enumerate(watched) if film.slug in favorite_set
+    ]
+    favorite_four_indices = [
+        index for index, film in enumerate(watched)
+        if film.slug in favorite_four_set
+    ]
+    if favorite_indices:
+        favorite_similarity = cosine_similarity(
+            watched_matrix[favorite_indices], watchlist_matrix
+        )
+        scores += 0.10 * np.asarray(favorite_similarity.max(axis=0)).ravel()
+    if favorite_four_indices:
+        favorite_four_similarity = cosine_similarity(
+            watched_matrix[favorite_four_indices], watchlist_matrix
+        )
+        scores += 0.18 * np.asarray(favorite_four_similarity.max(axis=0)).ravel()
 
     # Favorite-director affinity is deliberately a bounded secondary signal.
     # It can break close calls, but cannot dominate a poor content match.
@@ -146,9 +180,7 @@ def rank_watchlist(
         film = watchlist[int(idx)]
         film.similarity = round(float(scores[idx]), 4)
         # Kısa fallback reason — LLM varsa zaten üzerine yazar
-        film.reason = (
-            f"İzleme geçmişinle benzerlik skoru: {film.similarity:.3f}"
-        )
+        film.reason = "Sevdiğin filmlerin temalarına ve anlatım tarzına yakın olduğu için öne çıktı."
         results.append(film)
 
     return results

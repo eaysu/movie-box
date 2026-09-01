@@ -659,6 +659,24 @@ class AuthService:
         except Exception:
             return []
 
+    def get_curated_top_film_slugs(self, account: Account) -> list[str]:
+        """Return only the user's explicit Top 10 choices, without a fallback."""
+        try:
+            row = self._first(
+                self._service_client()
+                .table("users")
+                .select("top_films")
+                .eq("id", account.id)
+                .execute()
+            ) or {}
+        except Exception:
+            return []
+        return [
+            slug
+            for slug in (row.get("top_films") or [])
+            if isinstance(slug, str) and self._SLUG_RE.match(slug)
+        ][:10]
+
     def list_recent_watched(self, user_id: int, limit: int = 10) -> list[dict]:
         rows = (
             self._service_client()

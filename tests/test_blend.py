@@ -63,16 +63,34 @@ class BlendCalibrationTests(unittest.TestCase):
 
         result = _calculate_blend([hated], [loved])
 
-        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["score"], 25)
 
-    def test_disjoint_profiles_can_score_zero_instead_of_artificial_seventy(self):
+    def test_disjoint_profiles_keep_a_warm_but_clearly_low_floor(self):
         first = _profile("first", shared_features=False)
         second = _profile("second", shared_features=False)
 
         result = _calculate_blend(first, second)
 
-        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["score"], 25)
         self.assertEqual(result["confidence"]["level"], "high")
+
+    def test_shared_fav4_has_a_larger_explicit_bonus(self):
+        first = _profile("first", shared_features=False)
+        second = _profile("second", shared_features=False)
+        baseline = _calculate_blend(first, second)
+
+        result = _calculate_blend(
+            first,
+            second,
+            favorite_four1=["shared-love"],
+            favorite_four2=["shared-love"],
+            favorite_ten1=["shared-love"],
+            favorite_ten2=["shared-love"],
+        )
+
+        self.assertEqual(result["score"], baseline["score"] + 10)
+        self.assertEqual(result["favorite_matches"]["fav4"], ["shared-love"])
+        self.assertEqual(result["favorite_matches"]["bonus"], 10)
 
     def test_small_profiles_report_low_confidence(self):
         first = _profile("first", shared_features=True, count=5)

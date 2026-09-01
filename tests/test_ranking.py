@@ -90,6 +90,39 @@ class RatingAwareRankingTests(unittest.TestCase):
         self.assertEqual(ranked[0].slug, "auteur")
         self.assertLess(ranked[0].similarity - ranked[1].similarity, 0.1)
 
+    def test_explicit_fav4_outweighs_an_equally_common_passive_taste(self):
+        watched = [
+            EnrichedFilm(
+                title="Favorite Space Film", slug="favorite-space",
+                genres=["Science Fiction"], keywords=["space", "astronaut"],
+            ),
+            EnrichedFilm(
+                title="Family Drama", slug="family-drama",
+                genres=["Drama"], keywords=["family", "home"],
+            ),
+        ]
+        watchlist = [
+            EnrichedFilm(
+                title="New Family Drama", slug="new-family",
+                genres=["Drama"], keywords=["family", "home"],
+            ),
+            EnrichedFilm(
+                title="New Space Film", slug="new-space",
+                genres=["Science Fiction"], keywords=["space", "astronaut"],
+            ),
+        ]
+
+        ranked = rank_watchlist(
+            watched,
+            watchlist,
+            n=2,
+            favorite_slugs=["favorite-space"],
+            favorite_four_slugs=["favorite-space"],
+        )
+
+        self.assertEqual(ranked[0].slug, "new-space")
+        self.assertGreater(ranked[0].similarity, ranked[1].similarity)
+
 
 if __name__ == "__main__":
     unittest.main()

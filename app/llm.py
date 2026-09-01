@@ -56,6 +56,8 @@ def _build_prompt(
     watched: list[EnrichedFilm],
     candidates: list[EnrichedFilm],
     n: int,
+    favorite_slugs: list[str] | None = None,
+    favorite_four_slugs: list[str] | None = None,
 ) -> str:
     references, reference_mode = _taste_references(watched)
     watched_block = "; ".join(_film_label(f) for f in references)
@@ -77,10 +79,20 @@ def _build_prompt(
             f"— türler: {genres or 'n/a'}\n    {overview}"
         )
     candidate_block = "\n".join(lines)
+    favorite_set = set(favorite_slugs or [])
+    favorite_four_set = set(favorite_four_slugs or [])
+    top_ten_block = "; ".join(
+        _film_label(film) for film in watched if film.slug in favorite_set
+    ) or "(seçim yapılmamış)"
+    fav_four_block = "; ".join(
+        _film_label(film) for film in watched if film.slug in favorite_four_set
+    ) or "(seçim yapılmamış)"
 
     return (
         "Sen deneyimli bir film öneri uzmanısın.\n\n"
         f"{reference_heading}:\n{watched_block}\n\n"
+        f"Kullanıcının kendi seçtiği favori 10 film:\n{top_ten_block}\n\n"
+        f"Letterboxd Favori 4 (en güçlü tercih sinyali):\n{fav_four_block}\n\n"
         "Aşağıdaki filmler kullanıcının watchlist'inden seçilmiş adaylardır "
         "(izleme geçmişine benzerliğe göre ön filtrelendi):\n"
         f"{candidate_block}\n\n"
@@ -122,6 +134,9 @@ async def rank_candidates(
     settings: Settings,
     watched: list[EnrichedFilm],
     candidates: list[EnrichedFilm],
+    *,
+    favorite_slugs: list[str] | None = None,
+    favorite_four_slugs: list[str] | None = None,
 ) -> dict:
     """Aday watchlist filmlerini LLM ile sırala ve gerekçelendir."""
     n = settings.num_recommendations
@@ -150,7 +165,16 @@ async def rank_candidates(
         response = await client.chat.completions.create(
             model=model_id,
             **token_kwargs,
-            messages=[{"role": "user", "content": _build_prompt(watched, candidates, n)}],
+            messages=[{
+                "role": "user",
+                "content": _build_prompt(
+                    watched,
+                    candidates,
+                    n,
+                    favorite_slugs=favorite_slugs,
+                    favorite_four_slugs=favorite_four_slugs,
+                ),
+            }],
         )
         raw = response.choices[0].message.content or ""
         raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")

@@ -480,8 +480,8 @@ TTL_USER_FILMS = 24 * 3600  # 1 gün
 TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftalık tam crawl
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
-RECOMMENDER_VERSION = "v3-last100-director-affinity"
-BLEND_VERSION = "blend-v3-signed-db-full"
+RECOMMENDER_VERSION = "v4-last100-explicit-favorites"
+BLEND_VERSION = "blend-v4-warm-favorites"
 
 
 def _make_persistent_cache(settings, client):
@@ -572,6 +572,8 @@ def _recommendation_cache_key(
     model: str,
     count: int,
     favorite_directors: list[str] | None = None,
+    favorite_slugs: list[str] | None = None,
+    favorite_four_slugs: list[str] | None = None,
 ) -> str:
     """Content-address a recommendation so profile changes invalidate it."""
     payload = {
@@ -582,6 +584,8 @@ def _recommendation_cache_key(
         "watched": [(film.slug, film.user_rating) for film in watched],
         "watchlist": [film.slug for film in watchlist],
         "favorite_directors": (favorite_directors or [])[:3],
+        "favorite_slugs": (favorite_slugs or [])[:10],
+        "favorite_four_slugs": (favorite_four_slugs or [])[:4],
     }
     digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -2392,7 +2396,35 @@ async def _compute_accepted_blend(
             _complete_blend_profile_metadata(watched1, first.id, enricher, service),
             _complete_blend_profile_metadata(watched2, second.id, enricher, service),
         )
-    blend_result = _calculate_blend(watched1, watched2, top_n=10)
+    async def _preference_slugs(participant: Account) -> tuple[list[str], list[str]]:
+        favorite_four: list[str] = []
+        favorite_ten: list[str] = []
+        if hasattr(service, "get_profile"):
+            with contextlib.suppress(Exception):
+                profile = await asyncio.to_thread(service.get_profile, participant)
+                favorite_four = [
+                    film.get("slug") for film in profile.get("favorite_films", [])
+                    if film.get("slug")
+                ][:4]
+        if hasattr(service, "get_curated_top_film_slugs"):
+            with contextlib.suppress(Exception):
+                favorite_ten = await asyncio.to_thread(
+                    service.get_curated_top_film_slugs, participant
+                )
+        return favorite_four, favorite_ten
+
+    (favorite_four1, favorite_ten1), (favorite_four2, favorite_ten2) = (
+        await asyncio.gather(_preference_slugs(first), _preference_slugs(second))
+    )
+    blend_result = _calculate_blend(
+        watched1,
+        watched2,
+        top_n=10,
+        favorite_four1=favorite_four1,
+        favorite_four2=favorite_four2,
+        favorite_ten1=favorite_ten1,
+        favorite_ten2=favorite_ten2,
+    )
     payload = {
         "username1": first.username,
         "username2": second.username,
@@ -2407,6 +2439,7 @@ async def _compute_accepted_blend(
         "top_director_count1": blend_result["top_director_count1"],
         "top_director_count2": blend_result["top_director_count2"],
         "films": [film.to_dict() for film in blend_result["films"]],
+        "favorite_matches": blend_result["favorite_matches"],
         "common_watchlist_films": [],
         "bridge_films": [],
         "watchlist_public": False,
@@ -2786,19 +2819,18 @@ async def recommend(req: RecommendRequest, request: Request):
                         yield _scrape_error_event(exc)
                         return
                     raise exc
-                (watched_films, w_cached), (watchlist_films, wl_cached) = hs["result"]
-                watched_films = watched_films[
-                    : getattr(settings, "recommendation_history_limit", 100)
-                ]
+                (all_watched_films, w_cached), (watchlist_films, wl_cached) = hs["result"]
                 watchlist_count = len(watchlist_films)
                 load_ms = round((time.perf_counter() - t1) * 1000)
                 yield _sse({"type": "step", "step": "enriching"})
                 log.warning("⏱ load films      %.2fs  (watched=%d[cache=%s], watchlist=%d[cache=%s])",
-                            time.perf_counter() - t1, len(watched_films), w_cached,
+                            time.perf_counter() - t1, len(all_watched_films), w_cached,
                             len(watchlist_films), wl_cached)
 
                 favorite_directors: list[str] = []
                 top_genres: list[str] = []
+                favorite_slugs: list[str] = []
+                favorite_four_slugs: list[str] = []
                 if service is not None and account is not None:
                     with contextlib.suppress(Exception):
                         stored_profile = await asyncio.to_thread(
@@ -2809,6 +2841,25 @@ async def recommend(req: RecommendRequest, request: Request):
                             name for name in taste.get("top_directors", []) if name
                         ][:3]
                         top_genres = [g for g in taste.get("top_genres", []) if g][:3]
+                        favorite_four_slugs = [
+                            film.get("slug")
+                            for film in stored_profile.get("favorite_films", [])
+                            if film.get("slug")
+                        ][:4]
+                    with contextlib.suppress(Exception):
+                        favorite_slugs = await asyncio.to_thread(
+                            service.get_curated_top_film_slugs, account
+                        )
+
+                history_limit = getattr(settings, "recommendation_history_limit", 100)
+                watched_films = all_watched_films[:history_limit]
+                included_slugs = {film.slug for film in watched_films if film.slug}
+                explicit_slugs = set(favorite_slugs) | set(favorite_four_slugs)
+                watched_films += [
+                    film
+                    for film in all_watched_films
+                    if film.slug in explicit_slugs and film.slug not in included_slugs
+                ]
 
                 discover_fallback = False
                 if len(watchlist_films) < settings.num_recommendations:
@@ -2838,6 +2889,8 @@ async def recommend(req: RecommendRequest, request: Request):
                     model=settings.openai_model if settings.has_openai else "local",
                     count=settings.num_recommendations,
                     favorite_directors=favorite_directors,
+                    favorite_slugs=favorite_slugs,
+                    favorite_four_slugs=favorite_four_slugs,
                 )
                 cached_recommendation = await asyncio.to_thread(
                     pcache.get,
@@ -2903,6 +2956,8 @@ async def recommend(req: RecommendRequest, request: Request):
                     n=min(len(watchlist_films), candidate_count * 4),
                     favorite_directors=favorite_directors,
                     director_boost=getattr(settings, "favorite_director_boost", 0.08),
+                    favorite_slugs=favorite_slugs,
+                    favorite_four_slugs=favorite_four_slugs,
                 )
                 if enricher is not None:
                     await enricher.ensure_details(director_pool)
@@ -2912,6 +2967,8 @@ async def recommend(req: RecommendRequest, request: Request):
                     n=candidate_count,
                     favorite_directors=favorite_directors,
                     director_boost=getattr(settings, "favorite_director_boost", 0.08),
+                    favorite_slugs=favorite_slugs,
+                    favorite_four_slugs=favorite_four_slugs,
                 )
                 rank_ms = round((time.perf_counter() - t3) * 1000)
                 log.warning("⏱ tfidf rank      %.2fs  (candidates=%d)", time.perf_counter() - t3, len(candidates))
@@ -2919,7 +2976,13 @@ async def recommend(req: RecommendRequest, request: Request):
                 # 4. LLM
                 yield _sse({"type": "step", "step": "llm"})
                 t4 = time.perf_counter()
-                result = await rank_candidates(settings, watched_films, candidates)
+                result = await rank_candidates(
+                    settings,
+                    watched_films,
+                    candidates,
+                    favorite_slugs=favorite_slugs,
+                    favorite_four_slugs=favorite_four_slugs,
+                )
                 llm_ms = round((time.perf_counter() - t4) * 1000)
                 cacheable_result = result.get("llm_used", False) or not settings.has_openai
                 if pcache is not None and result.get("recommendations") and cacheable_result:
@@ -3130,7 +3193,16 @@ async def random_pick(req: RandomRequest, request: Request):
     )
 
 
-def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
+def _calculate_blend(
+    watched1: list,
+    watched2: list,
+    top_n: int = 20,
+    *,
+    favorite_four1: list[str] | set[str] | None = None,
+    favorite_four2: list[str] | set[str] | None = None,
+    favorite_ten1: list[str] | set[str] | None = None,
+    favorite_ten2: list[str] | set[str] | None = None,
+) -> dict:
     """Blend skoru, ortak filmler ve ortak yönetmen hesapla."""
     from collections import Counter
     import numpy as np
@@ -3278,9 +3350,29 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
             + overlap_sim * 0.20
         )
 
-    # Kalibre skor: yapay taban/tavan yok; ağırlıklı benzerlik doğrudan 0–100'e
-    # çevrilir. Skorun ne kadar güvenilir olduğu ayrıca raporlanır.
-    score = round(max(0.0, min(raw, 1.0)) * 100)
+    # The displayed score is intentionally warmer than the raw statistical
+    # similarity. A nonlinear calibration protects meaningful differences while
+    # avoiding demoralizing zeroes for two valid, simply different profiles.
+    bounded_raw = max(0.0, min(raw, 1.0))
+    calibrated_score = 25.0 + 75.0 * (bounded_raw ** 0.85)
+
+    fav4_1 = {slug for slug in (favorite_four1 or []) if slug}
+    fav4_2 = {slug for slug in (favorite_four2 or []) if slug}
+    fav10_1 = {slug for slug in (favorite_ten1 or []) if slug}
+    fav10_2 = {slug for slug in (favorite_ten2 or []) if slug}
+    shared_fav4 = sorted(fav4_1 & fav4_2)
+    shared_fav10 = sorted((fav10_1 & fav10_2) - set(shared_fav4))
+    cross_favorites = sorted(
+        ((fav4_1 & fav10_2) | (fav4_2 & fav10_1))
+        - set(shared_fav4)
+        - set(shared_fav10)
+    )
+    favorite_bonus = (
+        min(len(shared_fav4) * 10, 20)
+        + min(len(shared_fav10) * 4, 12)
+        + min(len(cross_favorites) * 3, 6)
+    )
+    score = round(min(100.0, calibrated_score + favorite_bonus))
 
     min_watched = min(len(watched1), len(watched2))
 
@@ -3357,6 +3449,12 @@ def _calculate_blend(watched1: list, watched2: list, top_n: int = 20) -> dict:
         "top_director_count1": director_counts1.get(top_dir, 0) if top_dir else 0,
         "top_director_count2": director_counts2.get(top_dir, 0) if top_dir else 0,
         "films": top_common,
+        "favorite_matches": {
+            "fav4": shared_fav4,
+            "top10": shared_fav10,
+            "cross": cross_favorites,
+            "bonus": favorite_bonus,
+        },
     }
 
 
