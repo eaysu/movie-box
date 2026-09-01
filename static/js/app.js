@@ -1125,8 +1125,8 @@ async function loadTopFilms() {
   try {
     const data = await apiJSON('/api/profile/top-films');
     const films = data.films || [];
+    _topFilmsLoaded = true;
     renderTopFilms(films);
-    if (films.length) _topFilmsLoaded = true;
   } catch (_) { /* sonraki render tekrar dener */ }
 }
 
@@ -1134,8 +1134,8 @@ async function loadRecentFilms(fresh) {
   try {
     const data = await apiJSON(`/api/profile/recent${fresh ? '?fresh=1' : ''}`);
     const films = data.films || [];
+    _recentLoaded = true;
     renderRecentFilms(films);
-    if (films.length) _recentLoaded = true;
   } catch (_) { /* sonraki render tekrar dener */ }
 }
 
@@ -1143,9 +1143,9 @@ let _statsLoaded = false;
 async function loadProfileStats() {
   try {
     const data = await apiJSON('/api/profile/stats');
+    _statsLoaded = true;
     if (typeof data.this_year === 'number') {
       $('profile-year-count').textContent = data.this_year.toLocaleString('tr-TR');
-      _statsLoaded = true;
     }
   } catch (_) { /* sonraki render tekrar dener */ }
 }
@@ -1296,7 +1296,7 @@ function stopSweepPoll() {
 
 let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
 let _currentBlendResult = null;
-const BLEND_BADGE_POLL_MS = 20000;
+const BLEND_BADGE_POLL_MS = 60000;
 let _blendBadgePollTimer = null;
 
 function renderBlendBadge(rawCount) {
@@ -1769,7 +1769,9 @@ function _onboardKey(account) {
 
 function enterApp(account, opts = {}) {
   applyAccount(account);
-  loadBlendInbox(false);
+  // İlk ekranda yalnız küçük badge sayısını al. Büyük Blend geçmişi ve kayıtlı
+  // sonuç payload'ları inbox / Blendlerim gerçekten açıldığında lazy-load edilir.
+  refreshBlendBadge();
   startBlendBadgePolling();
   // Onboarding always plays right after a fresh registration. Otherwise it
   // plays only while the first sync is still pending and it hasn't already
@@ -2139,23 +2141,26 @@ async function startOnboarding() {
 }
 
 async function boot() {
-  const health = await loadHealth();
+  // Health ve session birbirinden bağımsızdır. Mobil ağda iki round-trip'i
+  // sıraya koymak yerine aynı anda başlatarak giriş/profil açılışını hızlandır.
+  const [health, me] = await Promise.all([
+    loadHealth(),
+    apiJSON('/api/auth/me').catch(() => null),
+  ]);
   _authEnabled = Boolean(health?.auth_enabled);
   if (!_authEnabled) { showView('idle'); return; }
-  try {
-    const me = await apiJSON('/api/auth/me');
+  if (me?.account) {
     enterApp(me.account);
     return;
-  } catch (_) {
-    if (cookieValue('mb_csrf')) {
-      try {
-        const refreshed = await apiJSON('/api/auth/refresh', {
-          method: 'POST', headers: csrfHeaders(),
-        });
-        enterApp(refreshed.account);
-        return;
-      } catch (_) {}
-    }
+  }
+  if (cookieValue('mb_csrf')) {
+    try {
+      const refreshed = await apiJSON('/api/auth/refresh', {
+        method: 'POST', headers: csrfHeaders(),
+      });
+      enterApp(refreshed.account);
+      return;
+    } catch (_) {}
   }
   showView('auth');
 }

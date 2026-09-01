@@ -172,3 +172,27 @@ def test_existing_or_pending_blend_routes_to_its_current_location():
     assert "await renderBlendResult(stored.result)" in app_js
     assert "await loadBlendInbox(true)" in app_js
     assert "Bu kullanıcı sana zaten bir Blend isteği göndermiş" in app_js
+
+
+def test_profile_boot_avoids_eager_blend_history_and_repeated_empty_aux_calls():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    enter_app = app_js.split("function enterApp(account, opts = {})", 1)[1]
+    enter_app = enter_app.split("// ── Onboarding reveal", 1)[0]
+    assert "refreshBlendBadge();" in enter_app
+    assert "loadBlendInbox(false);" not in enter_app
+    assert "const BLEND_BADGE_POLL_MS = 60000" in app_js
+    assert "_topFilmsLoaded = true;\n    renderTopFilms(films);" in app_js
+    assert "_recentLoaded = true;\n    renderRecentFilms(films);" in app_js
+    assert "_statsLoaded = true;" in app_js
+
+
+def test_health_and_session_boot_requests_start_in_parallel():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    boot = app_js.split("async function boot()", 1)[1].split(
+        "// ── Loading steps", 1
+    )[0]
+
+    assert "await Promise.all([" in boot
+    assert "loadHealth()," in boot
+    assert "apiJSON('/api/auth/me').catch(() => null)" in boot

@@ -60,10 +60,10 @@ best-practices ve SEO skorları `100`; yalnız logo düğmesinin görünür adı
 `aria-label` değeri eşleşmiyor. Giriş sonrası canlı trace, DevTools'un izole
 profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 
-- [ ] Profil açılışında yalnız bildirim rozeti için yapılan tam `/api/blends`
+- [x] Profil açılışında yalnız bildirim rozeti için yapılan tam `/api/blends`
   çağrısını kaldır; ilk girişte küçük `/api/blends/pending-count` kullan ve tüm
   inbox/Blend geçmişini ancak kullanıcı ilgili ekranı açınca lazy-load et.
-- [ ] Uygulama başlangıcındaki sıralı `/api/health` → `/api/auth/me` zincirini
+- [x] Uygulama başlangıcındaki sıralı `/api/health` → `/api/auth/me` zincirini
   paralelleştir veya auth durumunu ilk HTML bootstrap verisine ekle. Mobil testte
   ağ gecikmesiyle bu iki istek sırasıyla yaklaşık `656 ms` ve `1.232 sn` sürdü.
 - [ ] Statik dosyalara güvenli browser cache politikası ekle. Şu anda arka plan,
@@ -76,7 +76,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [ ] Supabase service client'ını her sorguda yeniden oluşturmak yerine güvenli,
   bağlantı havuzunu yeniden kullanan process-scope istemciye geçir; kullanıcı
   oturumu taşıyan auth client'ını paylaşma ve concurrency testleri ekle.
-- [ ] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
+- [x] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
   "yüklendi" kabul et. Mevcut flag'ler yalnız dolu sonuçta kapanıyor; profil yeniden
   render edilirse aynı başarılı boş istekler tekrar çalışabiliyor.
 - [ ] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
@@ -86,7 +86,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
   ilk sayfasını kontrol eden çağrı UI'ı bloklamıyor fakat dış istek bütçesi tüketiyor.
   Sunucu tarafında kalıcı `last_checked_at` ile önerilen minimum aralık `30–60 dk`;
   “Profili yenile” her zaman zorunlu kontrol yapmaya devam etsin.
-- [ ] Inbox badge polling'ini görünür sekmede `20 sn` yerine `60 sn` yapıp pencere
+- [x] Inbox badge polling'ini görünür sekmede `20 sn` yerine `60 sn` yapıp pencere
   focus/visibility dönüşünde anında yenile; böylece kullanıcı başına saatteki boş
   polling isteğini `180`den yaklaşık `60`a indir.
 - [ ] Google fontlarını self-host/subset edip kritik fontları preload et veya font
