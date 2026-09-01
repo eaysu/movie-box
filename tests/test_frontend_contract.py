@@ -49,3 +49,30 @@ def test_phone_layout_prevents_film_grid_and_inbox_overflow():
     assert "inbox-card-actions" in css
     assert 'flex flex-col sm:flex-row sm:items-center' in js
     assert 'class="safe-footer ' in html
+
+
+def test_three_png_share_modules_are_wired_to_native_share_and_download():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
+
+    for element_id in (
+        "btn-share-common",
+        "btn-share-watchlist",
+        "btn-share-personality",
+        "dialog-png-share",
+        "png-share-download",
+        "png-share-native",
+    ):
+        assert f'id="{element_id}"' in html
+
+    assert "renderBlendShareCard(_currentBlendResult, 'watched')" in app_js
+    assert "renderBlendShareCard(_currentBlendResult, 'watchlist')" in app_js
+    assert "renderPersonalityShareCard(_persistedProfile)" in app_js
+    assert "canvas.width = WIDTH" in share_js
+    assert "const WIDTH = 1080" in share_js
+    assert "const HEIGHT = 1350" in share_js
+    assert "/api/share/image?url=" in share_js
+    assert "navigator.share" in share_js
+    assert "new File([card.blob]" in share_js
+    assert "anchor.download = filename" in share_js

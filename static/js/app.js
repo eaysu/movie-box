@@ -19,6 +19,11 @@ import {
 import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js';
 import { animateScore, getScoreInfo } from './blend.js';
 import { createRecommendationCards } from './recommendations.js';
+import {
+  openShareCardPreview,
+  renderBlendShareCard,
+  renderPersonalityShareCard,
+} from './share-cards.js';
 
 // ── Cinema facts & quotes ──────────────────────────────────────────────────
 const CINEMA_ITEMS = [
@@ -543,6 +548,43 @@ function copyShareLink() {
   }
 }
 
+async function buildAndOpenShareCard(button, factory) {
+  if (!button || button.disabled) return;
+  const label = button.querySelector('[data-share-label]');
+  const icon = button.querySelector('.material-symbols-outlined');
+  const originalLabel = label?.textContent || '';
+  const originalIcon = icon?.textContent || 'ios_share';
+  button.disabled = true;
+  button.classList.add('opacity-60');
+  if (label) label.textContent = 'Hazırlanıyor';
+  if (icon) {
+    icon.textContent = 'progress_activity';
+    icon.classList.add('animate-spin');
+  }
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  let succeeded = false;
+  try {
+    const card = await factory();
+    openShareCardPreview(card);
+    succeeded = true;
+  } catch (error) {
+    button.title = error?.message || 'PNG oluşturulamadı.';
+    if (label) label.textContent = 'Tekrar dene';
+  } finally {
+    button.disabled = false;
+    button.classList.remove('opacity-60');
+    if (icon) {
+      icon.textContent = originalIcon;
+      icon.classList.remove('animate-spin');
+    }
+    if (succeeded && label) label.textContent = originalLabel;
+    if (!succeeded) setTimeout(() => {
+      if (label) label.textContent = originalLabel;
+      button.removeAttribute('title');
+    }, 2400);
+  }
+}
+
 function setAuthHeaderLinks(visible) {
   $('header-how-it-works').classList.toggle('hidden', !visible);
   $('header-privacy').classList.toggle('hidden', !visible);
@@ -750,6 +792,10 @@ function renderPersistedProfile(data) {
            ${href ? closeTag : '</article>'}`;
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
+
+  const personalityShareReady = favorites.length >= 4 && Boolean(personality);
+  $('btn-share-personality').classList.toggle('hidden', !personalityShareReady);
+  $('btn-share-personality').classList.toggle('flex', personalityShareReady);
 
   if (!deferAuxiliary && !_topFilmsLoaded) loadTopFilms();
   if (!deferAuxiliary && !_recentLoaded) loadRecentFilms();
@@ -1242,6 +1288,7 @@ function stopSweepPoll() {
 }
 
 let _blendInbox = { incoming: [], outgoing: [], history: [], blocked: [] };
+let _currentBlendResult = null;
 const BLEND_BADGE_POLL_MS = 20000;
 let _blendBadgePollTimer = null;
 
@@ -2141,6 +2188,12 @@ function buildBlendFilmCard(film, idx) {
 }
 
 async function renderBlendResult(data) {
+  _currentBlendResult = {
+    ...data,
+    films: data.films || [],
+    common_watchlist_films: data.common_watchlist_films || [],
+    bridge_films: data.bridge_films || [],
+  };
   const { username1, username2, score, watched_count1, watched_count2,
           common_count, top_director,
           top_director_count1, top_director_count2, films,
@@ -2240,7 +2293,17 @@ async function pollBlendWatchlist(requestId) {
   }
 }
 
-function renderBlendWatchlist({ common_watchlist_films = [], bridge_films = [], watchlist_public = false }) {
+function renderBlendWatchlist(payload = {}) {
+  const { common_watchlist_films = [], bridge_films = [], watchlist_public = false } = payload;
+  if (_currentBlendResult) {
+    _currentBlendResult = {
+      ..._currentBlendResult,
+      common_watchlist_films,
+      bridge_films,
+      watchlist_public,
+      watchlist_pending: false,
+    };
+  }
   $('br-wishlist-loading').classList.add('hidden');
   const title = $('br-wishlist-title');
   const sub = $('br-wishlist-sub');
@@ -2890,12 +2953,21 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
+$('btn-share-personality').addEventListener('click', event => {
+  buildAndOpenShareCard(event.currentTarget, () => renderPersonalityShareCard(_persistedProfile));
+});
+$('btn-share-common').addEventListener('click', event => {
+  buildAndOpenShareCard(event.currentTarget, () => renderBlendShareCard(_currentBlendResult, 'watched'));
+});
+$('btn-share-watchlist').addEventListener('click', event => {
+  buildAndOpenShareCard(event.currentTarget, () => renderBlendShareCard(_currentBlendResult, 'watchlist'));
+});
 $('profile-top-films-edit').addEventListener('click', openTopFilmsEditor);
 $('top-films-list').addEventListener('click', handleTopFilmsPick);
 $('top-films-search').addEventListener('input', () => {

@@ -258,6 +258,27 @@
     background: rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(5px);
   }
+  .png-share-dialog {
+    width: min(94vw, 520px);
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 0;
+    color: #e0e2e6;
+    background: transparent;
+    border: 0;
+    overflow-y: auto;
+  }
+  .png-share-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.82);
+    backdrop-filter: blur(7px);
+  }
+  .png-share-preview-wrap {
+    max-height: 62dvh;
+  }
+  .png-share-preview-wrap img {
+    max-height: 62dvh;
+    object-fit: contain;
+  }
 
   /* Gradient text utility */
   .text-gradient-green {
