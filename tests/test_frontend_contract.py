@@ -108,9 +108,15 @@ def test_profile_decks_are_fixed_height_with_scrollable_overviews():
     css = (ROOT / "static" / "css" / "source.css").read_text()
 
     assert html.count("profile-dashboard-card") == 3
-    assert 'class="film-overview-scroll mt-3 pr-1"' in js
+    assert 'class="film-overview-scroll mt-3 pr-2 pb-1"' in js
+    assert 'data-deck-controls class="profile-carousel-controls' in js
+    assert 'data-carousel-frame class="profile-carousel-frame' in js
     assert ".profile-dashboard-card" in css
+    assert "grid-template-rows: minmax(0, 1fr) auto" in css
+    assert ".profile-carousel-controls" in css
     assert ".film-overview-scroll" in css
+    assert "flex: 1 1 0%" in css
+    assert "-webkit-overflow-scrolling: touch" in css
     assert "overflow-y: auto" in css
 
 

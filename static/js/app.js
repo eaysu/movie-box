@@ -970,8 +970,8 @@ function _paintDirectorDeck(direction = 0) {
   const gridId = `profile-dir-hero-films-${index}`;
   const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
   $('profile-directors').innerHTML = `
-    <div data-carousel-frame class="${motion} flex-grow flex flex-col">
-      <div class="relative overflow-hidden rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
+    <div data-carousel-frame class="profile-carousel-frame ${motion}">
+      <div class="director-card-scroll relative rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
         <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[120px] leading-none select-none" style="color:rgba(0,224,84,0.09)">${String(rank).padStart(2, '0')}</span>
         <div class="relative flex items-center gap-4">
           ${directorAvatar(director, 'w-14 h-14 text-[18px]')}
@@ -984,7 +984,7 @@ function _paintDirectorDeck(direction = 0) {
         ${(director.films || []).length ? directorFilmGrid(director.films, gridId, false, Boolean(director.has_more)) : ''}
         ${director.has_more ? `<button type="button" data-dir-load-rank="${rank}" data-dir-grid="${gridId}" class="mt-3 w-full rounded-xl border border-primary-container/25 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/10 transition-colors">Tüm filmlerini göster</button>` : ''}
       </div>
-      <div class="mt-auto pt-4 flex items-center justify-between gap-3">
+      <div data-deck-controls class="profile-carousel-controls flex items-center justify-between gap-3">
         <button type="button" data-director-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki yönetmen"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
         <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${rank} / ${directors.length}</span>
         <button type="button" data-director-nav="1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki yönetmen"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
@@ -1024,14 +1024,14 @@ function _filmHero(f) {
     ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl object-cover bg-surface-container"/>`
     : `<div class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[40px]">movie</span></div>`;
   return `
-    <div class="flex h-full min-h-0 flex-col">
+    <div class="flex h-full min-h-0 flex-col overflow-hidden">
       ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
       <div class="mt-4 shrink-0 text-center">
         <h3 class="font-headline-md text-[18px] md:text-[20px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
         ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
         ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
       </div>
-      <div class="film-overview-scroll mt-3 pr-1">
+      <div class="film-overview-scroll mt-3 pr-2 pb-1" tabindex="0" aria-label="${title} film konusu">
         ${f.overview
           ? `<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(f.overview)}</p>`
           : '<p class="font-label-sm text-label-sm text-on-surface-variant/40">Konu bilgisi hazırlanıyor…</p>'}
@@ -1064,9 +1064,9 @@ function _paintFilmDeck(boxId, direction = 0) {
   const { films, index } = deck;
   const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
   $(boxId).innerHTML = `
-    <div data-carousel-frame class="${motion} flex-grow flex flex-col">
-      <div class="min-h-0 flex-grow overflow-hidden" data-deck-body>${_filmHero(films[index])}</div>
-      <div class="mt-auto pt-4 flex items-center justify-between gap-3">
+    <div data-carousel-frame class="profile-carousel-frame ${motion}">
+      <div class="profile-carousel-body" data-deck-body>${_filmHero(films[index])}</div>
+      <div data-deck-controls class="profile-carousel-controls flex items-center justify-between gap-3">
         <button type="button" data-deck-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki film"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
         <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
         <button type="button" data-deck-nav="1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki film"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
