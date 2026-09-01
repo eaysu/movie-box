@@ -1320,6 +1320,20 @@ class AuthService:
         except Exception as exc:
             raise BlendServiceError("blend_result_save_failed") from exc
 
+    def delete_blend(self, account: Account, request_id: str) -> None:
+        """Delete the shared request; its result cascades for both participants."""
+        service = self._service_client()
+        # Reuse the accepted-participant guard before the service-role delete.
+        self.get_blend_participants(account, request_id)
+        try:
+            service.table("blend_requests").delete().eq("id", request_id).execute()
+        except Exception as exc:
+            raise BlendServiceError("blend_delete_failed") from exc
+        try:
+            self._audit(service, account.id, "blend_deleted", "")
+        except Exception:
+            pass
+
     def block_user(self, account: Account, username: str) -> None:
         try:
             self._service_client().rpc(

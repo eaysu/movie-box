@@ -21,6 +21,7 @@ import random as _random
 import re
 import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
@@ -350,6 +351,7 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "request_not_cancellable": (409, "Bu Blend isteği artık iptal edilemez."),
         "accepted_request_not_found": (409, "Kabul edilmiş Blend isteği bulunamadı."),
         "blend_result_save_failed": (503, "Blend sonucu kaydedilemedi."),
+        "blend_delete_failed": (503, "Blend silinemedi. Lütfen tekrar dene."),
         "user_not_found": (404, "Kayıtlı Movieboxd kullanıcısı bulunamadı."),
         "self_block": (422, "Kendini engelleyemezsin."),
         "self_report": (422, "Kendini bildiremezsin."),
@@ -2405,13 +2407,21 @@ async def cancel_blend_invite(request_id: str, request: Request) -> dict:
 
 
 async def _compute_accepted_blend(
-    account: Account, request_id: str, service: AuthService
+    account: Account,
+    request_id: str,
+    service: AuthService,
+    *,
+    force_recompute: bool = False,
 ) -> dict:
     _request, first, second = await asyncio.to_thread(
         service.get_blend_participants, account, request_id
     )
     stored = await asyncio.to_thread(service.get_blend_result, request_id)
-    if stored is not None and stored.get("algorithm_version") == BLEND_VERSION:
+    if (
+        not force_recompute
+        and stored is not None
+        and stored.get("algorithm_version") == BLEND_VERSION
+    ):
         if (stored.get("result") or {}).get("watchlist_pending"):
             _schedule_blend_watchlist_completion(account, request_id, service)
         return {
@@ -2488,6 +2498,7 @@ async def _compute_accepted_blend(
         "bridge_films": [],
         "watchlist_public": False,
         "watchlist_pending": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     result_id = await asyncio.to_thread(
         service.save_blend_result,
@@ -2641,13 +2652,22 @@ _accepted_blend_lock = asyncio.Lock()
 
 
 async def _accepted_blend_single_flight(
-    account: Account, request_id: str, service: AuthService
+    account: Account,
+    request_id: str,
+    service: AuthService,
+    *,
+    force_recompute: bool = False,
 ) -> dict:
     async with _accepted_blend_lock:
         task = _accepted_blend_flights.get(request_id)
         if task is None:
             task = asyncio.create_task(
-                _compute_accepted_blend(account, request_id, service)
+                _compute_accepted_blend(
+                    account,
+                    request_id,
+                    service,
+                    force_recompute=force_recompute,
+                )
             )
             _accepted_blend_flights[request_id] = task
 
@@ -2659,6 +2679,19 @@ async def _accepted_blend_single_flight(
 
             task.add_done_callback(clear)
     return await asyncio.shield(task)
+
+
+async def _cancel_blend_background_tasks(request_id: str) -> None:
+    """Stop stale result/watchlist writers before refresh or deletion."""
+    tasks = [
+        _blend_watchlist_tasks.pop(request_id, None),
+        _accepted_blend_flights.pop(request_id, None),
+    ]
+    for task in tasks:
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 @app.post("/api/blends/requests/{request_id}/decision")
@@ -2709,6 +2742,43 @@ async def retry_blend_result(request_id: str, request: Request) -> dict:
         _raise_blend_http(exc)
     except ScrapeError as exc:
         _raise_scrape_http(exc)
+
+
+@app.post("/api/blends/{request_id}/refresh")
+async def refresh_blend_result(request_id: str, request: Request) -> dict:
+    """Recompute an accepted Blend from both users' latest durable profiles."""
+    _require_csrf(request)
+    await _enforce_heavy_rate_limit(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    try:
+        await _cancel_blend_background_tasks(request_id)
+        async with _sem:
+            result = await _accepted_blend_single_flight(
+                account,
+                request_id,
+                service,
+                force_recompute=True,
+            )
+        return {"status": "refreshed", "result": result}
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    except ScrapeError as exc:
+        _raise_scrape_http(exc)
+
+
+@app.delete("/api/blends/{request_id}")
+async def delete_blend(request_id: str, request: Request) -> dict:
+    """Delete one shared Blend so it disappears for both participants."""
+    _require_csrf(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    try:
+        await _cancel_blend_background_tasks(request_id)
+        await asyncio.to_thread(service.delete_blend, account, request_id)
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True, "request_id": request_id}
 
 
 @app.get("/api/blends/requests/{request_id}/result")

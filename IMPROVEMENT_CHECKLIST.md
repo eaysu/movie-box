@@ -275,6 +275,9 @@ onayı gelmeden uygulanmaz.
   ayrı düşük–orta–yüksek veri kapsamı olarak sun.
 - [x] Fav 4 değişmedikçe kişilik okumasını yeniden üretme; otomatik profil
   kontrolünü her giriş yerine en fazla 24 saatte bire indir.
+- [x] Tamamlanmış Blend'e güncel iki profil üzerinden zorunlu yeniden hesaplama
+  ekle; katılımcılardan biri silerse ortak istek/sonuç kaydını iki taraftan da
+  kaldır ve istemcide işlem öncesi açık onay iste.
 - [x] Rastgele film kartlarına watchlist seçimi veya dış keşif olduğunu açıkça
   söyleyen kısa bir “neden bu film?” metni ekle.
 - [x] Kullanıcıya görünen soğuk “sinematik/metadata/benzerlik skoru” dilini daha

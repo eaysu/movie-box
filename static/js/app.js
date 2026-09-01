@@ -1369,15 +1369,19 @@ function blendHistoryCard(item) {
   const result = item.blend_result;
   const score = result ? `<div class="shrink-0 text-right"><strong class="text-primary-container text-2xl leading-none">${Number(result.score) || 0}</strong><span class="block text-[9px] uppercase tracking-wide text-on-surface-variant/60 mt-1">% uyum</span></div>` : '';
   const labels = { accepted: 'Kabul edildi', rejected: 'Reddedildi', cancelled: 'İptal edildi', expired: 'Süresi doldu' };
-  const dateValue = result?.created_at || item.decided_at || item.created_at;
+  const dateValue = result?.result?.generated_at || result?.created_at || item.decided_at || item.created_at;
   const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
+  const acceptedActions = item.status === 'accepted'
+    ? `<button data-blend-action="refresh-result" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs uppercase">Yenile</button>
+       <button data-blend-action="delete-result" data-request-id="${escapeHTML(item.id)}" data-peer-username="${escapeHTML(peer.username || '')}" class="min-h-[42px] px-3 py-2 rounded-lg border border-error/30 text-error hover:bg-error/10 text-xs uppercase">Sil</button>`
+    : '';
   const resultButton = result
     ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
     : item.status === 'accepted'
       ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
       : '';
   const username = escapeHTML(peer.username || '');
-  const buttons = `<div class="inbox-card-actions"><button data-blend-action="report" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}</div>`;
+  const buttons = `<div class="inbox-card-actions"><button data-blend-action="report" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}${acceptedActions}</div>`;
   return `<article class="glass-panel rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 overflow-safe">
     <div class="flex items-center gap-3 min-w-0 flex-1">
       ${peerAvatar(peer)}
@@ -1421,7 +1425,7 @@ function blendMyCard(item) {
   const avatar = poster
     ? `<img src="${poster}" alt="${name}" class="w-14 h-14 rounded-full object-cover border border-outline-variant/30"/>`
     : `<div class="w-14 h-14 rounded-full bg-surface-container flex items-center justify-center text-primary-container text-xl font-bold">${name[0] || '?'}</div>`;
-  const dateValue = result?.created_at || item.decided_at || item.created_at;
+  const dateValue = result?.result?.generated_at || result?.created_at || item.decided_at || item.created_at;
   const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
   const scoreBlock = hasResult
     ? `<div class="text-right leading-none shrink-0"><div class="text-3xl font-bold text-primary-container">${score}</div><div class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60 mt-1">% uyum</div></div>`
@@ -1435,12 +1439,13 @@ function blendMyCard(item) {
       ${scoreBlock}
     </div>`;
   if (hasResult) {
-    return `<article role="button" tabindex="0" data-blend-action="view" data-request-id="${escapeHTML(item.id)}"
-      class="glass-panel rounded-2xl p-5 flex flex-col cursor-pointer hover:border-primary-container/40 transition-colors">
+    return `<article class="glass-panel rounded-2xl p-5 flex flex-col hover:border-primary-container/40 transition-colors">
       ${head}
-      <span class="mt-4 inline-flex items-center gap-1 font-label-sm text-label-sm uppercase tracking-wide text-primary-container">
-        <span class="material-symbols-outlined text-[16px]">list_alt</span>Ortak listeleri aç
-      </span>
+      <div class="mt-4 grid grid-cols-3 gap-2">
+        <button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] rounded-lg bg-surface-variant px-2 text-xs uppercase text-on-surface hover:text-primary">Aç</button>
+        <button data-blend-action="refresh-result" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] rounded-lg border border-outline-variant/30 px-2 text-xs uppercase text-on-surface-variant hover:text-primary">Yenile</button>
+        <button data-blend-action="delete-result" data-request-id="${escapeHTML(item.id)}" data-peer-username="${username}" class="min-h-[42px] rounded-lg border border-error/30 px-2 text-xs uppercase text-error hover:bg-error/10">Sil</button>
+      </div>
     </article>`;
   }
   return `<article class="glass-panel rounded-2xl p-5 flex flex-col">
@@ -1524,6 +1529,11 @@ async function handleBlendInboxAction(event) {
   const action = button.dataset.blendAction;
   const requestId = button.dataset.requestId;
   const peerUsername = button.dataset.peerUsername;
+  const inBlendLibrary = !!button.closest('#view-blends');
+  const actionError = inBlendLibrary ? $('blends-error') : $('inbox-error');
+  const actionNotice = inBlendLibrary ? $('blends-notice') : $('inbox-notice');
+  actionError.classList.add('hidden');
+  actionNotice?.classList.add('hidden');
   $('inbox-notice').classList.add('hidden');
   if (action === 'block') {
     if (!peerUsername || !window.confirm(`@${peerUsername} engellensin mi? Bekleyen Blend istekleri de iptal edilir.`)) return;
@@ -1590,10 +1600,36 @@ async function handleBlendInboxAction(event) {
     }
     return;
   }
+  if (action === 'delete-result') {
+    const who = peerUsername ? `@${peerUsername} ile olan ` : '';
+    const confirmed = window.confirm(
+      `${who}Blend kalıcı olarak silinsin mi? Bu işlem Blend'i iki tarafın geçmişinden de kaldırır.`
+    );
+    if (!confirmed) return;
+  }
   button.disabled = true;
   const oldText = button.textContent;
-  button.textContent = ['accepted', 'retry'].includes(action) ? 'Blend hazırlanıyor…' : 'İşleniyor…';
+  button.textContent = ['accepted', 'retry', 'refresh-result'].includes(action) ? 'Hazırlanıyor…' : 'İşleniyor…';
   try {
+    if (action === 'delete-result') {
+      await apiJSON(`/api/blends/${encodeURIComponent(requestId)}`, {
+        method: 'DELETE', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      if (actionNotice) {
+        actionNotice.textContent = 'Blend iki tarafın geçmişinden silindi.';
+        actionNotice.classList.remove('hidden');
+      }
+      return;
+    }
+    if (action === 'refresh-result') {
+      const data = await apiJSON(`/api/blends/${encodeURIComponent(requestId)}/refresh`, {
+        method: 'POST', headers: csrfHeaders(),
+      });
+      await loadBlendInbox(false);
+      if (data.result) await renderBlendResult(data.result);
+      return;
+    }
     if (action === 'cancel') {
       await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}`, {
         method: 'DELETE', headers: csrfHeaders(),
@@ -1617,8 +1653,8 @@ async function handleBlendInboxAction(event) {
     await loadBlendInbox(false);
     if (action === 'accepted' && data.result) await renderBlendResult(data.result);
   } catch (error) {
-    $('inbox-error').textContent = error.message || 'İşlem tamamlanamadı.';
-    $('inbox-error').classList.remove('hidden');
+    actionError.textContent = error.message || 'İşlem tamamlanamadı.';
+    actionError.classList.remove('hidden');
   } finally {
     button.disabled = false;
     button.textContent = oldText;

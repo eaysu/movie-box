@@ -504,3 +504,55 @@ def test_readiness_is_503_when_auth_is_not_configured():
 
     assert response.status_code == 503
     assert response.json()["schema_ready"] is False
+
+
+def test_refreshing_blend_forces_a_new_comparison():
+    account = _account()
+    fake_service = SimpleNamespace(current_account=lambda _token: account)
+    computed = {"request_id": "request-123", "score": 86, "cached": False}
+    compute = AsyncMock(return_value=computed)
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main._enforce_heavy_rate_limit", new=AsyncMock()),
+        patch("app.main._cancel_blend_background_tasks", new=AsyncMock()),
+        patch("app.main._accepted_blend_single_flight", new=compute),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/blends/request-123/refresh",
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "refreshed", "result": computed}
+    assert compute.await_args.kwargs["force_recompute"] is True
+
+
+def test_deleting_blend_removes_the_shared_record():
+    account = _account()
+    deleted = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        delete_blend=lambda _account, request_id: deleted.append(request_id),
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main._cancel_blend_background_tasks", new=AsyncMock()),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.delete(
+            "/api/blends/request-123",
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "request_id": "request-123"}
+    assert deleted == ["request-123"]

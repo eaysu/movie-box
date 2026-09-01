@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from app.auth import Account
+from app.auth import Account, AuthService
 from app.enrich import EnrichedFilm
 from app.main import (
     BLEND_VERSION,
@@ -225,3 +225,20 @@ def test_schema_contains_atomic_consent_guards():
     assert "CREATE TABLE IF NOT EXISTS public.user_blocks" in schema
     assert "CREATE TABLE IF NOT EXISTS public.user_reports" in schema
     assert "RAISE EXCEPTION 'blend_user_blocked'" in schema
+
+
+def test_delete_blend_checks_participant_then_deletes_shared_request():
+    actor = _account(1, "first_user")
+    client = Mock()
+    delete_query = client.table.return_value.delete.return_value.eq.return_value
+    delete_query.execute.return_value = SimpleNamespace(data=[])
+    service = AuthService.__new__(AuthService)
+    service._service_client = Mock(return_value=client)
+    service.get_blend_participants = Mock(return_value=({}, actor, _account(2, "second_user")))
+    service._audit = Mock()
+
+    service.delete_blend(actor, "request-1")
+
+    service.get_blend_participants.assert_called_once_with(actor, "request-1")
+    client.table.assert_called_with("blend_requests")
+    client.table.return_value.delete.return_value.eq.assert_called_with("id", "request-1")

@@ -81,3 +81,12 @@ def test_three_png_share_modules_are_wired_to_native_share_and_download():
     assert "navigator.share" in share_js
     assert "new File([card.blob]" in share_js
     assert "anchor.download = filename" in share_js
+
+
+def test_blend_history_supports_refresh_and_confirmed_shared_delete():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'data-blend-action="refresh-result"' in app_js
+    assert 'data-blend-action="delete-result"' in app_js
+    assert "/api/blends/${encodeURIComponent(requestId)}/refresh" in app_js
+    assert "Bu işlem Blend'i iki tarafın geçmişinden de kaldırır." in app_js
