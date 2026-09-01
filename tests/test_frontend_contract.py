@@ -130,3 +130,10 @@ def test_new_inline_recommendation_keeps_the_result_panel_open():
 
     assert "startInlineReco('taste', { preserveViewport: true })" in app_js
     assert "if (!preserveViewport)" in app_js
+
+
+def test_manual_profile_refresh_also_forces_a_watchlist_check():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "refresh_watchlist=${refreshWatchlist ? 'true' : 'false'}" in app_js
+    assert "syncProfile(false, true)" in app_js

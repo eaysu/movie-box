@@ -1668,7 +1668,7 @@ async function handleBlendInboxAction(event) {
   }
 }
 
-async function syncProfile(force = false) {
+async function syncProfile(force = false, refreshWatchlist = false) {
   if (!_account) return;
   const button = $('btn-profile-sync');
   button.disabled = true;
@@ -1676,7 +1676,7 @@ async function syncProfile(force = false) {
   $('profile-sync-error').classList.add('hidden');
   $('profile-taste-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
   try {
-    const data = await apiJSON(`/api/profile/sync?force=${force ? 'true' : 'false'}`, {
+    const data = await apiJSON(`/api/profile/sync?force=${force ? 'true' : 'false'}&refresh_watchlist=${refreshWatchlist ? 'true' : 'false'}`, {
       method: 'POST',
       headers: csrfHeaders({ 'Content-Type': 'application/json' }),
     });
@@ -3083,7 +3083,7 @@ $('menu-delete-data').addEventListener('click', () => {
   deleteMyData();
 });
 document.addEventListener('click', () => toggleProfileMenu(false));
-$('btn-profile-sync').addEventListener('click', () => syncProfile(false));
+$('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));

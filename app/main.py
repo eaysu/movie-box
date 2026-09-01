@@ -2224,8 +2224,37 @@ class _SyncPipeline:
         return len(watched)
 
 
+async def _refresh_profile_watchlist(account: Account, settings, service) -> int:
+    """Force a complete watchlist read and replace its durable recommendation cache."""
+    supabase_client, cache = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    enricher = (
+        Enricher(settings.tmdb_api_key, cache, asset_store=service)
+        if settings.has_tmdb else None
+    )
+    films, _cached = await _load_user_films(
+        account.username,
+        "watchlist",
+        settings=settings,
+        enricher=enricher,
+        pcache=pcache,
+        scrape_kwargs={
+            "delay": settings.scrape_delay,
+            "max_pages": settings.scrape_max_pages,
+            "film_limit": settings.watchlist_film_limit,
+            "max_retries": settings.scrape_max_retries,
+        },
+        force=True,
+    )
+    return len(films)
+
+
 @app.post("/api/profile/sync")
-async def sync_my_profile(request: Request, force: bool = False) -> dict:
+async def sync_my_profile(
+    request: Request,
+    force: bool = False,
+    refresh_watchlist: bool = False,
+) -> dict:
     _require_csrf(request)
     await _enforce_heavy_rate_limit(request)
     account = await _require_account(request)
@@ -2244,6 +2273,15 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
         await asyncio.to_thread(service.check_sync_schema)
     except Exception:
         full_sync_available = False
+
+    refreshed_watchlist_count: int | None = None
+    if refresh_watchlist:
+        try:
+            refreshed_watchlist_count = await _refresh_profile_watchlist(
+                account, settings, service
+            )
+        except ScrapeError as exc:
+            _raise_scrape_http(exc)
 
     # Once the full history has been crawled once, never regress to the 100-film
     # in-request pass — serve the stored snapshot and self-heal if it fell behind.
@@ -2275,11 +2313,15 @@ async def sync_my_profile(request: Request, force: bool = False) -> dict:
                         _SyncPipeline(settings), service, account, scope="incremental"
                     )
             stored["sync_job"] = profile_sync.progress_of(job)
+            if refreshed_watchlist_count is not None:
+                stored["watchlist_count"] = refreshed_watchlist_count
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(service.mark_sync_status, account.id, "ready")
             return stored
 
     result = await _provisional_profile_sync(account, settings, service, force=force)
+    if refreshed_watchlist_count is not None:
+        result["watchlist_count"] = refreshed_watchlist_count
 
     if full_sync_available:
         with contextlib.suppress(Exception):
