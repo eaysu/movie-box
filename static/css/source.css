@@ -481,9 +481,12 @@
   .director-card-scroll {
     min-height: 0;
     overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    scrollbar-width: none;
   }
+  .director-card-scroll::-webkit-scrollbar { display: none; }
+  .director-card-scroll [data-director-loading] { display: none; }
   .film-overview-scroll {
     flex: 1 1 0%;
     min-height: 0;

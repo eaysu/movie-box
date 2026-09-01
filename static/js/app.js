@@ -971,7 +971,7 @@ function _paintDirectorDeck(direction = 0) {
   const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
   $('profile-directors').innerHTML = `
     <div data-carousel-frame class="profile-carousel-frame ${motion}">
-      <div class="director-card-scroll relative rounded-2xl border border-primary-container/25 bg-surface-container/45 p-5 md:p-6">
+      <div class="director-card-scroll relative rounded-2xl border border-primary-container/25 bg-surface-container/45 p-4 md:p-5">
         <span class="pointer-events-none absolute -right-3 -bottom-9 font-display-lg text-[120px] leading-none select-none" style="color:rgba(0,224,84,0.09)">${String(rank).padStart(2, '0')}</span>
         <div class="relative flex items-center gap-4">
           ${directorAvatar(director, 'w-14 h-14 text-[18px]')}

@@ -114,6 +114,8 @@ def test_profile_decks_are_fixed_height_with_scrollable_overviews():
     assert ".profile-dashboard-card" in css
     assert "grid-template-rows: minmax(0, 1fr) auto" in css
     assert ".profile-carousel-controls" in css
+    assert ".director-card-scroll::-webkit-scrollbar { display: none; }" in css
+    assert ".director-card-scroll [data-director-loading] { display: none; }" in css
     assert ".film-overview-scroll" in css
     assert "flex: 1 1 0%" in css
     assert "-webkit-overflow-scrolling: touch" in css
