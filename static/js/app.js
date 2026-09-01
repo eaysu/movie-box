@@ -360,7 +360,7 @@ function _recoResetBtn() {
   return `<button type="button" id="profile-reco-again" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/40 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:bg-surface-container/70 transition-colors"><span class="material-symbols-outlined text-[18px]">refresh</span>Yeni öneri</button>`;
 }
 
-async function startInlineReco(mode) {
+async function startInlineReco(mode, { preserveViewport = false } = {}) {
   if (_recoBusy) return;
   const username = ($('username-input').value || (_account && _account.username) || '').trim();
   if (!username) return;
@@ -370,7 +370,9 @@ async function startInlineReco(mode) {
   $('profile-watch-panel').classList.remove('open');
   $('profile-reco-body').innerHTML = _recoLoadingHTML(mode);
   $('profile-reco-panel').classList.add('open');
-  setTimeout(() => $('profile-reco-panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  if (!preserveViewport) {
+    setTimeout(() => $('profile-reco-panel').scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  }
 
   await consumeRecommendationStream(
     mode === 'random' ? '/api/random' : '/api/recommend',
@@ -1022,15 +1024,20 @@ function _filmHero(f) {
     ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl object-cover bg-surface-container"/>`
     : `<div class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[40px]">movie</span></div>`;
   return `
-    ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block" title="${title} — Letterboxd">${art}</a>` : art}
-    <div class="mt-4 text-center">
-      <h3 class="font-headline-md text-[18px] md:text-[20px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
-      ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
-      ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
+    <div class="flex h-full min-h-0 flex-col">
+      ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
+      <div class="mt-4 shrink-0 text-center">
+        <h3 class="font-headline-md text-[18px] md:text-[20px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
+        ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
+        ${rating ? `<p class="mt-2 inline-flex items-center gap-1 font-label-md text-label-md text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${rating}</p>` : ''}
+      </div>
+      <div class="film-overview-scroll mt-3 pr-1">
+        ${f.overview
+          ? `<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(f.overview)}</p>`
+          : '<p class="font-label-sm text-label-sm text-on-surface-variant/40">Konu bilgisi hazırlanıyor…</p>'}
+      </div>
     </div>
-    ${f.overview
-      ? `<p class="mt-3 font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(f.overview)}</p>`
-      : '<p class="mt-3 font-label-sm text-label-sm text-on-surface-variant/40">Konu bilgisi hazırlanıyor…</p>'}`;
+  `;
 }
 
 // Deste: kartta tek film, ‹ › / kaydırma ile 10 film arası gezinilir.
@@ -1058,7 +1065,7 @@ function _paintFilmDeck(boxId, direction = 0) {
   const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
   $(boxId).innerHTML = `
     <div data-carousel-frame class="${motion} flex-grow flex flex-col">
-      <div class="flex-grow" data-deck-body>${_filmHero(films[index])}</div>
+      <div class="min-h-0 flex-grow overflow-hidden" data-deck-body>${_filmHero(films[index])}</div>
       <div class="mt-auto pt-4 flex items-center justify-between gap-3">
         <button type="button" data-deck-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki film"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
         <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
@@ -2224,6 +2231,7 @@ function buildBlendFilmCard(film, idx, username1 = '', username2 = '') {
   const director = escapeHTML(film.director);
   const year = escapeHTML(film.year);
   const posterURL = safeImageURL(film.poster_url);
+  const href = letterboxdFilmURL(film.slug);
   const poster = posterURL
     ? `<img alt="${title}" draggable="false" loading="lazy"
           class="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
@@ -2242,8 +2250,8 @@ function buildBlendFilmCard(film, idx, username1 = '', username2 = '') {
     preferenceLine(username1, film.rating1, film.favorite1),
     preferenceLine(username2, film.rating2, film.favorite2),
   ].filter(Boolean).join('');
-  return `
-    <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col overflow-safe"
+  const card = `
+    <article class="tilt-card glass-panel h-full rounded-xl overflow-hidden group flex flex-col overflow-safe"
       style="opacity:0;animation:blend-card-in .5s cubic-bezier(.22,1,.36,1) both;animation-delay:${idx * 80}ms">
       <div class="w-full aspect-[2/3] overflow-hidden relative bg-surface-container shrink-0">
         ${poster}
@@ -2255,6 +2263,9 @@ function buildBlendFilmCard(film, idx, username1 = '', username2 = '') {
         ${preferences ? `<div class="mt-1 flex flex-col gap-1 border-t border-outline-variant/15 pt-2">${preferences}</div>` : ''}
       </div>
     </article>`;
+  return href
+    ? `<a href="${href}" target="_blank" rel="noopener" class="block h-full" title="${title} — Letterboxd">${card}</a>`
+    : card;
 }
 
 async function renderBlendResult(data) {
@@ -2380,7 +2391,7 @@ function renderBlendWatchlist(payload = {}) {
   const title = $('br-wishlist-title');
   const sub = $('br-wishlist-sub');
   const show = (films) => {
-    $('br-wishlist-grid').innerHTML = films.map(buildBlendFilmCard).join('');
+    $('br-wishlist-grid').innerHTML = films.map((film, idx) => buildBlendFilmCard(film, idx)).join('');
     $('br-wishlist-section').classList.remove('hidden');
     $('br-wishlist-section').classList.add('flex');
     $('br-no-wishlist').classList.add('hidden');
@@ -3078,6 +3089,11 @@ $('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
 $('btn-blends-back').addEventListener('click', () => showView(homeView()));
+$('btn-blends-create').addEventListener('click', () => {
+  showView(homeView());
+  if (_account) openProfilePanel('blend');
+  else setMode('blend');
+});
 
 $('profile-top-films').addEventListener('click', handleFilmDeck);
 $('profile-recent-films').addEventListener('click', handleFilmDeck);
@@ -3130,8 +3146,7 @@ $('profile-directors').addEventListener('click', event => {
 $('profile-reco-body').addEventListener('click', event => {
   if (event.target.closest('#profile-reco-again')) {
     _clearTasteReco();
-    resetRecoPanel();
-    openProfilePanel('watch');
+    startInlineReco('taste', { preserveViewport: true });
     return;
   }
   const nav = event.target.closest('[data-taste-nav]');

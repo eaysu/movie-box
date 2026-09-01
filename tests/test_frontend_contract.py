@@ -100,3 +100,33 @@ def test_common_blend_cards_show_both_ratings_and_favorite_signals():
     assert "film.favorite1" in app_js
     assert "film.favorite2" in app_js
     assert "Fav 10" in app_js
+
+
+def test_profile_decks_are_fixed_height_with_scrollable_overviews():
+    html = (ROOT / "static" / "index.html").read_text()
+    js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    assert html.count("profile-dashboard-card") == 3
+    assert 'class="film-overview-scroll mt-3 pr-1"' in js
+    assert ".profile-dashboard-card" in css
+    assert ".film-overview-scroll" in css
+    assert "overflow-y: auto" in css
+
+
+def test_blend_films_link_out_and_blend_library_has_create_action():
+    html = (ROOT / "static" / "index.html").read_text()
+    js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'id="btn-blends-create"' in html
+    assert "const href = letterboxdFilmURL(film.slug)" in js
+    assert 'target="_blank" rel="noopener"' in js
+    assert "$('btn-blends-create').addEventListener" in js
+    assert "openProfilePanel('blend')" in js
+
+
+def test_new_inline_recommendation_keeps_the_result_panel_open():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "startInlineReco('taste', { preserveViewport: true })" in app_js
+    assert "if (!preserveViewport)" in app_js

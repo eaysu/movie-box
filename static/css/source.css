@@ -449,10 +449,29 @@
   .profile-carousel {
     touch-action: pan-y;
     overscroll-behavior-x: contain;
+    min-height: 0;
   }
   .profile-carousel img {
     -webkit-user-drag: none;
     user-select: none;
+  }
+
+  .profile-dashboard-card {
+    height: 42rem;
+    min-height: 42rem;
+    overflow: hidden;
+  }
+  .film-overview-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(186,203,182,.28) transparent;
+  }
+  .film-overview-scroll::-webkit-scrollbar { width: 5px; }
+  .film-overview-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(186,203,182,.24);
   }
 
   /* Accordion — animates to the real content height */
