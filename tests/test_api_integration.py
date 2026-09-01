@@ -32,6 +32,24 @@ class _MemoryCache:
         self.values[(namespace, str(key))] = value
 
 
+class StaticAssetCacheTests(unittest.TestCase):
+    def test_versioned_assets_are_immutable_but_html_and_bare_urls_are_not(self):
+        with TestClient(main.app) as client:
+            html = client.get("/")
+            versioned = client.get("/static/js/dom.js?v=cache-contract")
+            bare = client.get("/static/js/dom.js")
+
+        self.assertEqual(html.headers["cache-control"], "no-cache")
+        self.assertEqual(
+            versioned.headers["cache-control"],
+            "public, max-age=31536000, immutable",
+        )
+        self.assertEqual(
+            bare.headers["cache-control"],
+            "public, max-age=3600, must-revalidate",
+        )
+
+
 def _settings():
     return SimpleNamespace(
         has_tmdb=False,

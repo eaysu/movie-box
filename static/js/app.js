@@ -1,4 +1,4 @@
-import { $, escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
+import { $, escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js?v=20260902.15';
 import {
   API_BASE,
   apiJSON,
@@ -8,22 +8,22 @@ import {
   finishApiRequest,
   scrapeErrorMessage,
   streamErrorMessage,
-} from './api.js';
+} from './api.js?v=20260902.15';
 import {
   cookieValue,
   csrfHeaders,
   setAuthMessage,
   setAuthMode,
   setPasswordVisibility,
-} from './auth.js';
-import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js';
-import { animateScore, getScoreInfo } from './blend.js';
-import { createRecommendationCards } from './recommendations.js';
+} from './auth.js?v=20260902.15';
+import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js?v=20260902.15';
+import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
+import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 import {
   openShareCardPreview,
   renderBlendShareCard,
   renderPersonalityShareCard,
-} from './share-cards.js?v=20260902.14';
+} from './share-cards.js?v=20260902.15';
 
 // ── Cinema facts & quotes ──────────────────────────────────────────────────
 const CINEMA_ITEMS = [

@@ -196,3 +196,23 @@ def test_health_and_session_boot_requests_start_in_parallel():
     assert "await Promise.all([" in boot
     assert "loadHealth()," in boot
     assert "apiJSON('/api/auth/me').catch(() => null)" in boot
+
+
+def test_every_app_shell_asset_uses_the_same_immutable_build_version():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    auth_js = (ROOT / "static" / "js" / "auth.js").read_text()
+    profile_js = (ROOT / "static" / "js" / "profile.js").read_text()
+    recommendations_js = (ROOT / "static" / "js" / "recommendations.js").read_text()
+    share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
+    source_css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    version = "v=20260902.15"
+    assert f"/static/app.css?{version}" in html
+    assert f"/static/js/app.js?{version}" in html
+    assert app_js.count(f"?{version}") == 7
+    assert f"./dom.js?{version}" in auth_js
+    assert f"./dom.js?{version}" in profile_js
+    assert f"./dom.js?{version}" in recommendations_js
+    assert f"./api.js?{version}" in share_js
+    assert f"criterion-closet-bg.jpg?{version}" in source_css

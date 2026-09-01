@@ -1,4 +1,4 @@
-import { $ } from './dom.js';
+import { $ } from './dom.js?v=20260902.15';
 
 export function cookieValue(name) {
   const prefix = `${name}=`;

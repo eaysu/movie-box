@@ -1,4 +1,4 @@
-import { escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js';
+import { escapeHTML, safeImageURL, letterboxdFilmURL } from './dom.js?v=20260902.15';
 
 export function createRecommendationCards() {
 // Make a poster clickable through to its Letterboxd page.

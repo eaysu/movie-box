@@ -92,7 +92,28 @@ app.add_middleware(
 )
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class VersionedStaticFiles(StaticFiles):
+    """Cache versioned assets forever, but keep bare URLs safely revalidatable."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        query = scope.get("query_string", b"")
+        versioned = any(part.startswith(b"v=") for part in query.split(b"&"))
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable"
+            if versioned
+            else "public, max-age=3600, must-revalidate"
+        )
+        return response
+
+
+app.mount(
+    "/static",
+    VersionedStaticFiles(directory=str(STATIC_DIR)),
+    name="static",
+)
 
 # ── Concurrency queue ──────────────────────────────────────────────────────
 _sem = asyncio.Semaphore(4)   # max 4 eşzamanlı analiz
@@ -999,7 +1020,10 @@ class ReportUserRequest(BaseModel):
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/api/health")

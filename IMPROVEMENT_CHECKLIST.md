@@ -66,7 +66,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [x] Uygulama başlangıcındaki sıralı `/api/health` → `/api/auth/me` zincirini
   paralelleştir veya auth durumunu ilk HTML bootstrap verisine ekle. Mobil testte
   ağ gecikmesiyle bu iki istek sırasıyla yaklaşık `656 ms` ve `1.232 sn` sürdü.
-- [ ] Statik dosyalara güvenli browser cache politikası ekle. Şu anda arka plan,
+- [x] Statik dosyalara güvenli browser cache politikası ekle. Şu anda arka plan,
   CSS ve bütün JS modülleri `TTL=0`; tekrar ziyaretler için içerik hash'li dosya
   adları + `public, max-age=31536000, immutable`, HTML için `no-cache` kullan.
 - [x] **KARAR ONAYLANDI — OTURUM CACHE'İ:** Her korumalı endpoint'in tekrar ettiği
