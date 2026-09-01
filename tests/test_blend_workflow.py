@@ -213,6 +213,7 @@ def test_pending_watchlists_complete_in_background_and_update_result():
     assert saved["watchlist_pending"] is False
     assert saved["watchlist_public"] is True
     assert saved["common_watchlist_films"][0]["slug"] == "next-film"
+    assert len(saved["common_watchlist_films"] + saved["bridge_films"]) <= 5
 
 
 def test_schema_contains_atomic_consent_guards():

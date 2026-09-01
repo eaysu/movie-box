@@ -485,7 +485,7 @@ TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftal�
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
 RECOMMENDER_VERSION = "v4-last100-explicit-favorites"
-BLEND_VERSION = "blend-v5-mutual-love-favorites"
+BLEND_VERSION = "blend-v6-five-watchlist-picks"
 
 
 def _make_persistent_cache(settings, client):
@@ -2805,9 +2805,16 @@ async def _complete_blend_watchlists(
     watched2 = _enriched_from_watched_rows(rows2)
     common_watchlist = _common_watchlist_films(watchlist1, watchlist2, limit=5)
     bridge_films: list = []
-    if not common_watchlist:
+    remaining = max(0, 5 - len(common_watchlist))
+    if remaining:
         bridge_films = await _blend_bridge_films(
-            watched1, watched2, watchlist1, watchlist2, enricher=enricher, n=5
+            watched1,
+            watched2,
+            watchlist1,
+            watchlist2,
+            enricher=enricher,
+            n=remaining,
+            exclude=common_watchlist,
         )
         if enricher is not None and bridge_films:
             with contextlib.suppress(Exception):
@@ -3838,8 +3845,9 @@ async def _blend_bridge_films(
     watchlist2: list,
     enricher=None,
     n: int = 5,
+    exclude: list | None = None,
 ) -> list:
-    """No shared watchlist → surface N films that bridge both tastes.
+    """Fill up to N remaining slots with unseen films that bridge both tastes.
 
     Candidates must be unseen by *both* users. The pool is drawn from the two
     watchlists first; if that is too thin it is widened with a popularity
@@ -3855,11 +3863,20 @@ async def _blend_bridge_films(
         for f in (watched1 + watched2)
         if f.title
     }
+    excluded_slugs = {f.slug for f in (exclude or []) if f.slug}
+    excluded_keys = {
+        (f.title.lower().strip(), f.year)
+        for f in (exclude or [])
+        if f.title
+    }
+    unavailable_keys = seen_keys | excluded_keys
 
     def _unseen(film) -> bool:
-        if film.slug and film.slug in seen_slugs:
+        if film.slug and (film.slug in seen_slugs or film.slug in excluded_slugs):
             return False
-        if film.title and (film.title.lower().strip(), film.year) in seen_keys:
+        if film.title and (
+            film.title.lower().strip(), film.year
+        ) in unavailable_keys:
             return False
         return True
 
@@ -4043,9 +4060,16 @@ async def blend(req: BlendRequest, request: Request):
                 (wl1e, _w1), (wl2e, _w2) = h2["result"]
             common_wl_films = _common_watchlist_films(wl1e, wl2e, limit=5)
             bridge_wl_films: list = []
-            if not common_wl_films:
+            remaining = max(0, 5 - len(common_wl_films))
+            if remaining:
                 bridge_wl_films = await _blend_bridge_films(
-                    w1_enriched, w2_enriched, wl1e, wl2e, enricher=enricher, n=5
+                    w1_enriched,
+                    w2_enriched,
+                    wl1e,
+                    wl2e,
+                    enricher=enricher,
+                    n=remaining,
+                    exclude=common_wl_films,
                 )
                 if enricher is not None and bridge_wl_films:
                     with contextlib.suppress(Exception):

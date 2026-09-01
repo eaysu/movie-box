@@ -155,6 +155,26 @@ def _film(title, *, year=2021, genres=("Drama",), director="Someone"):
 
 
 class BlendBridgeFilmTests(unittest.TestCase):
+    def test_bridge_fills_missing_slot_without_repeating_common_films(self):
+        watched1 = [_film("Seen A")]
+        watched2 = [_film("Seen B")]
+        common = [_film(f"Common {index}") for index in range(1, 5)]
+        watchlist1 = common + [_film("Fifth Pick")]
+        watchlist2 = common
+
+        bridge = asyncio.run(
+            _blend_bridge_films(
+                watched1,
+                watched2,
+                watchlist1,
+                watchlist2,
+                n=1,
+                exclude=common,
+            )
+        )
+
+        self.assertEqual([film.title for film in bridge], ["Fifth Pick"])
+
     def test_bridge_pool_from_watchlists_excludes_films_either_user_saw(self):
         watched1 = [_film("Seen A"), _film("Seen B")]
         watched2 = [_film("Seen C")]

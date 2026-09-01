@@ -41,6 +41,8 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   doğrula; başarıyla çözülen konuları ortak kataloğa geri yaz.
 - [x] Ortak watchlist/bridge filmlerini temel Blend sonucundan ayırıp arka planda
   tamamla; sonuç kaydını idempotent biçimde güncelle.
+- [x] Blend ortak izleme önerisini mümkün olan her durumda 5 filme tamamla; ortak
+  watchlist kesişimi 1–4 filmse kalan slotları tekrar etmeyen bridge seçimleriyle doldur.
 - [x] Hesaptan bağımsız ortak film havuzunu poster-only yapıdan kalıcı kataloğa
   genişlet: başlık, yıl, TMDb id, afiş, konu, yönetmen, tür, keyword ve puan.
 - [x] Katalog upsert'lerinde boş/geçici sonuçların sağlam metadata'yı silmesini
