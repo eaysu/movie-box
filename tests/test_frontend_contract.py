@@ -66,9 +66,9 @@ def test_three_png_share_modules_are_wired_to_native_share_and_download():
     ):
         assert f'id="{element_id}"' in html
 
-    assert "renderBlendShareCard(_currentBlendResult, 'watched')" in app_js
-    assert "renderBlendShareCard(_currentBlendResult, 'watchlist')" in app_js
-    assert "renderPersonalityShareCard(_persistedProfile)" in app_js
+    assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watched')" in app_js
+    assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watchlist')" in app_js
+    assert "shareCards.renderPersonalityShareCard(_persistedProfile)" in app_js
     assert "canvas.width = WIDTH" in share_js
     assert "const WIDTH = 1080" in share_js
     assert "const HEIGHT = 1350" in share_js
@@ -223,13 +223,22 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.17" in html
+    assert "/static/js/app.js?v=20260902.18" in html
     assert app_js.count(f"?{dependency_version}") == 7
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
     assert f"./dom.js?{dependency_version}" in recommendations_js
     assert f"./api.js?{dependency_version}" in share_js
     assert f"criterion-closet-bg.jpg?{dependency_version}" in source_css
+
+
+def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    imports = app_js.split("// ── Cinema facts", 1)[0]
+    assert "from './share-cards.js" not in imports
+    assert "import('./share-cards.js?v=20260902.15')" in imports
+    assert "const shareCards = await loadShareCardsModule();" in app_js
 
 
 def test_sync_progress_polling_does_not_reload_the_full_profile_snapshot():

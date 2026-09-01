@@ -19,11 +19,14 @@ import {
 import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js?v=20260902.15';
 import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
 import { createRecommendationCards } from './recommendations.js?v=20260902.15';
-import {
-  openShareCardPreview,
-  renderBlendShareCard,
-  renderPersonalityShareCard,
-} from './share-cards.js?v=20260902.15';
+
+let _shareCardsModule;
+function loadShareCardsModule() {
+  if (!_shareCardsModule) {
+    _shareCardsModule = import('./share-cards.js?v=20260902.15');
+  }
+  return _shareCardsModule;
+}
 
 // ── Cinema facts & quotes ──────────────────────────────────────────────────
 const CINEMA_ITEMS = [
@@ -566,8 +569,9 @@ async function buildAndOpenShareCard(button, factory) {
   await new Promise(resolve => requestAnimationFrame(resolve));
   let succeeded = false;
   try {
-    const card = await factory();
-    openShareCardPreview(card);
+    const shareCards = await loadShareCardsModule();
+    const card = await factory(shareCards);
+    shareCards.openShareCardPreview(card);
     succeeded = true;
   } catch (error) {
     button.title = error?.message || 'PNG oluşturulamadı.';
@@ -3132,13 +3136,13 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('btn-share-personality').addEventListener('click', event => {
-  buildAndOpenShareCard(event.currentTarget, () => renderPersonalityShareCard(_persistedProfile));
+  buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });
 $('btn-share-common').addEventListener('click', event => {
-  buildAndOpenShareCard(event.currentTarget, () => renderBlendShareCard(_currentBlendResult, 'watched'));
+  buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderBlendShareCard(_currentBlendResult, 'watched'));
 });
 $('btn-share-watchlist').addEventListener('click', event => {
-  buildAndOpenShareCard(event.currentTarget, () => renderBlendShareCard(_currentBlendResult, 'watchlist'));
+  buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderBlendShareCard(_currentBlendResult, 'watchlist'));
 });
 $('profile-top-films-edit').addEventListener('click', openTopFilmsEditor);
 $('top-films-list').addEventListener('click', handleTopFilmsPick);

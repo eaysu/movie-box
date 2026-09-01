@@ -95,7 +95,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [ ] Google fontlarını self-host/subset edip kritik fontları preload et veya font
   metriklerini fallback ile eşleştir. Ölçülen `0.0566 CLS` tamamen dört web fontunun
   geç yüklenmesinden kaynaklandı.
-- [ ] İlk kabukta kullanılmayan `share-cards.js` gibi modülleri dinamik import et;
+- [x] İlk kabukta kullanılmayan `share-cards.js` gibi modülleri dinamik import et;
   `criterion-closet-bg.jpg` için görsel kaliteyi koruyan AVIF/WebP varyantı üret.
 - [ ] Giriş yapılmış, onboarding'i tamamlanmış gerçek profilde cold/warm trace al;
   `/profile/me`, stats, top/recent, watchlist head-check ve Blend badge süre/payload
