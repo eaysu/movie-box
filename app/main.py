@@ -1313,6 +1313,21 @@ async def password_reset_finish(
     return {"ok": True}
 
 
+async def _profile_sync_status(account: Account, service) -> dict | None:
+    """Read/resume one sync job without loading the complete profile snapshot."""
+    job = await asyncio.to_thread(service.get_sync_job, account.id)
+    if not profile_sync.is_running(account.id):
+        if profile_sync.job_is_resumable(job):
+            # Resume-on-visit: a job whose lease/heartbeat went stale after a
+            # process restart is picked up without reloading the full profile.
+            profile_sync.start(_SyncPipeline(get_settings()), service, account)
+        elif profile_sync.incremental_due(job):
+            job = await profile_sync.ensure_started(
+                _SyncPipeline(get_settings()), service, account, scope="incremental"
+            )
+    return profile_sync.progress_of(job)
+
+
 @app.get("/api/profile/me")
 async def profile_me(request: Request) -> dict:
     account = await _require_account(request)
@@ -1323,21 +1338,17 @@ async def profile_me(request: Request) -> dict:
         or profile["taste"].get("algorithm_version") != TASTE_PROFILE_VERSION
     )
     with contextlib.suppress(Exception):
-        job = await asyncio.to_thread(service.get_sync_job, account.id)
-        profile["sync_job"] = profile_sync.progress_of(job)
-        if not profile_sync.is_running(account.id):
-            if profile_sync.job_is_resumable(job):
-                # Resume-on-visit: a job whose heartbeat went stale (instance
-                # restart) is picked up here without any external scheduler.
-                profile_sync.start(_SyncPipeline(get_settings()), service, account)
-            elif profile_sync.incremental_due(job):
-                # Completed sweep gone stale → cheap "what did they watch since"
-                # refresh in the background.
-                job = await profile_sync.ensure_started(
-                    _SyncPipeline(get_settings()), service, account, scope="incremental"
-                )
-                profile["sync_job"] = profile_sync.progress_of(job)
+        profile["sync_job"] = await _profile_sync_status(account, service)
     return profile
+
+
+@app.get("/api/profile/sync-status")
+async def profile_sync_status(request: Request) -> dict:
+    """Small polling payload; the full profile is fetched only after completion."""
+    account = await _require_account(request)
+    service = _auth_service()
+    progress = await _profile_sync_status(account, service)
+    return {"sync_job": progress}
 
 
 @app.post("/api/profile/onboarding-complete")

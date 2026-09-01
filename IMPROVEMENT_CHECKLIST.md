@@ -79,6 +79,9 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [x] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
   "yüklendi" kabul et. Mevcut flag'ler yalnız dolu sonuçta kapanıyor; profil yeniden
   render edilirse aynı başarılı boş istekler tekrar çalışabiliyor.
+- [x] Aktif full/incremental tarama sırasında 5–7 saniyede bir tüm `/api/profile/me`
+  payload'ını indirip profil DOM'unu yeniden kurma; küçük `/api/profile/sync-status`
+  endpoint'ini poll et ve tam profili yalnız job tamamlanınca bir kez yenile.
 - [x] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
   liste kartında yalnız özet alanları getir, tam sonucu karta tıklanınca mevcut
   `/result` endpoint'inden yükle.

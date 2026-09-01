@@ -511,6 +511,45 @@ def test_onboarding_completion_requires_full_crawl_milestone():
     assert completed == []
 
 
+def test_sync_status_returns_progress_without_loading_profile_snapshot():
+    account = _account()
+    loaded_profiles = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        get_sync_job=lambda _uid: {
+            "state": "running",
+            "phase": "enrich",
+            "scope": "full",
+            "films_processed": 125,
+            "films_total": 250,
+        },
+        get_profile=lambda _account: loaded_profiles.append(True),
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main.profile_sync.is_running", return_value=True),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.get(
+            "/api/profile/sync-status",
+            headers={"Cookie": "mb_access=sync-status-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["sync_job"] == {
+        "state": "running",
+        "phase": "enrich",
+        "scope": "full",
+        "processed": 125,
+        "total": 250,
+        "percent": 50,
+        "onboarding_ready": False,
+        "error": "",
+    }
+    assert loaded_profiles == []
+
+
 def test_onboarding_completion_is_persisted_after_reveal_is_ready():
     account = _account()
     fake_service = SimpleNamespace(

@@ -223,10 +223,26 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.16" in html
+    assert "/static/js/app.js?v=20260902.17" in html
     assert app_js.count(f"?{dependency_version}") == 7
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
     assert f"./dom.js?{dependency_version}" in recommendations_js
     assert f"./api.js?{dependency_version}" in share_js
     assert f"criterion-closet-bg.jpg?{dependency_version}" in source_css
+
+
+def test_sync_progress_polling_does_not_reload_the_full_profile_snapshot():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    sweep_poll = app_js.split("function startSweepPoll()", 1)[1].split(
+        "function stopSweepPoll()", 1
+    )[0]
+    onboarding_poll = app_js.split("function _obAwaitFullSweep", 1)[1].split(
+        "async function startOnboarding", 1
+    )[0]
+    assert "apiJSON('/api/profile/sync-status')" in sweep_poll
+    assert "apiJSON('/api/profile/me')" not in sweep_poll
+    assert "if (!active) await loadProfile();" in sweep_poll
+    assert "apiJSON('/api/profile/sync-status')" in onboarding_poll
+    assert onboarding_poll.count("apiJSON('/api/profile/me')") == 2

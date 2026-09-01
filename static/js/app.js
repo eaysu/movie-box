@@ -1284,8 +1284,11 @@ function startSweepPoll() {
   _sweepPollTimer = setInterval(async () => {
     if ($('view-profile').classList.contains('hidden')) { stopSweepPoll(); return; }
     try {
-      const profile = await apiJSON('/api/profile/me');
-      renderPersistedProfile(profile);
+      const data = await apiJSON('/api/profile/sync-status');
+      const job = data.sync_job;
+      const active = job && (job.state === 'queued' || job.state === 'running');
+      applySyncJob(job);
+      if (!active) await loadProfile();
     } catch (_) { /* transient; keep polling */ }
   }, 7000);
 }
@@ -2064,11 +2067,10 @@ function _obAwaitFullSweep(token, provisional) {
 
     const tick = async () => {
       if (!_obLive(token)) { resolve(null); return; }
-      let profile = null;
-      try { profile = await apiJSON('/api/profile/me'); } catch (_) { /* geçici; yoklamaya devam */ }
+      let status = null;
+      try { status = await apiJSON('/api/profile/sync-status'); } catch (_) { /* geçici; yoklamaya devam */ }
       if (!_obLive(token)) { resolve(null); return; }
-      if (profile) _persistedProfile = profile;
-      const job = profile && profile.sync_job;
+      const job = status && status.sync_job;
       if (job) {
         const mt = _obMilestoneText(job.processed || 0);
         const ml = $('ob-milestone-line');
@@ -2077,7 +2079,13 @@ function _obAwaitFullSweep(token, provisional) {
       if (job && job.onboarding_ready) {
         if (_obPollTimer) { clearInterval(_obPollTimer); _obPollTimer = null; }
         _obStopFacts();
-        resolve(profile);
+        try {
+          const profile = await apiJSON('/api/profile/me');
+          if (profile) _persistedProfile = profile;
+          resolve(profile || provisional);
+        } catch (_) {
+          resolve(provisional);
+        }
         return;
       }
     };
