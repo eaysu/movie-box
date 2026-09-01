@@ -60,6 +60,12 @@ best-practices ve SEO skorları `100`; yalnız logo düğmesinin görünür adı
 `aria-label` değeri eşleşmiyor. Giriş sonrası canlı trace, DevTools'un izole
 profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 
+Canlı deploy doğrulamasında sürümlü asset header'ları
+`public, max-age=31536000, immutable`, HTML `no-cache` döndü ve health/auth
+istekleri paralel başladı. Warm mobil trace'te `CLS 0.0566 → 0.01` düştü; LCP
+ağ değişkenliği içinde yaklaşık `1.4 sn` ile iyi aralıkta kaldı. Lighthouse'ın
+tek label/name uyarısı logo düğmesinin erişilebilir adı eşleştirilerek kapatıldı.
+
 - [x] Profil açılışında yalnız bildirim rozeti için yapılan tam `/api/blends`
   çağrısını kaldır; ilk girişte küçük `/api/blends/pending-count` kullan ve tüm
   inbox/Blend geçmişini ancak kullanıcı ilgili ekranı açınca lazy-load et.
@@ -95,8 +101,8 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [ ] Google fontlarını self-host/subset edip kritik fontları preload et veya font
   metriklerini fallback ile eşleştir. Ölçülen `0.0566 CLS` tamamen dört web fontunun
   geç yüklenmesinden kaynaklandı.
-- [x] İlk kabukta kullanılmayan `share-cards.js` gibi modülleri dinamik import et;
-  `criterion-closet-bg.jpg` için görsel kaliteyi koruyan AVIF/WebP varyantı üret.
+- [x] İlk kabukta kullanılmayan `share-cards.js` modülünü dinamik import et.
+- [ ] `criterion-closet-bg.jpg` için görsel kaliteyi koruyan AVIF/WebP varyantı üret.
 - [ ] Giriş yapılmış, onboarding'i tamamlanmış gerçek profilde cold/warm trace al;
   `/profile/me`, stats, top/recent, watchlist head-check ve Blend badge süre/payload
   değerlerini kaydedip warm profile `p95 <500 ms` hedefini doğrula.

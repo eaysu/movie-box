@@ -51,6 +51,13 @@ def test_phone_layout_prevents_film_grid_and_inbox_overflow():
     assert 'class="safe-footer ' in html
 
 
+def test_logo_button_accessible_name_contains_its_visible_label():
+    html = (ROOT / "static" / "index.html").read_text()
+
+    assert 'id="btn-home"' in html
+    assert 'aria-label="MOVIEBOXD · AI ana sayfa"' in html
+
+
 def test_three_png_share_modules_are_wired_to_native_share_and_download():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
