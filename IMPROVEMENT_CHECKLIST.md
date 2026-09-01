@@ -273,6 +273,9 @@ onayı gelmeden uygulanmaz.
 - [x] Blend'in ham benzerliğini negatif rating cezasını koruyarak 25–100 sıcak
   gösterim aralığına kalibre et; güveni örneklem/film bilgisi/rating kapsamından
   ayrı düşük–orta–yüksek veri kapsamı olarak sun.
+- [x] Blend v5 ortak film vitrini için iki tarafın düşük efektif puanını birincil
+  sıralama sinyali yap; Fav 10'u en az `4.5★`, Fav 4'ü en az `5★` açık tercih
+  kabul et ve iki kullanıcının gerçek puan/Fav işaretlerini kartta ayrı göster.
 - [x] Fav 4 değişmedikçe kişilik okumasını yeniden üretme; otomatik profil
   kontrolünü her giriş yerine en fazla 24 saatte bire indir.
 - [x] Tamamlanmış Blend'e güncel iki profil üzerinden zorunlu yeniden hesaplama

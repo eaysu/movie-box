@@ -2219,7 +2219,7 @@ function _startBlendFact() {
   $('bfact-author').textContent = item.author ? `— ${item.author}` : '';
 }
 
-function buildBlendFilmCard(film, idx) {
+function buildBlendFilmCard(film, idx, username1 = '', username2 = '') {
   const title = escapeHTML(film.title);
   const director = escapeHTML(film.director);
   const year = escapeHTML(film.year);
@@ -2229,6 +2229,19 @@ function buildBlendFilmCard(film, idx) {
           class="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500"
           src="${posterURL}"/>`
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container"><span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span></div>`;
+  const preferenceLine = (username, rating, favorite) => {
+    const hasRating = rating !== null && rating !== undefined;
+    if (!hasRating && !favorite) return '';
+    const favoriteLabel = favorite === 'fav4' ? 'Fav 4' : favorite === 'top10' ? 'Fav 10' : '';
+    return `<span class="flex min-w-0 items-center justify-between gap-1 text-[10px] leading-tight text-on-surface-variant/75">
+      <span class="truncate" title="@${escapeHTML(username)}">@${escapeHTML(username)}</span>
+      <strong class="shrink-0 text-primary-container">${hasRating ? `${Number(rating).toFixed(1)}★` : ''}${hasRating && favoriteLabel ? ' · ' : ''}${favoriteLabel}</strong>
+    </span>`;
+  };
+  const preferences = [
+    preferenceLine(username1, film.rating1, film.favorite1),
+    preferenceLine(username2, film.rating2, film.favorite2),
+  ].filter(Boolean).join('');
   return `
     <article class="tilt-card glass-panel rounded-xl overflow-hidden group flex flex-col overflow-safe"
       style="opacity:0;animation:blend-card-in .5s cubic-bezier(.22,1,.36,1) both;animation-delay:${idx * 80}ms">
@@ -2239,6 +2252,7 @@ function buildBlendFilmCard(film, idx) {
       <div class="p-stack-sm flex flex-col gap-unit flex-grow">
         <h4 class="font-label-md text-label-md text-on-surface line-clamp-2 leading-snug">${title}${film.year ? ` <span class="text-on-surface-variant/60">(${year})</span>` : ''}</h4>
         ${film.director ? `<span class="font-label-sm text-label-sm text-on-surface-variant/70">${director}</span>` : ''}
+        ${preferences ? `<div class="mt-1 flex flex-col gap-1 border-t border-outline-variant/15 pt-2">${preferences}</div>` : ''}
       </div>
     </article>`;
 }
@@ -2288,7 +2302,7 @@ async function renderBlendResult(data) {
 
   // Ortak izlenen filmler
   if (films && films.length > 0) {
-    $('br-grid').innerHTML = films.map(buildBlendFilmCard).join('');
+    $('br-grid').innerHTML = films.map((film, idx) => buildBlendFilmCard(film, idx, username1, username2)).join('');
     $('br-films-section').classList.remove('hidden');
     $('br-films-section').classList.add('flex');
     $('br-no-common').classList.add('hidden');

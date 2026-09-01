@@ -101,6 +101,46 @@ class BlendCalibrationTests(unittest.TestCase):
         self.assertEqual(result["confidence"]["level"], "low")
         self.assertEqual(result["confidence"]["sample_size"], 5)
 
+    def test_common_films_prioritize_mutual_love_over_poster_availability(self):
+        first = [
+            EnrichedFilm(title="Mutual Love", slug="mutual-love", user_rating=4.5),
+            EnrichedFilm(
+                title="One Sided", slug="one-sided", user_rating=5.0,
+                poster_url="https://image/one-sided.jpg",
+            ),
+        ]
+        second = [
+            EnrichedFilm(title="Mutual Love", slug="mutual-love", user_rating=4.5),
+            EnrichedFilm(title="One Sided", slug="one-sided", user_rating=1.0),
+        ]
+
+        result = _calculate_blend(first, second, top_n=2)
+
+        self.assertEqual([film.slug for film in result["films"]], ["mutual-love", "one-sided"])
+        self.assertEqual(result["film_preferences"]["mutual-love"]["rating2"], 4.5)
+
+    def test_shared_curated_top10_is_a_strong_common_film_signal(self):
+        first = [
+            EnrichedFilm(title="Curated", slug="curated"),
+            EnrichedFilm(title="Plain", slug="plain", user_rating=4.0),
+        ]
+        second = [
+            EnrichedFilm(title="Curated", slug="curated"),
+            EnrichedFilm(title="Plain", slug="plain", user_rating=4.0),
+        ]
+
+        result = _calculate_blend(
+            first,
+            second,
+            top_n=2,
+            favorite_ten1=["curated"],
+            favorite_ten2=["curated"],
+        )
+
+        self.assertEqual(result["films"][0].slug, "curated")
+        self.assertEqual(result["film_preferences"]["curated"]["favorite1"], "top10")
+        self.assertEqual(result["film_preferences"]["curated"]["favorite2"], "top10")
+
 
 def _film(title, *, year=2021, genres=("Drama",), director="Someone"):
     slug = title.lower().replace(" ", "-")

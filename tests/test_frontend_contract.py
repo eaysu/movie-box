@@ -90,3 +90,13 @@ def test_blend_history_supports_refresh_and_confirmed_shared_delete():
     assert 'data-blend-action="delete-result"' in app_js
     assert "/api/blends/${encodeURIComponent(requestId)}/refresh" in app_js
     assert "Bu işlem Blend'i iki tarafın geçmişinden de kaldırır." in app_js
+
+
+def test_common_blend_cards_show_both_ratings_and_favorite_signals():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "film.rating1" in app_js
+    assert "film.rating2" in app_js
+    assert "film.favorite1" in app_js
+    assert "film.favorite2" in app_js
+    assert "Fav 10" in app_js

@@ -483,7 +483,7 @@ TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftal�
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
 RECOMMENDER_VERSION = "v4-last100-explicit-favorites"
-BLEND_VERSION = "blend-v4-warm-favorites"
+BLEND_VERSION = "blend-v5-mutual-love-favorites"
 
 
 def _make_persistent_cache(settings, client):
@@ -2492,7 +2492,15 @@ async def _compute_accepted_blend(
         "top_director": blend_result["top_director"],
         "top_director_count1": blend_result["top_director_count1"],
         "top_director_count2": blend_result["top_director_count2"],
-        "films": [film.to_dict() for film in blend_result["films"]],
+        "films": [
+            {
+                **film.to_dict(),
+                **blend_result["film_preferences"].get(
+                    film.slug or f"{film.title.lower().strip()}:{film.year}", {}
+                ),
+            }
+            for film in blend_result["films"]
+        ],
         "favorite_matches": blend_result["favorite_matches"],
         "common_watchlist_films": [],
         "bridge_films": [],
@@ -3344,6 +3352,11 @@ def _calculate_blend(
             return 0.20
         return max(-1.0, min(1.0, (float(r) - 3.0) / 2.0))
 
+    fav4_1 = {slug for slug in (favorite_four1 or []) if slug}
+    fav4_2 = {slug for slug in (favorite_four2 or []) if slug}
+    fav10_1 = {slug for slug in (favorite_ten1 or []) if slug}
+    fav10_2 = {slug for slug in (favorite_ten2 or []) if slug}
+
     # ── Ortak filmler ──────────────────────────────────────────────────────
     # 1. Slug eşleşmesi (birincil)
     slugs2 = {f.slug for f in watched2 if f.slug}
@@ -3359,25 +3372,78 @@ def _calculate_blend(
     ]
     common = common_slugs + common_title
     common_count = len(common)
-    # Sıralama: önce posterli filmler; sonra İKİ kullanıcının da puanladıkları;
-    # sonra iki puanın toplamı (ikisinin de sevdiği tepeye); en son TMDb ortalaması
-    # (böylece 3 oylu yeni bir film klasikleri geçemez).
-    _w2_rating_by_slug = {f.slug: f.user_rating for f in watched2 if f.slug}
-    _w2_rating_by_key = {
-        (f.title.lower().strip(), f.year): f.user_rating for f in watched2
-    }
+    # Explicit favorites behave like strong personal ratings. Fav 10 is at
+    # least 4.5★ and Fav 4 is at least 5★, while the other person's dislike is
+    # still allowed to pull the mutual floor down.
+    _w2_by_slug = {f.slug: f for f in watched2 if f.slug}
+    _w2_by_key = {(f.title.lower().strip(), f.year): f for f in watched2}
+
+    def _second_film(f):
+        return (
+            _w2_by_slug.get(f.slug)
+            if f.slug
+            else _w2_by_key.get((f.title.lower().strip(), f.year))
+        ) or _w2_by_key.get((f.title.lower().strip(), f.year))
+
+    def _effective_rating(rating, slug: str, fav10: set[str], fav4: set[str]):
+        value = float(rating) if rating is not None else None
+        if slug in fav4:
+            return max(value or 0.0, 5.0)
+        if slug in fav10:
+            return max(value or 0.0, 4.5)
+        return value
+
+    def _favorite_label(slug: str, fav10: set[str], fav4: set[str]) -> str:
+        if slug in fav4:
+            return "fav4"
+        if slug in fav10:
+            return "top10"
+        return ""
 
     def _common_rank(f):
+        f2 = _second_film(f)
         r1 = f.user_rating
-        r2 = _w2_rating_by_slug.get(f.slug) if f.slug else None
-        if r2 is None:
-            r2 = _w2_rating_by_key.get((f.title.lower().strip(), f.year))
-        both_rated = 1 if (r1 is not None and r2 is not None) else 0
-        mutual_love = (r1 or 0.0) + (r2 or 0.0)
-        return (f.poster_url is not None, both_rated, mutual_love, f.vote_average)
+        r2 = f2.user_rating if f2 else None
+        slug1 = f.slug or ""
+        slug2 = f2.slug if f2 else slug1
+        effective1 = _effective_rating(r1, slug1, fav10_1, fav4_1)
+        effective2 = _effective_rating(r2, slug2, fav10_2, fav4_2)
+        both_signaled = effective1 is not None and effective2 is not None
+        if both_signaled:
+            mutual_floor = min(effective1, effective2)
+            mutual_average = (effective1 + effective2) / 2.0
+            agreement = -abs(effective1 - effective2)
+        else:
+            known = [v for v in (effective1, effective2) if v is not None]
+            mutual_floor = -1.0
+            mutual_average = sum(known) / len(known) if known else -1.0
+            agreement = -5.0
+        explicit_count = sum((slug1 in fav10_1 or slug1 in fav4_1,
+                              slug2 in fav10_2 or slug2 in fav4_2))
+        return (
+            both_signaled,
+            mutual_floor,
+            mutual_average,
+            agreement,
+            explicit_count,
+            f.poster_url is not None,
+            f.vote_average,
+        )
 
     common.sort(key=_common_rank, reverse=True)
     top_common = common[:top_n]
+    film_preferences: dict[str, dict] = {}
+    for film in top_common:
+        second = _second_film(film)
+        slug1 = film.slug or ""
+        slug2 = second.slug if second else slug1
+        identity = slug1 or f"{film.title.lower().strip()}:{film.year}"
+        film_preferences[identity] = {
+            "rating1": film.user_rating,
+            "rating2": second.user_rating if second else None,
+            "favorite1": _favorite_label(slug1, fav10_1, fav4_1),
+            "favorite2": _favorite_label(slug2, fav10_2, fav4_2),
+        }
 
     # ── Uyum skoru ─────────────────────────────────────────────────────────
     # Sinyal 1-4: Rating-ağırlıklı özellik vektörleri
@@ -3474,10 +3540,6 @@ def _calculate_blend(
     bounded_raw = max(0.0, min(raw, 1.0))
     calibrated_score = 25.0 + 75.0 * (bounded_raw ** 0.85)
 
-    fav4_1 = {slug for slug in (favorite_four1 or []) if slug}
-    fav4_2 = {slug for slug in (favorite_four2 or []) if slug}
-    fav10_1 = {slug for slug in (favorite_ten1 or []) if slug}
-    fav10_2 = {slug for slug in (favorite_ten2 or []) if slug}
     shared_fav4 = sorted(fav4_1 & fav4_2)
     shared_fav10 = sorted((fav10_1 & fav10_2) - set(shared_fav4))
     cross_favorites = sorted(
@@ -3567,6 +3629,7 @@ def _calculate_blend(
         "top_director_count1": director_counts1.get(top_dir, 0) if top_dir else 0,
         "top_director_count2": director_counts2.get(top_dir, 0) if top_dir else 0,
         "films": top_common,
+        "film_preferences": film_preferences,
         "favorite_matches": {
             "fav4": shared_fav4,
             "top10": shared_fav10,
