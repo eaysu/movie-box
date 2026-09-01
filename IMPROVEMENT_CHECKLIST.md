@@ -79,7 +79,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [x] Başarılı ama boş dönen `stats`, `top-films` ve `recent` endpoint'lerini de
   "yüklendi" kabul et. Mevcut flag'ler yalnız dolu sonuçta kapanıyor; profil yeniden
   render edilirse aynı başarılı boş istekler tekrar çalışabiliyor.
-- [ ] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
+- [x] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
   liste kartında yalnız özet alanları getir, tam sonucu karta tıklanınca mevcut
   `/result` endpoint'inden yükle.
 - [x] **KARAR ONAYLANDI — WATCHLIST TAZELİĞİ:** Her yeni sekme/oturumda Letterboxd

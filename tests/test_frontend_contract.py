@@ -92,6 +92,20 @@ def test_blend_history_supports_refresh_and_confirmed_shared_delete():
     assert "Bu işlem Blend'i iki tarafın geçmişinden de kaldırır." in app_js
 
 
+def test_blend_history_lazy_loads_full_result_payload_only_when_opened():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    auth_py = (ROOT / "app" / "auth.py").read_text()
+
+    list_blends = auth_py.split("def list_blends(self, account: Account)", 1)[1]
+    list_blends = list_blends.split("def count_pending_blend_requests", 1)[0]
+    assert '"id,request_id,score,confidence,algorithm_version,created_at"' in list_blends
+    assert 'score,confidence,result,algorithm_version' not in list_blends
+    assert "if (action === 'view')" in app_js
+    assert "let stored = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`)" in app_js
+    assert "await renderBlendResult(blendResultWithPeerAvatars(stored.result, item.peer))" in app_js
+    assert "done.filter(item => !!item.blend_result).length" in app_js
+
+
 def test_common_blend_cards_show_both_ratings_and_favorite_signals():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
 
@@ -198,7 +212,7 @@ def test_health_and_session_boot_requests_start_in_parallel():
     assert "apiJSON('/api/auth/me').catch(() => null)" in boot
 
 
-def test_every_app_shell_asset_uses_the_same_immutable_build_version():
+def test_every_app_shell_asset_has_an_explicit_immutable_version():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     auth_js = (ROOT / "static" / "js" / "auth.js").read_text()
@@ -207,12 +221,12 @@ def test_every_app_shell_asset_uses_the_same_immutable_build_version():
     share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
-    version = "v=20260902.15"
-    assert f"/static/app.css?{version}" in html
-    assert f"/static/js/app.js?{version}" in html
-    assert app_js.count(f"?{version}") == 7
-    assert f"./dom.js?{version}" in auth_js
-    assert f"./dom.js?{version}" in profile_js
-    assert f"./dom.js?{version}" in recommendations_js
-    assert f"./api.js?{version}" in share_js
-    assert f"criterion-closet-bg.jpg?{version}" in source_css
+    dependency_version = "v=20260902.15"
+    assert f"/static/app.css?{dependency_version}" in html
+    assert "/static/js/app.js?v=20260902.16" in html
+    assert app_js.count(f"?{dependency_version}") == 7
+    assert f"./dom.js?{dependency_version}" in auth_js
+    assert f"./dom.js?{dependency_version}" in profile_js
+    assert f"./dom.js?{dependency_version}" in recommendations_js
+    assert f"./api.js?{dependency_version}" in share_js
+    assert f"criterion-closet-bg.jpg?{dependency_version}" in source_css

@@ -1277,7 +1277,7 @@ class AuthService:
             results = (
                 service.table("blend_results")
                 .select(
-                    "id,request_id,score,confidence,result,algorithm_version,created_at"
+                    "id,request_id,score,confidence,algorithm_version,created_at"
                 )
                 .in_("request_id", request_ids)
                 .execute()

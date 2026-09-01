@@ -1425,7 +1425,7 @@ function blendMyCard(item) {
   const peer = item.peer || {};
   const result = item.blend_result;
   const score = Number(result?.score);
-  const hasResult = Number.isFinite(score) && !!result?.result;
+  const hasResult = Number.isFinite(score) && !!result;
   const name = escapeHTML(peer.display_name || peer.username || 'Bilinmeyen');
   const username = escapeHTML(peer.username || '');
   const poster = safeImageURL(peer.avatar_url);
@@ -1466,7 +1466,7 @@ function renderMyBlends(data) {
   $('blends-list').innerHTML = done.length
     ? done.map(blendMyCard).join('')
     : emptyInbox('Henüz tamamlanmış bir Blend yok. Bir arkadaşına Blend isteği gönder.');
-  const ready = done.filter(item => !!item.blend_result?.result).length;
+  const ready = done.filter(item => !!item.blend_result).length;
   $('profile-blends-badge').textContent = ready > 9 ? '9+' : String(ready);
   $('profile-blends-badge').classList.toggle('hidden', ready === 0);
   $('profile-blends-badge').classList.toggle('flex', ready > 0);
@@ -1638,8 +1638,26 @@ async function handleBlendInboxAction(event) {
   }
   if (action === 'view') {
     const item = _blendInbox.history.find(entry => entry.id === requestId);
-    if (item?.blend_result?.result) {
-      renderBlendResult(blendResultWithPeerAvatars(item.blend_result.result, item.peer));
+    if (!item) return;
+    button.disabled = true;
+    const oldText = button.textContent;
+    button.textContent = 'Açılıyor…';
+    try {
+      let stored = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`);
+      if (!stored.result) {
+        stored = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`, {
+          method: 'POST', headers: csrfHeaders(),
+        });
+      }
+      if (stored.result) {
+        await renderBlendResult(blendResultWithPeerAvatars(stored.result, item.peer));
+      }
+    } catch (error) {
+      actionError.textContent = error.message || 'Blend sonucu açılamadı.';
+      actionError.classList.remove('hidden');
+    } finally {
+      button.disabled = false;
+      button.textContent = oldText;
     }
     return;
   }
