@@ -82,7 +82,7 @@ profilinde oturum açıldıktan sonra ayrıca doğrulanacak.
 - [ ] `/api/blends` liste cevabından büyük `blend_results.result` JSON'larını çıkar;
   liste kartında yalnız özet alanları getir, tam sonucu karta tıklanınca mevcut
   `/result` endpoint'inden yükle.
-- [ ] **KARAR GEREKLİ — WATCHLIST TAZELİĞİ:** Her yeni sekme/oturumda Letterboxd
+- [x] **KARAR ONAYLANDI — WATCHLIST TAZELİĞİ:** Her yeni sekme/oturumda Letterboxd
   ilk sayfasını kontrol eden çağrı UI'ı bloklamıyor fakat dış istek bütçesi tüketiyor.
   Sunucu tarafında kalıcı `last_checked_at` ile önerilen minimum aralık `30–60 dk`;
   “Profili yenile” her zaman zorunlu kontrol yapmaya devam etsin.

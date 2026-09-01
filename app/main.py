@@ -550,6 +550,7 @@ def _make_cache(settings):
 # Supabase yoksa SQLite'a yazılır (lokal kalıcı, Render'da redeploy'da silinir).
 TTL_USER_FILMS = 24 * 3600  # 1 gün
 TTL_FULL_SCRAPE = 7 * 24 * 3600  # derindeki silme/değişiklikler için haftalık tam crawl
+WATCHLIST_HEAD_CHECK_MIN_INTERVAL = 30 * 60  # oturumlar arasında 30 dk
 FINGERPRINT_FILM_LIMIT = 28
 TTL_RECOMMENDATION = 30 * 24 * 3600
 RECOMMENDER_VERSION = "v4-last100-explicit-favorites"
@@ -628,6 +629,7 @@ def _delete_cached_user_data(cache, username: str) -> bool:
         cache.delete("films_watchlist", username),
         cache.delete("films_full_refresh", f"watched:{username}"),
         cache.delete("films_full_refresh", f"watchlist:{username}"),
+        cache.delete("watchlist_head_check", username),
         cache.clear(_recommendation_namespace(username)),
         # Pre-v3 recommendation rows were anonymous hashes and cannot be mapped
         # to a username. The obsolete namespace is no longer read.
@@ -2333,6 +2335,15 @@ async def _check_profile_watchlist_freshness(account: Account, settings, service
     """Check one cheap page and start a full refresh only when it is needed."""
     supabase_client, cache = _make_cache(settings)
     pcache = _make_persistent_cache(settings, supabase_client)
+    recent_check = await asyncio.to_thread(
+        pcache.get,
+        "watchlist_head_check",
+        account.username,
+        WATCHLIST_HEAD_CHECK_MIN_INTERVAL,
+    )
+    if recent_check is not None:
+        return {"status": "deferred", "changed": False}
+
     entry = await asyncio.to_thread(
         pcache.get_with_freshness,
         "films_watchlist",
@@ -2353,6 +2364,15 @@ async def _check_profile_watchlist_freshness(account: Account, settings, service
     except EmptyListError:
         head = []
         empty = True
+
+    # Persist the successful head check across tabs, browser restarts and Render
+    # instances. Failed Letterboxd requests never reach here and remain retryable.
+    await asyncio.to_thread(
+        pcache.set,
+        "watchlist_head_check",
+        account.username,
+        {"checked": True},
+    )
 
     changed = entry is None or not _watchlist_head_matches(cached_rows, head)
     full_entry = await asyncio.to_thread(

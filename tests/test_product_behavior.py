@@ -90,10 +90,19 @@ class ProductBehaviorTests(unittest.TestCase):
         )
 
         class FakeCache:
+            def __init__(self):
+                self.sets = []
+
+            def get(self, namespace, _key, ttl=None):
+                return None
+
             def get_with_freshness(self, namespace, _key, ttl=None):
                 if namespace == "films_watchlist":
                     return ([{"slug": "old-film"}], True)
                 return ({"complete": True}, True)
+
+            def set(self, namespace, key, value):
+                self.sets.append((namespace, key, value))
 
             def touch(self, *_args):
                 raise AssertionError("changed watchlist must not be touched as current")
@@ -124,6 +133,10 @@ class ProductBehaviorTests(unittest.TestCase):
         class FakeCache:
             def __init__(self):
                 self.touches = []
+                self.sets = []
+
+            def get(self, namespace, _key, ttl=None):
+                return None
 
             def get_with_freshness(self, namespace, _key, ttl=None):
                 if namespace == "films_watchlist":
@@ -132,6 +145,9 @@ class ProductBehaviorTests(unittest.TestCase):
 
             def touch(self, namespace, key):
                 self.touches.append((namespace, key))
+
+            def set(self, namespace, key, value):
+                self.sets.append((namespace, key, value))
 
         cache = FakeCache()
         with (
@@ -149,7 +165,38 @@ class ProductBehaviorTests(unittest.TestCase):
 
         self.assertEqual(result, {"status": "current", "changed": False})
         self.assertEqual(cache.touches, [("films_watchlist", "film_fan")])
+        self.assertEqual(
+            cache.sets,
+            [("watchlist_head_check", "film_fan", {"checked": True})],
+        )
         start.assert_not_awaited()
+
+    def test_entry_watchlist_check_is_deferred_during_persistent_cooldown(self):
+        account = Account(
+            id=1, auth_user_id="auth-1", username="film_fan", display_name="Film Fan"
+        )
+        settings = SimpleNamespace(scrape_max_retries=3)
+
+        class FakeCache:
+            def get(self, namespace, key, ttl=None):
+                self.last_get = (namespace, key, ttl)
+                return {"checked": True}
+
+        cache = FakeCache()
+        scrape = AsyncMock()
+        with (
+            patch("app.main._make_cache", return_value=(None, object())),
+            patch("app.main._make_persistent_cache", return_value=cache),
+            patch("app.main.scrape_watchlist", new=scrape),
+        ):
+            result = asyncio.run(
+                _check_profile_watchlist_freshness(account, settings, SimpleNamespace())
+            )
+
+        self.assertEqual(result, {"status": "deferred", "changed": False})
+        self.assertEqual(cache.last_get[:2], ("watchlist_head_check", "film_fan"))
+        self.assertEqual(cache.last_get[2], 30 * 60)
+        scrape.assert_not_awaited()
 
 
 if __name__ == "__main__":
