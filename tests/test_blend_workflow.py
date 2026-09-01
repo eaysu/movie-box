@@ -20,6 +20,7 @@ def _account(user_id: int, username: str) -> Account:
         auth_user_id=f"auth-{user_id}",
         username=username,
         display_name=username.title(),
+        avatar_url=f"https://a.ltrbxd.com/{username}.jpg",
         profile_sync_status="ready",
     )
 
@@ -73,6 +74,8 @@ def test_accepted_blend_is_computed_and_persisted_once():
     assert result["result_id"] == "result-1"
     assert result["username1"] == "first_user"
     assert result["username2"] == "second_user"
+    assert result["avatar_url1"].endswith("/first_user.jpg")
+    assert result["avatar_url2"].endswith("/second_user.jpg")
     assert result["score"] >= 99
     assert result["watchlist_pending"] is True
     service.save_blend_result.assert_called_once()
@@ -81,7 +84,9 @@ def test_accepted_blend_is_computed_and_persisted_once():
 
 def test_existing_blend_result_short_circuits_external_work():
     actor = _account(1, "first_user")
+    second = _account(2, "second_user")
     service = SimpleNamespace(
+        get_blend_participants=Mock(return_value=({}, actor, second)),
         get_blend_result=Mock(
             return_value={
                 "algorithm_version": BLEND_VERSION,
@@ -98,6 +103,8 @@ def test_existing_blend_result_short_circuits_external_work():
     assert result == {
         "score": 77,
         "username1": "first_user",
+        "avatar_url1": "https://a.ltrbxd.com/first_user.jpg",
+        "avatar_url2": "https://a.ltrbxd.com/second_user.jpg",
         "request_id": "request-1",
         "cached": True,
     }

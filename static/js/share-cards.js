@@ -69,6 +69,26 @@ function fitText(ctx, value, maxWidth) {
   return `${output.trim()}…`;
 }
 
+function fitWrappedBlock(ctx, value, maxWidth, maxHeight, options = {}) {
+  const maxSize = options.maxSize || 36;
+  const minSize = options.minSize || 24;
+  const weight = options.weight || 600;
+  for (let size = maxSize; size >= minSize; size -= 2) {
+    font(ctx, size, weight);
+    const lineHeight = Math.ceil(size * 1.32);
+    const lines = wrapTextLines(ctx, value, maxWidth);
+    if (lines.length * lineHeight <= maxHeight) return { lines, lineHeight, size };
+  }
+  font(ctx, minSize, weight);
+  const lineHeight = Math.ceil(minSize * 1.32);
+  const maxLines = Math.max(1, Math.floor(maxHeight / lineHeight));
+  return {
+    lines: wrapTextLines(ctx, value, maxWidth, maxLines),
+    lineHeight,
+    size: minSize,
+  };
+}
+
 function drawBackground(ctx, accent = '#00e054') {
   ctx.fillStyle = '#0b0f11';
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
@@ -117,18 +137,29 @@ function drawFooter(ctx, label) {
   ctx.fillText(SITE_LABEL, 1008, 1296);
 }
 
-function posterProxyURL(value) {
+function shareImageProxyURL(subject) {
   try {
-    const url = new URL(clean(value));
-    if (url.protocol !== 'https:') return '';
-    return `${API_BASE}/api/share/image?url=${encodeURIComponent(url.href)}`;
+    const params = new URLSearchParams();
+    const value = typeof subject === 'string' ? subject : subject?.poster_url;
+    if (value) {
+      const url = new URL(clean(value));
+      if (url.protocol === 'https:') params.set('url', url.href);
+    }
+    if (typeof subject === 'object' && subject) {
+      const slug = clean(subject.slug || subject.film_slug);
+      const tmdbId = Number(subject.tmdb_id);
+      if (slug) params.set('slug', slug);
+      if (Number.isInteger(tmdbId) && tmdbId > 0) params.set('tmdb_id', String(tmdbId));
+    }
+    const query = params.toString();
+    return query ? `${API_BASE}/api/share/image?${query}` : '';
   } catch (_) {
     return '';
   }
 }
 
-function loadPoster(url) {
-  const src = posterProxyURL(url);
+function loadShareImage(subject) {
+  const src = shareImageProxyURL(subject);
   if (!src) return Promise.resolve(null);
   return new Promise(resolve => {
     const image = new Image();
@@ -157,8 +188,8 @@ function drawPoster(ctx, image, film, x, y, width, height, accent) {
     fallback.addColorStop(1, `${accent}22`);
     ctx.fillStyle = fallback;
     ctx.fillRect(x, y, width, height);
-    font(ctx, Math.max(18, width * 0.11), 700);
-    drawLines(ctx, wrapTextLines(ctx, film.title || 'Film', width - 28, 4), x + width / 2, y + height / 2 - 50, Math.max(25, width * .14), '#e0e2e6', 'center');
+    font(ctx, Math.max(13, width * 0.075), 700);
+    drawLines(ctx, ['MOVIEBOXD'], x + width / 2, y + height / 2 - 8, 22, `${accent}aa`, 'center');
   }
   const shade = ctx.createLinearGradient(0, y + height * .55, 0, y + height);
   shade.addColorStop(0, 'rgba(0,0,0,0)');
@@ -181,7 +212,7 @@ async function drawPosterStrip(ctx, films, y, accent, options = {}) {
   const height = width * 1.5;
   const total = width * visible.length + gap * (visible.length - 1);
   const start = (WIDTH - total) / 2;
-  const images = await Promise.all(visible.map(film => loadPoster(film.poster_url)));
+  const images = await Promise.all(visible.map(film => loadShareImage(film)));
   visible.forEach((film, index) => {
     const x = start + index * (width + gap);
     drawPoster(ctx, images[index], film, x, y, width, height, accent);
@@ -201,7 +232,7 @@ async function drawCompactPosterGrid(ctx, films, y, accent) {
   const width = 172;
   const height = 258;
   const gap = 18;
-  const images = await Promise.all(visible.map(film => loadPoster(film.poster_url)));
+  const images = await Promise.all(visible.map(film => loadShareImage(film)));
   visible.forEach((film, index) => {
     const row = Math.floor(index / columns);
     const indexInRow = index % columns;
@@ -241,6 +272,45 @@ function metric(ctx, x, y, width, label, value, accent) {
   ctx.fillText(clean(label).toUpperCase(), x + 28, y + 75);
 }
 
+function drawAvatar(ctx, image, initial, x, y, accent) {
+  const radius = 29;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.clip();
+  if (image) {
+    const side = Math.min(image.naturalWidth, image.naturalHeight);
+    const sx = (image.naturalWidth - side) / 2;
+    const sy = (image.naturalHeight - side) / 2;
+    ctx.drawImage(image, sx, sy, side, side, x - radius, y - radius, radius * 2, radius * 2);
+  } else {
+    ctx.fillStyle = `${accent}20`;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    font(ctx, 25, 700);
+    ctx.fillStyle = accent;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(initial || '?', x, y + 1);
+  }
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = accent; ctx.lineWidth = 3; ctx.stroke();
+}
+
+async function drawBlendUsers(ctx, data, user1, user2) {
+  fillRounded(ctx, 72, 280, 936, 80, 40, 'rgba(29,32,35,.82)');
+  const [avatar1, avatar2] = await Promise.all([
+    loadShareImage(data.avatar_url1 || ''),
+    loadShareImage(data.avatar_url2 || ''),
+  ]);
+  drawAvatar(ctx, avatar1, user1.replace('@', '')[0]?.toUpperCase(), 132, 320, '#00e054');
+  drawAvatar(ctx, avatar2, user2.replace('@', '')[0]?.toUpperCase(), 644, 320, '#40bcf4');
+  font(ctx, 27, 700);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00e054'; ctx.fillText(fitText(ctx, user1, 290), 315, 320);
+  ctx.fillStyle = 'rgba(224,226,230,.4)'; ctx.fillText('×', 540, 320);
+  ctx.fillStyle = '#40bcf4'; ctx.fillText(fitText(ctx, user2, 290), 827, 320);
+}
+
 export async function renderBlendShareCard(data, mode = 'watched') {
   if (!data) throw new Error('Blend sonucu bulunamadı.');
   if (document.fonts?.ready) await document.fonts.ready;
@@ -262,22 +332,16 @@ export async function renderBlendShareCard(data, mode = 'watched') {
 
   const user1 = `@${clean(data.username1 || 'kullanıcı')}`;
   const user2 = `@${clean(data.username2 || 'kullanıcı')}`;
-  fillRounded(ctx, 72, 280, 936, 80, 40, 'rgba(29,32,35,.82)');
-  font(ctx, 27, 700);
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#00e054'; ctx.fillText(fitText(ctx, user1, 350), 292, 320);
-  ctx.fillStyle = 'rgba(224,226,230,.4)'; ctx.fillText('×', 540, 320);
-  ctx.fillStyle = '#40bcf4'; ctx.fillText(fitText(ctx, user2, 350), 788, 320);
+  await drawBlendUsers(ctx, data, user1, user2);
 
   fillRounded(ctx, 72, 390, 286, 230, 28, 'rgba(29,32,35,.9)');
-  ctx.beginPath(); ctx.arc(215, 490, 76, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(215, 480, 72, 0, Math.PI * 2);
   ctx.strokeStyle = `${accent}44`; ctx.lineWidth = 16; ctx.stroke();
-  ctx.beginPath(); ctx.arc(215, 490, 76, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(100, Number(data.score) || 0)) / 100);
+  ctx.beginPath(); ctx.arc(215, 480, 72, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(100, Number(data.score) || 0)) / 100);
   ctx.strokeStyle = accent; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.stroke();
   font(ctx, 52, 700); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#e0e2e6';
-  ctx.fillText(String(Number(data.score) || 0), 215, 484);
-  font(ctx, 17, 700); ctx.fillStyle = 'rgba(186,203,182,.65)'; ctx.fillText('% UYUM', 215, 565);
+  ctx.fillText(String(Number(data.score) || 0), 215, 475);
+  font(ctx, 17, 700); ctx.fillStyle = 'rgba(186,203,182,.65)'; ctx.fillText('% UYUM', 215, 584);
 
   const scanned = (Number(data.watched_count1) || 0) + (Number(data.watched_count2) || 0);
   metric(ctx, 386, 390, 300, 'Taranan film', scanned, '#e0e2e6');
@@ -321,9 +385,13 @@ export async function renderPersonalityShareCard(profile) {
   fillRounded(ctx, 72, 760, 936, 422, 30, 'rgba(29,32,35,.9)');
   font(ctx, 18, 700);
   drawLines(ctx, ['FİLMLERİNİN SÖYLEDİĞİ'], 112, 806, 22, '#ff9d3d');
-  font(ctx, personality.length > 360 ? 31 : 36, 600);
-  const lines = wrapTextLines(ctx, personality, 856, personality.length > 360 ? 10 : 8);
-  drawLines(ctx, lines, 112, 856, personality.length > 360 ? 41 : 48, '#e0e2e6');
+  const fitted = fitWrappedBlock(ctx, personality, 856, 278, {
+    maxSize: 36,
+    minSize: 24,
+    weight: 600,
+  });
+  font(ctx, fitted.size, 600);
+  drawLines(ctx, fitted.lines, 112, 856, fitted.lineHeight, '#e0e2e6');
   drawFooter(ctx, `@${username} · Letterboxd Fav 4`);
 
   return {

@@ -72,7 +72,12 @@ def test_three_png_share_modules_are_wired_to_native_share_and_download():
     assert "canvas.width = WIDTH" in share_js
     assert "const WIDTH = 1080" in share_js
     assert "const HEIGHT = 1350" in share_js
-    assert "/api/share/image?url=" in share_js
+    assert "/api/share/image?${query}" in share_js
+    assert "fitWrappedBlock" in share_js
+    assert "data.avatar_url1" in share_js
+    assert "data.avatar_url2" in share_js
+    assert 'id="br-avatar1"' in html
+    assert 'id="br-avatar2"' in html
     assert "navigator.share" in share_js
     assert "new File([card.blob]" in share_js
     assert "anchor.download = filename" in share_js

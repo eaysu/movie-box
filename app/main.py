@@ -278,8 +278,14 @@ def _validated_share_image_url(value: str) -> str:
 async def _fetch_share_image(value: str) -> tuple[bytes, str]:
     current = _validated_share_image_url(value)
     headers = {
-        "Accept": "image/avif,image/webp,image/png,image/jpeg",
-        "User-Agent": "Movieboxd/1.0 share-card-renderer",
+        "Accept": "image/jpeg,image/png,image/webp;q=0.8,*/*;q=0.1",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://letterboxd.com/",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
     }
     try:
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
@@ -932,10 +938,85 @@ def health() -> dict:
 
 
 @app.get("/api/share/image")
-async def share_image(url: str, request: Request) -> Response:
+async def share_image(
+    request: Request,
+    url: str = "",
+    slug: str = "",
+    tmdb_id: int | None = None,
+) -> Response:
     """Authenticated, allowlisted image bridge used by the PNG canvas exporter."""
     await _require_account(request)
-    content, media_type = await _fetch_share_image(url)
+    service = _auth_service()
+    clean_slug = slug.strip().lower()
+    if clean_slug and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,159}", clean_slug):
+        raise HTTPException(status_code=400, detail="Geçersiz film kimliği.")
+
+    candidates: list[str] = []
+    if url:
+        candidates.append(url)
+    asset = {}
+    if clean_slug:
+        try:
+            assets = await asyncio.to_thread(service.get_film_assets, [clean_slug])
+            asset = assets.get(clean_slug) or {}
+        except Exception:
+            asset = {}
+        if asset.get("poster_url"):
+            candidates.append(asset["poster_url"])
+        if not tmdb_id and asset.get("tmdb_id"):
+            tmdb_id = int(asset["tmdb_id"])
+        if asset.get("poster_resolver_url"):
+            holder = {
+                "poster_url": "",
+                "poster_resolver_url": asset["poster_resolver_url"],
+            }
+            with contextlib.suppress(Exception):
+                await resolve_missing_posters([holder])
+            if holder.get("poster_url"):
+                candidates.append(holder["poster_url"])
+
+    if tmdb_id:
+        try:
+            pooled = await asyncio.to_thread(
+                service.get_film_posters_by_tmdb_ids, [tmdb_id]
+            )
+        except Exception:
+            pooled = {}
+        if pooled.get(int(tmdb_id)):
+            candidates.append(pooled[int(tmdb_id)])
+
+    last_error: HTTPException | None = None
+    for candidate in dict.fromkeys(candidates):
+        try:
+            content, media_type = await _fetch_share_image(candidate)
+            break
+        except HTTPException as exc:
+            last_error = exc
+    else:
+        # A stable TMDb id can repair an old catalog row whose poster URL was
+        # absent or no longer downloadable. The successful URL is persisted by
+        # the shared Enricher/asset-store path for later users.
+        settings = get_settings()
+        if tmdb_id and settings.has_tmdb:
+            _supabase_client, cache = _make_cache(settings)
+            enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            meta = await enricher.movie_meta_by_id([int(tmdb_id)])
+            repaired_url = (meta.get(int(tmdb_id)) or {}).get("poster_url") or ""
+            if repaired_url:
+                content, media_type = await _fetch_share_image(repaired_url)
+                if clean_slug:
+                    await asyncio.to_thread(
+                        service.save_film_posters,
+                        [{"slug": clean_slug, "tmdb_id": int(tmdb_id), "poster_url": repaired_url}],
+                    )
+            elif last_error:
+                raise last_error
+            else:
+                raise HTTPException(status_code=404, detail="Poster bulunamadı.")
+        elif last_error:
+            raise last_error
+        else:
+            raise HTTPException(status_code=404, detail="Poster bulunamadı.")
     return Response(
         content=content,
         media_type=media_type,
@@ -2278,15 +2359,20 @@ async def cancel_blend_invite(request_id: str, request: Request) -> dict:
 async def _compute_accepted_blend(
     account: Account, request_id: str, service: AuthService
 ) -> dict:
+    _request, first, second = await asyncio.to_thread(
+        service.get_blend_participants, account, request_id
+    )
     stored = await asyncio.to_thread(service.get_blend_result, request_id)
     if stored is not None and stored.get("algorithm_version") == BLEND_VERSION:
         if (stored.get("result") or {}).get("watchlist_pending"):
             _schedule_blend_watchlist_completion(account, request_id, service)
-        return {**stored["result"], "request_id": request_id, "cached": True}
-
-    _request, first, second = await asyncio.to_thread(
-        service.get_blend_participants, account, request_id
-    )
+        return {
+            **stored["result"],
+            "avatar_url1": first.avatar_url or "",
+            "avatar_url2": second.avatar_url or "",
+            "request_id": request_id,
+            "cached": True,
+        }
     settings = get_settings()
     _supabase_client, cache = _make_cache(settings)
     enricher = (
@@ -2310,6 +2396,8 @@ async def _compute_accepted_blend(
     payload = {
         "username1": first.username,
         "username2": second.username,
+        "avatar_url1": first.avatar_url or "",
+        "avatar_url2": second.avatar_url or "",
         "score": blend_result["score"],
         "confidence": blend_result["confidence"],
         "watched_count1": len(watched1),
@@ -2552,7 +2640,7 @@ async def get_blend_result_status(request_id: str, request: Request) -> dict:
     service = _auth_service()
     try:
         # Consent/participant guard before reading the stored result.
-        await asyncio.to_thread(
+        _blend_request, first, second = await asyncio.to_thread(
             service.get_blend_participants, account, request_id
         )
         stored = await asyncio.to_thread(service.get_blend_result, request_id)
@@ -2560,7 +2648,13 @@ async def get_blend_result_status(request_id: str, request: Request) -> dict:
         _raise_blend_http(exc)
     if not stored:
         return {"status": "preparing", "result": None}
-    result = {**stored["result"], "request_id": request_id, "cached": True}
+    result = {
+        **stored["result"],
+        "avatar_url1": first.avatar_url or "",
+        "avatar_url2": second.avatar_url or "",
+        "request_id": request_id,
+        "cached": True,
+    }
     if result.get("watchlist_pending"):
         _schedule_blend_watchlist_completion(account, request_id, service)
     return {"status": "preparing" if result.get("watchlist_pending") else "ready", "result": result}

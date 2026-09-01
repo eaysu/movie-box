@@ -23,7 +23,7 @@ import {
   openShareCardPreview,
   renderBlendShareCard,
   renderPersonalityShareCard,
-} from './share-cards.js';
+} from './share-cards.js?v=20260902.14';
 
 // ── Cinema facts & quotes ──────────────────────────────────────────────────
 const CINEMA_ITEMS = [
@@ -1388,6 +1388,24 @@ function blendHistoryCard(item) {
   </article>`;
 }
 
+function blendResultWithPeerAvatars(result, peer = {}) {
+  if (!result) return result;
+  const ownUsername = _account?.username || '';
+  const ownAvatar = _account?.avatar_url || '';
+  const peerUsername = peer?.username || '';
+  const peerAvatarURL = peer?.avatar_url || '';
+  const avatarFor = username => {
+    if (username === ownUsername) return ownAvatar;
+    if (username === peerUsername) return peerAvatarURL;
+    return '';
+  };
+  return {
+    ...result,
+    avatar_url1: result.avatar_url1 || avatarFor(result.username1),
+    avatar_url2: result.avatar_url2 || avatarFor(result.username2),
+  };
+}
+
 function emptyInbox(text) {
   return `<div class="rounded-xl border border-dashed border-outline-variant/30 p-5 text-center text-on-surface-variant text-sm">${escapeHTML(text)}</div>`;
 }
@@ -1567,7 +1585,9 @@ async function handleBlendInboxAction(event) {
   }
   if (action === 'view') {
     const item = _blendInbox.history.find(entry => entry.id === requestId);
-    if (item?.blend_result?.result) renderBlendResult(item.blend_result.result);
+    if (item?.blend_result?.result) {
+      renderBlendResult(blendResultWithPeerAvatars(item.blend_result.result, item.peer));
+    }
     return;
   }
   button.disabled = true;
@@ -2207,6 +2227,8 @@ async function renderBlendResult(data) {
   $('br-name1').textContent = '@' + username1;
   $('br-init2').textContent = username2[0].toUpperCase();
   $('br-name2').textContent = '@' + username2;
+  setImage($('br-avatar1'), $('br-init1'), data.avatar_url1, username1);
+  setImage($('br-avatar2'), $('br-init2'), data.avatar_url2, username2);
 
   // Ring color
   $('br-ring').setAttribute('stroke', info.color);
