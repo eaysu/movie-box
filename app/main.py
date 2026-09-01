@@ -22,7 +22,9 @@ import re
 import secrets
 import time
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -119,6 +121,18 @@ _readiness_cache = {"checked_at": 0.0, "ready": False}
 ACCESS_COOKIE = "mb_access"
 REFRESH_COOKIE = "mb_refresh"
 CSRF_COOKIE = "mb_csrf"
+
+SHARE_IMAGE_ALLOWED_HOSTS = frozenset({
+    "image.tmdb.org",
+    "a.ltrbxd.com",
+    "s.ltrbxd.com",
+    "letterboxd.com",
+    "www.letterboxd.com",
+})
+SHARE_IMAGE_MEDIA_TYPES = frozenset({
+    "image/jpeg", "image/png", "image/webp", "image/avif",
+})
+SHARE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 
 
 def _client_ip(request: Request) -> str:
@@ -241,6 +255,56 @@ async def _require_account(request: Request) -> Account:
         )
     except InvalidCredentialsError as exc:
         raise HTTPException(status_code=401, detail="Oturum geçersiz.") from exc
+
+
+def _validated_share_image_url(value: str) -> str:
+    """Allow only known public poster CDNs; never act as a generic proxy."""
+    try:
+        parsed = urlsplit(str(value or "").strip())
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if (
+            parsed.scheme != "https"
+            or host not in SHARE_IMAGE_ALLOWED_HOSTS
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port not in (None, 443)
+        ):
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Geçersiz poster adresi.") from exc
+    return parsed.geturl()
+
+
+async def _fetch_share_image(value: str) -> tuple[bytes, str]:
+    current = _validated_share_image_url(value)
+    headers = {
+        "Accept": "image/avif,image/webp,image/png,image/jpeg",
+        "User-Agent": "Movieboxd/1.0 share-card-renderer",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+            for _hop in range(4):
+                upstream = await client.get(current, headers=headers)
+                if upstream.status_code in {301, 302, 303, 307, 308}:
+                    location = upstream.headers.get("location", "")
+                    if not location:
+                        break
+                    current = _validated_share_image_url(urljoin(current, location))
+                    continue
+                if upstream.status_code != 200:
+                    raise HTTPException(status_code=502, detail="Poster alınamadı.")
+                media_type = upstream.headers.get("content-type", "").split(";", 1)[0].lower()
+                content = upstream.content
+                if media_type not in SHARE_IMAGE_MEDIA_TYPES:
+                    raise HTTPException(status_code=415, detail="Desteklenmeyen poster biçimi.")
+                if not content or len(content) > SHARE_IMAGE_MAX_BYTES:
+                    raise HTTPException(status_code=413, detail="Poster dosyası çok büyük.")
+                return content, media_type
+    except HTTPException:
+        raise
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Poster kaynağına ulaşılamadı.") from exc
+    raise HTTPException(status_code=502, detail="Poster yönlendirmesi tamamlanamadı.")
 
 
 async def _enforce_account_username(request: Request, username: str) -> Account | None:
@@ -865,6 +929,21 @@ def health() -> dict:
         "supabase_enabled": settings.has_supabase,
         "auth_enabled": getattr(settings, "has_auth", False),
     }
+
+
+@app.get("/api/share/image")
+async def share_image(url: str, request: Request) -> Response:
+    """Authenticated, allowlisted image bridge used by the PNG canvas exporter."""
+    await _require_account(request)
+    content, media_type = await _fetch_share_image(url)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/api/readiness")
