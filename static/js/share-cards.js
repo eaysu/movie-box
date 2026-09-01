@@ -158,17 +158,49 @@ function shareImageProxyURL(subject) {
   }
 }
 
-function loadShareImage(subject) {
+async function loadShareImage(subject) {
   const src = shareImageProxyURL(subject);
-  if (!src) return Promise.resolve(null);
-  return new Promise(resolve => {
-    const image = new Image();
-    const timer = setTimeout(() => resolve(null), 9000);
-    image.onload = () => { clearTimeout(timer); resolve(image); };
-    image.onerror = () => { clearTimeout(timer); resolve(null); };
-    image.decoding = 'async';
-    image.src = src;
-  });
+  if (!src) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    // Explicit fetch keeps auth cookies on the proxy request and converts the
+    // response into a local blob URL. Canvas never sees the remote CDN origin,
+    // so Safari/iOS cannot silently taint or drop the poster.
+    const response = await fetch(src, {
+      credentials: 'include',
+      cache: 'force-cache',
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob.size || !blob.type.startsWith('image/')) return null;
+    const objectURL = URL.createObjectURL(blob);
+    return await new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => {
+        image._shareObjectURL = objectURL;
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(objectURL);
+        resolve(null);
+      };
+      image.decoding = 'async';
+      image.src = objectURL;
+    });
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function releaseShareImage(image) {
+  if (image?._shareObjectURL) {
+    URL.revokeObjectURL(image._shareObjectURL);
+    image._shareObjectURL = '';
+  }
 }
 
 function drawPoster(ctx, image, film, x, y, width, height, accent) {
@@ -182,6 +214,7 @@ function drawPoster(ctx, image, film, x, y, width, height, accent) {
     const sx = (image.naturalWidth - sw) / 2;
     const sy = (image.naturalHeight - sh) / 2;
     ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
+    releaseShareImage(image);
   } else {
     const fallback = ctx.createLinearGradient(x, y, x + width, y + height);
     fallback.addColorStop(0, '#1d2023');
@@ -281,6 +314,7 @@ function drawAvatar(ctx, image, initial, x, y, accent) {
     const sx = (image.naturalWidth - side) / 2;
     const sy = (image.naturalHeight - side) / 2;
     ctx.drawImage(image, sx, sy, side, side, x - radius, y - radius, radius * 2, radius * 2);
+    releaseShareImage(image);
   } else {
     ctx.fillStyle = `${accent}20`;
     ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);

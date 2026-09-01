@@ -137,3 +137,12 @@ def test_manual_profile_refresh_also_forces_a_watchlist_check():
 
     assert "refresh_watchlist=${refreshWatchlist ? 'true' : 'false'}" in app_js
     assert "syncProfile(false, true)" in app_js
+
+
+def test_png_posters_are_fetched_with_credentials_into_local_blobs():
+    share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
+
+    assert "credentials: 'include'" in share_js
+    assert "const blob = await response.blob()" in share_js
+    assert "URL.createObjectURL(blob)" in share_js
+    assert "releaseShareImage(image)" in share_js
