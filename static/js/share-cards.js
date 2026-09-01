@@ -122,7 +122,7 @@ function drawBrand(ctx) {
   font(ctx, 20, 600);
   ctx.fillStyle = 'rgba(224,226,230,.45)';
   ctx.textAlign = 'right';
-  ctx.fillText('SİNEMATİK PROFİL KARTI', 1006, 78);
+  ctx.fillText('SİNEFİL PROFİL KARTI', 1006, 78);
 }
 
 function drawFooter(ctx, label) {
@@ -377,7 +377,7 @@ export async function renderPersonalityShareCard(profile) {
   font(ctx, 18, 700);
   drawLines(ctx, ['FAV 4 · KİŞİLİK OKUMASI'], 72, 152, 22, '#ff9d3d');
   font(ctx, 50, 700);
-  drawLines(ctx, ['Sinematik kişiliğim'], 72, 188, 60, '#e0e2e6');
+  drawLines(ctx, ['Sinefil kişiliğim'], 72, 188, 60, '#e0e2e6');
   font(ctx, 24, 600);
   drawLines(ctx, [`@${username}`], 72, 254, 30, 'rgba(186,203,182,.7)');
   await drawPosterStrip(ctx, favorites, 316, '#ff8000', { limit: 4, maxPosterWidth: 210 });
@@ -398,7 +398,7 @@ export async function renderPersonalityShareCard(profile) {
     blob: await canvasBlob(canvas),
     filename: `movieboxd-fav4-${username}.png`,
     title: 'Fav 4 kişilik analizim',
-    text: `@${username} · Fav 4 filmimden sinematik kişilik okumam`,
+    text: `@${username} · Fav 4 filmimden sinefil kişilik okumam`,
   };
 }
 

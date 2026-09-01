@@ -183,8 +183,8 @@ def _deterministic_analysis(
         ranked = sorted(decades.items(), key=lambda item: -item[1])[:2]
         labels = [f"{decade}'ler" for decade, _ in ranked]
         lines.append(
-            f"Ağırlık merkezin {' ve '.join(labels)} sineması; "
-            "yakın dönem izlemelerin bu dönemlere kayıyor."
+            f"En sık geri döndüğün dönem {' ve '.join(labels)}; "
+            "son izlediklerin de bu yıllara doğru kayıyor."
         )
 
     rated = [float(f.user_rating) for f in watched if f.user_rating is not None]
@@ -340,8 +340,8 @@ def build_taste_profile(watched: list[EnrichedFilm]) -> TasteProfileSnapshot:
         summary = f"{director} filmlerine yakınlık gösteren bir zevk profili."
     else:
         summary = (
-            "İzleme geçmişi kaydedildi; metadata kapsamı arttıkça zevk analizi "
-            "daha ayrıntılı hale gelecek."
+            "İzleme geçmişin kaydedildi; film bilgileri tamamlandıkça zevk "
+            "analizin daha ayrıntılı hâle gelecek."
         )
 
     return TasteProfileSnapshot(

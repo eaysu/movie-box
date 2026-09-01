@@ -72,14 +72,14 @@ class JobHelperTests(unittest.TestCase):
         self.assertFalse(
             profile_sync.incremental_due(
                 {"state": "done", "scope": "full",
-                 "updated_at": (now - timedelta(minutes=5)).isoformat()},
+                 "updated_at": (now - timedelta(hours=23)).isoformat()},
                 now=now,
             )
         )
         self.assertTrue(
             profile_sync.incremental_due(
                 {"state": "done", "scope": "full",
-                 "updated_at": (now - timedelta(hours=1)).isoformat()},
+                 "updated_at": (now - timedelta(hours=25)).isoformat()},
                 now=now,
             )
         )

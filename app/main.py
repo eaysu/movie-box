@@ -1454,6 +1454,25 @@ def _daily_pick(username: str, pool: list, n: int) -> list:
     return rng.sample(pool, min(n, len(pool)))
 
 
+def _add_random_reasons(films: list, *, discover_fallback: bool) -> list:
+    """Attach a short, honest explanation to each daily random pick."""
+    for film in films:
+        director = getattr(film, "director", "") or ""
+        genres = getattr(film, "genres", None) or []
+        if discover_fallback:
+            lead = "İzleme listenin dışından, bugünün sürpriz filmi olarak bunu seçtik."
+        else:
+            lead = "Bugünün sürprizini izleme listendeki filmler arasından seçtik."
+        if director:
+            detail = f" {director} imzalı olması da seçime küçük bir karakter katıyor."
+        elif genres:
+            detail = f" {genres[0]} tarafında farklı bir ruh hâline alan açabilir."
+        else:
+            detail = " Kararsız kaldığın bir anda şansı bu filme bırakabilirsin."
+        film.reason = lead + detail
+    return films
+
+
 async def _random_discover_pick(settings, service, account, cache, username, n=3):
     """A few unseen TMDb films for the 'random' mode when the watchlist is empty."""
     if not settings.has_tmdb:
@@ -1625,6 +1644,7 @@ async def _provisional_profile_sync(
     try:
         stored = await asyncio.to_thread(service.get_profile, account)
         stored_favorites = stored.get("favorite_films") or []
+        stored_taste = stored.get("taste") or {}
         profile = ScrapedProfile(
             username=account.username,
             display_name=account.display_name or account.username,
@@ -1671,6 +1691,8 @@ async def _provisional_profile_sync(
         taste = build_taste_profile(watched)
         taste.source_fingerprint = source_fingerprint
         taste.personality = personality_from_favorites(favorites)
+        if stored_taste.get("personality"):
+            taste.personality = stored_taste["personality"]
         await _apply_director_photos(taste, enricher, service)
         await asyncio.to_thread(
             service.save_profile_snapshot,
@@ -1707,6 +1729,25 @@ async def _provisional_profile_sync(
             status_code=503,
             detail="Profil senkronu tamamlanamadı. Son sağlam analiz korunuyor.",
         ) from exc
+
+
+def _favorite_slug_tuple(films: list) -> tuple[str, ...]:
+    """Normalize stored dicts and enriched objects for stable Fav 4 comparison."""
+    slugs: list[str] = []
+    for film in (films or [])[:4]:
+        slug = film.get("slug") if isinstance(film, dict) else getattr(film, "slug", "")
+        if slug:
+            slugs.append(slug)
+    return tuple(slugs)
+
+
+def _personality_refresh_needed(stored_snapshot: dict, favorites: list) -> bool:
+    stored_taste = stored_snapshot.get("taste") or {}
+    return (
+        _favorite_slug_tuple(stored_snapshot.get("favorite_films") or [])
+        != _favorite_slug_tuple(favorites)
+        or not stored_taste.get("analysis")
+    )
 
 
 async def _stash_posters(films: list[dict]) -> None:
@@ -2150,28 +2191,31 @@ class _SyncPipeline:
         taste.source_fingerprint = taste_source_fingerprint(profile, watched)
         taste.personality = personality_from_favorites(favorites)
         await _apply_director_photos(taste, enricher, service)
-        stored_taste = {}
+        stored_snapshot: dict = {}
         with contextlib.suppress(Exception):
-            stored_taste = (
-                await asyncio.to_thread(service.get_profile, account)
-            ).get("taste") or {}
+            stored_snapshot = await asyncio.to_thread(service.get_profile, account)
+        stored_taste = stored_snapshot.get("taste") or {}
         source_changed = (
             stored_taste.get("source_fingerprint") != taste.source_fingerprint
         )
-        # No-change incremental runs retain the last strong prose. Material
-        # changes (new films, ratings or Fav 4) earn one fresh LLM analysis.
-        if not use_llm and not source_changed:
-            if stored_taste.get("analysis"):
-                taste.analysis = stored_taste["analysis"]
-            if stored_taste.get("personality"):
-                taste.personality = stored_taste["personality"]
-        if use_llm or source_changed:
+        if not source_changed and stored_taste.get("analysis"):
+            taste.analysis = stored_taste["analysis"]
+
+        # A full first snapshot gets an LLM pass. Later passes only refresh the
+        # profile prose when its source changes; merely opening the app does not.
+        should_analyze = source_changed or (
+            use_llm and not stored_taste.get("analysis")
+        )
+        refresh_personality = _personality_refresh_needed(stored_snapshot, favorites)
+        if should_analyze:
             with contextlib.suppress(Exception):
                 extra = await analyze_taste(self.settings, watched, favorites)
                 if extra.get("analysis"):
                     taste.analysis = extra["analysis"]
-                if extra.get("personality"):
+                if refresh_personality and extra.get("personality"):
                     taste.personality = extra["personality"]
+        if not refresh_personality and stored_taste.get("personality"):
+            taste.personality = stored_taste["personality"]
         await asyncio.to_thread(
             service.save_profile_snapshot, account, profile, favorites, taste
         )
@@ -3103,6 +3147,7 @@ async def random_pick(req: RandomRequest, request: Request):
                     return
             else:
                 chosen = _daily_pick(req.username, pool, 3)
+            _add_random_reasons(chosen, discover_fallback=discover_fallback)
             log.warning("cache HIT  watchlist/%s (random pick)", req.username)
             yield _sse({
                 "type": "result",
@@ -3138,6 +3183,7 @@ async def random_pick(req: RandomRequest, request: Request):
             if not chosen:
                 yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
                 return
+            _add_random_reasons(chosen, discover_fallback=True)
             yield _sse({
                 "type": "result",
                 "username": req.username,
@@ -3178,6 +3224,8 @@ async def random_pick(req: RandomRequest, request: Request):
                 EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
                 for f in chosen
             ]
+
+        _add_random_reasons(films, discover_fallback=False)
 
         yield _sse({
             "type": "result",

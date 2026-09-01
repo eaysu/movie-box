@@ -14,7 +14,7 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
 - Önce kendi doğrudan scraper'ımız iyileştirilir. Açık kaynak Letterboxd
   kütüphaneleri ancak ölçülmüş bir güvenilirlik avantajı sunarsa değerlendirilir.
 
-## P0 — Aktivasyon, Blend v3 ve öğrenen katalog — 2026-08-31
+## P0 — Aktivasyon, Blend v4 ve öğrenen katalog — 2026-09-01
 
 - [x] İlk `/profile/sync` isteğindeki tekrarlı 250-film ön taramasını kaldır;
   kimlik + Fav 4 bootstrap'ından sonra checkpoint'li full crawl'u hemen başlat.
@@ -31,6 +31,8 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   slayt ve tamamlanma endpoint'i atlanamasın.
 - [x] Blend v3'te düşük puanları negatif, puansız izlemeyi zayıf pozitif sinyal
   yap; negatif rating korelasyonunu gerçek uyumsuzluk cezası olarak koru.
+- [x] Blend v4'te ham benzerliği daha sıcak bir gösterim eğrisiyle kalibre et;
+  Fav 10 ortaklıklarına güçlü, Fav 4 ortaklıklarına çok daha güçlü bonus ver.
 - [x] Kayıtlı Blend'i Letterboxd scrape yerine iki hesabın DB'deki tüm aktif film
   geçmişi üzerinden hesapla; eksik metadata'yı önce ortak katalogdan tamamla,
   yalnız katalog miss'lerinde TMDb'ye git ve temel sonucu kaydet.
@@ -265,10 +267,18 @@ onayı gelmeden uygulanmaz.
     güncel düşük gecikmeli modellere karşı kalite/maliyet A/B testi yapılacak.
 - [x] Backend recommendation sayısı ile frontend'de gösterilen kart sayısını 5
   film olarak eşitle.
-- [x] Öneri profilini en son 100 izlenen filmle sınırla; ilk üç favori yönetmene
-  içerik benzerliğini domine etmeyen en fazla `0.08` ikincil ağırlık ver.
-- [x] Blend skorundaki yapay 70 tabanını kaldır; 0–100 doğrudan benzerlik skoru ve
-  örneklem/metadata/rating kapsamından düşük–orta–yüksek veri kapsamı sun.
+- [x] Öneri profilinin tabanını en son 100 izlenen filmle sınırla; bu pencerenin
+  dışındaki kullanıcı seçimi Fav 10/Fav 4 filmleri güçlü tercih sinyali olarak ekle;
+  ilk üç favori yönetmene en fazla `0.08` ikincil ağırlık ver.
+- [x] Blend'in ham benzerliğini negatif rating cezasını koruyarak 25–100 sıcak
+  gösterim aralığına kalibre et; güveni örneklem/film bilgisi/rating kapsamından
+  ayrı düşük–orta–yüksek veri kapsamı olarak sun.
+- [x] Fav 4 değişmedikçe kişilik okumasını yeniden üretme; otomatik profil
+  kontrolünü her giriş yerine en fazla 24 saatte bire indir.
+- [x] Rastgele film kartlarına watchlist seçimi veya dış keşif olduğunu açıkça
+  söyleyen kısa bir “neden bu film?” metni ekle.
+- [x] Kullanıcıya görünen soğuk “sinematik/metadata/benzerlik skoru” dilini daha
+  doğal “sinefil/film bilgisi/zevk yakınlığı” metinleriyle değiştir.
 - [x] Heuristik profile confidence etiketini tahmin doğruluğu iddiası taşımayan
   “Veri kapsamı” olarak göster; gerçek öneri güveni feedback eval'i sonrasına kalsın.
 

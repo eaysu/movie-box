@@ -178,7 +178,7 @@ function setMode(mode) {
 
   // Headline & description
   const headlines = {
-    taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-gradient-green',  desc: 'Yapay zeka motorumuz, izleme geçmişini ve sinematik tercihlerini analiz ederek bu akşam için mükemmel filmi bulur.' },
+    taste:  { line1: 'İzleme listende',        accent: 'ne izlemelisin?',       accentColor: 'text-gradient-green',  desc: 'Son izlediklerine ve film zevkine bakarak bu akşam sana iyi gelecek filmi bulur.' },
     random: { line1: 'Watchlist\'inden',        accent: 'sürpriz bir film.',     accentColor: 'text-gradient-blue', desc: 'Watchlist\'inden rastgele bir film seç — maksimum 3 kez şansını dene.' },
     blend:  { line1: 'İki sinefilin',          accent: 'uyum skoru.',           accentColor: 'text-gradient-orange', desc: _authEnabled ? 'Kayıtlı bir kullanıcıya istek gönder. Zevkleriniz yalnızca o kabul ederse karşılaştırılır.' : 'İki Letterboxd kullanıcısının film zevkini karşılaştır, ortak favorileri keşfet.' },
   };
@@ -720,7 +720,7 @@ function renderPersistedProfile(data) {
     } else {
       unregisterProfileCarousel('profile-directors');
       _directorDeck = null;
-      $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için daha fazla metadata gerekiyor.</div>';
+      $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için birkaç film bilgisinin daha tamamlanması gerekiyor.</div>';
     }
 
     const analysisLines = (taste.analysis || []).filter(line => typeof line === 'string' && line.trim());
@@ -1893,7 +1893,7 @@ function _obRenderDirector(d) {
 
 function _obRenderPersonality(text) {
   _obStage(`
-    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinematik kişiliğin</p>
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinefil kişiliğin</p>
     <p id="ob-personality" class="mt-5 font-body-lg text-body-lg leading-[1.7] text-on-surface"></p>`);
   streamText($('ob-personality'), text);
 }

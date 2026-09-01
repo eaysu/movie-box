@@ -117,13 +117,13 @@ def _fallback(candidates: list[EnrichedFilm], n: int) -> dict:
         picks.append({
             **c.to_dict(),
             "reason": c.reason or (
-                f"İzleme geçmişinle benzerlik skoru: {c.similarity:.3f}"
+                "Sevdiğin filmlerdeki temalara ve anlatım tarzına yakın olduğu için öne çıktı."
             ),
         })
     return {
         "taste_summary": (
-            "LLM sıralaması devre dışı (OPENAI_API_KEY yok). "
-            "Sonuçlar watchlist'inizden benzerlik skoruna göre sıralandı."
+            "Seçimleri sevdiğin temalara, yönetmenlere ve son izlediklerine "
+            "yakınlıklarına göre sıraladım."
         ),
         "recommendations": picks,
         "llm_used": False,
@@ -196,8 +196,8 @@ async def rank_candidates(
     except Exception as exc:  # noqa: BLE001
         result = _fallback(candidates, n)
         result["taste_summary"] = (
-            f"LLM sıralaması başarısız ({type(exc).__name__}); "
-            "benzerlik sıralaması kullanıldı."
+            "Bu kez seçimleri doğrudan sevdiğin temalara ve yönetmenlere "
+            "yakınlıklarına göre sıraladım."
         )
         return result
 
