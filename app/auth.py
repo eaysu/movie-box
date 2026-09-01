@@ -1082,11 +1082,78 @@ class AuthService:
                 "recipient_not_found",
                 "self_request",
                 "blend_request_exists",
+                "blend_already_accepted",
                 "pending_quota_reached",
                 "blend_user_blocked",
             )
             code = next((item for item in known if item in message), "blend_request_failed")
             raise BlendServiceError(code) from exc
+
+    def find_blend_relation(
+        self, account: Account, recipient_username: str
+    ) -> dict | None:
+        """Find an accepted or still-live pending Blend for one unordered pair."""
+        service = self._service_client()
+        peer = self._first(
+            service.table("users")
+            .select("id,username")
+            .eq("username", recipient_username.strip().lstrip("@").lower())
+            .eq("account_status", "active")
+            .limit(1)
+            .execute()
+        )
+        if not peer:
+            return None
+        peer_id = int(peer["id"])
+        rows = (
+            service.table("blend_requests")
+            .select(
+                "id,requester_user_id,recipient_user_id,status,created_at,expires_at"
+            )
+            .or_(
+                f"and(requester_user_id.eq.{account.id},recipient_user_id.eq.{peer_id}),"
+                f"and(requester_user_id.eq.{peer_id},recipient_user_id.eq.{account.id})"
+            )
+            .in_("status", ["accepted", "pending"])
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        ).data or []
+        now = datetime.now(timezone.utc)
+        accepted = next((row for row in rows if row.get("status") == "accepted"), None)
+        if accepted:
+            return {
+                "request_id": str(accepted["id"]),
+                "status": "accepted",
+                "direction": (
+                    "incoming"
+                    if int(accepted["recipient_user_id"]) == account.id
+                    else "outgoing"
+                ),
+            }
+        for row in rows:
+            if row.get("status") != "pending":
+                continue
+            expires = row.get("expires_at")
+            if isinstance(expires, str):
+                try:
+                    expires = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+                except ValueError:
+                    expires = None
+            if isinstance(expires, datetime) and expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires and expires <= now:
+                continue
+            return {
+                "request_id": str(row["id"]),
+                "status": "pending",
+                "direction": (
+                    "incoming"
+                    if int(row["recipient_user_id"]) == account.id
+                    else "outgoing"
+                ),
+            }
+        return None
 
     def decide_blend_request(
         self,

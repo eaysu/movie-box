@@ -343,6 +343,7 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "recipient_not_found": (404, "Kayıtlı Movieboxd kullanıcısı bulunamadı."),
         "self_request": (422, "Kendine Blend isteği gönderemezsin."),
         "blend_request_exists": (409, "Bu iki kullanıcı arasında bekleyen bir istek var."),
+        "blend_already_accepted": (409, "Bu kullanıcıyla zaten tamamlanmış bir Blend'in var."),
         "pending_quota_reached": (429, "Bekleyen Blend isteği kotasına ulaştın."),
         "blend_user_blocked": (403, "Bu kullanıcıyla Blend isteği oluşturulamaz."),
         "request_not_found": (404, "Blend isteği bulunamadı."),
@@ -2402,20 +2403,43 @@ async def create_blend_invite(req: CreateBlendRequest, request: Request) -> dict
     _require_csrf(request)
     await _enforce_auth_rate_limit(request)
     account = await _require_account(request)
+    service = _auth_service()
+    existing = await asyncio.to_thread(
+        service.find_blend_relation, account, req.recipient_username
+    )
+    if existing:
+        return {
+            "ok": True,
+            "existing": True,
+            "recipient_username": req.recipient_username,
+            **existing,
+        }
     try:
         request_id = await asyncio.to_thread(
-            _auth_service().create_blend_request,
+            service.create_blend_request,
             account,
             req.recipient_username,
             ip_hash=_ip_hash(request),
         )
     except BlendServiceError as exc:
+        if str(exc) in {"blend_request_exists", "blend_already_accepted"}:
+            existing = await asyncio.to_thread(
+                service.find_blend_relation, account, req.recipient_username
+            )
+            if existing:
+                return {
+                    "ok": True,
+                    "existing": True,
+                    "recipient_username": req.recipient_username,
+                    **existing,
+                }
         _raise_blend_http(exc)
     return {
         "ok": True,
         "request_id": request_id,
         "recipient_username": req.recipient_username,
         "status": "pending",
+        "existing": False,
     }
 
 

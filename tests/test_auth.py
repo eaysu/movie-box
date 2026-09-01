@@ -210,6 +210,7 @@ def test_authenticated_user_can_create_consent_based_blend_request():
     account = _account()
     fake_service = SimpleNamespace(
         current_account=lambda _token: account,
+        find_blend_relation=lambda *_args: None,
         create_blend_request=lambda *_args, **_kwargs: "request-123",
     )
     with (
@@ -233,7 +234,55 @@ def test_authenticated_user_can_create_consent_based_blend_request():
         "request_id": "request-123",
         "recipient_username": "other_user",
         "status": "pending",
+        "existing": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("relation", "expected_status", "expected_direction"),
+    [
+        (
+            {"request_id": "accepted-1", "status": "accepted", "direction": "outgoing"},
+            "accepted",
+            "outgoing",
+        ),
+        (
+            {"request_id": "pending-1", "status": "pending", "direction": "incoming"},
+            "pending",
+            "incoming",
+        ),
+    ],
+)
+def test_existing_blend_relation_is_returned_instead_of_creating_a_duplicate(
+    relation, expected_status, expected_direction
+):
+    account = _account()
+    created = []
+    fake_service = SimpleNamespace(
+        current_account=lambda _token: account,
+        find_blend_relation=lambda *_args: relation,
+        create_blend_request=lambda *_args, **_kwargs: created.append(True),
+    )
+    with (
+        patch("app.main.get_settings", return_value=_settings()),
+        patch("app.main._auth_service", return_value=fake_service),
+        patch("app.main._enforce_auth_rate_limit", new=AsyncMock()),
+        TestClient(main.app, base_url="https://testserver") as client,
+    ):
+        response = client.post(
+            "/api/blends/requests",
+            json={"recipient_username": "other_user"},
+            headers={
+                "Cookie": "mb_access=access-token; mb_csrf=csrf-token",
+                "X-CSRF-Token": "csrf-token",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["existing"] is True
+    assert response.json()["status"] == expected_status
+    assert response.json()["direction"] == expected_direction
+    assert created == []
 
 
 def test_pending_blend_count_returns_numbered_inbox_badge_value():

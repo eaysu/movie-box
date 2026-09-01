@@ -674,6 +674,18 @@ BEGIN
 
   IF EXISTS (
     SELECT 1 FROM public.blend_requests
+    WHERE status = 'accepted'
+      AND (
+        (requester_user_id = p_requester_user_id AND recipient_user_id = v_recipient_user_id)
+        OR
+        (requester_user_id = v_recipient_user_id AND recipient_user_id = p_requester_user_id)
+      )
+  ) THEN
+    RAISE EXCEPTION 'blend_already_accepted';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.blend_requests
     WHERE status = 'pending'
       AND (
         (requester_user_id = p_requester_user_id AND recipient_user_id = v_recipient_user_id)

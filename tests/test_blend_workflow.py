@@ -225,6 +225,7 @@ def test_schema_contains_atomic_consent_guards():
     assert "CREATE TABLE IF NOT EXISTS public.user_blocks" in schema
     assert "CREATE TABLE IF NOT EXISTS public.user_reports" in schema
     assert "RAISE EXCEPTION 'blend_user_blocked'" in schema
+    assert "RAISE EXCEPTION 'blend_already_accepted'" in schema
 
 
 def test_delete_blend_checks_participant_then_deletes_shared_request():

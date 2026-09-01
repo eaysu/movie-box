@@ -1521,13 +1521,49 @@ async function loadBlendInbox(show = true) {
   if (show) showView('inbox');
   $('inbox-error').classList.add('hidden');
   try {
-    renderBlendInbox(await apiJSON('/api/blends'));
+    const data = await apiJSON('/api/blends');
+    renderBlendInbox(data);
+    return data;
   } catch (error) {
     if (show) {
       $('inbox-error').textContent = error.message || 'Inbox yüklenemedi.';
       $('inbox-error').classList.remove('hidden');
     }
   }
+  return null;
+}
+
+async function routeToExistingBlend(data) {
+  const requestId = data.request_id;
+  if (data.status === 'accepted') {
+    let stored = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`);
+    if (!stored.result) {
+      stored = await apiJSON(`/api/blends/requests/${encodeURIComponent(requestId)}/result`, {
+        method: 'POST', headers: csrfHeaders(),
+      });
+    }
+    if (stored.result) {
+      await renderBlendResult(stored.result);
+      return;
+    }
+    await loadMyBlends(true);
+    return;
+  }
+
+  await loadBlendInbox(true);
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  const trigger = [...document.querySelectorAll('[data-request-id]')]
+    .find(node => node.dataset.requestId === requestId);
+  const card = trigger?.closest('article');
+  if (card) {
+    card.classList.add('ring-2', 'ring-secondary-container/70');
+    card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => card.classList.remove('ring-2', 'ring-secondary-container/70'), 2600);
+  }
+  $('inbox-notice').textContent = data.direction === 'incoming'
+    ? 'Bu kullanıcı sana zaten bir Blend isteği göndermiş. İstek burada.'
+    : 'Bu kullanıcıya gönderdiğin Blend isteği hâlâ yanıt bekliyor.';
+  $('inbox-notice').classList.remove('hidden');
 }
 
 async function handleBlendInboxAction(event) {
@@ -2452,6 +2488,10 @@ async function blendRequestFlow(opts = {}) {
     });
     $(inputId).value = '';
     $(panelId).classList.add('hidden');
+    if (data.existing) {
+      await routeToExistingBlend(data);
+      return;
+    }
     notify(`@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
     loadBlendInbox(false);
   } catch (error) {

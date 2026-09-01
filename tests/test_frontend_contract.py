@@ -146,3 +146,13 @@ def test_png_posters_are_fetched_with_credentials_into_local_blobs():
     assert "const blob = await response.blob()" in share_js
     assert "URL.createObjectURL(blob)" in share_js
     assert "releaseShareImage(image)" in share_js
+
+
+def test_existing_or_pending_blend_routes_to_its_current_location():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "async function routeToExistingBlend(data)" in app_js
+    assert "if (data.status === 'accepted')" in app_js
+    assert "await renderBlendResult(stored.result)" in app_js
+    assert "await loadBlendInbox(true)" in app_js
+    assert "Bu kullanıcı sana zaten bir Blend isteği göndermiş" in app_js
