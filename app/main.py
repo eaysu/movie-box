@@ -51,6 +51,7 @@ from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
     AccessBlockedError,
+    EmptyListError,
     ScrapedFilm,
     ScrapedProfile,
     ScrapeError,
@@ -2248,6 +2249,112 @@ async def _refresh_profile_watchlist(account: Account, settings, service) -> int
         force=True,
     )
     return len(films)
+
+
+def _watchlist_head_matches(cached_rows: list[dict], head: list[ScrapedFilm]) -> bool:
+    """Compare the newest Letterboxd page without crawling the whole watchlist."""
+    expected = [
+        row.get("slug", "") for row in cached_rows[:FINGERPRINT_FILM_LIMIT]
+    ]
+    actual = [film.slug for film in head]
+    return bool(expected) and actual == expected[:len(actual)] and len(actual) == len(expected)
+
+
+async def _check_profile_watchlist_freshness(account: Account, settings, service) -> dict:
+    """Check one cheap page and start a full refresh only when it is needed."""
+    supabase_client, cache = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    entry = await asyncio.to_thread(
+        pcache.get_with_freshness,
+        "films_watchlist",
+        account.username,
+        ttl=None,
+    )
+    cached_rows = (entry[0] if entry is not None else []) or []
+
+    empty = False
+    try:
+        head, _complete = await scrape_watchlist(
+            account.username,
+            delay=0,
+            max_pages=1,
+            film_limit=FINGERPRINT_FILM_LIMIT,
+            max_retries=settings.scrape_max_retries,
+        )
+    except EmptyListError:
+        head = []
+        empty = True
+
+    changed = entry is None or not _watchlist_head_matches(cached_rows, head)
+    full_entry = await asyncio.to_thread(
+        pcache.get_with_freshness,
+        "films_full_refresh",
+        f"watchlist:{account.username}",
+        ttl=TTL_FULL_SCRAPE,
+    )
+    full_due = not bool(full_entry and full_entry[1])
+
+    # An explicitly empty public watchlist is already a complete result; do not
+    # start a second crawl that would raise the same EmptyListError.
+    if empty:
+        if changed or full_due:
+            await asyncio.to_thread(
+                pcache.set, "films_watchlist", account.username, []
+            )
+            await asyncio.to_thread(
+                pcache.set,
+                "films_full_refresh",
+                f"watchlist:{account.username}",
+                {"complete": True},
+            )
+        else:
+            await asyncio.to_thread(
+                pcache.touch, "films_watchlist", account.username
+            )
+        return {"status": "updated" if changed else "current", "changed": changed}
+
+    if changed or full_due:
+        enricher = (
+            Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            if settings.has_tmdb else None
+        )
+        _task, joined = await _get_or_create_film_flight(
+            account.username,
+            "watchlist",
+            enricher=enricher,
+            pcache=pcache,
+            scrape_kwargs={
+                "delay": settings.scrape_delay,
+                "max_pages": settings.scrape_max_pages,
+                "film_limit": settings.watchlist_film_limit,
+                "max_retries": settings.scrape_max_retries,
+            },
+        )
+        log.warning(
+            "watchlist head %s %s (changed=%s full_due=%s)",
+            "joined" if joined else "refresh started",
+            account.username,
+            changed,
+            full_due,
+        )
+        return {"status": "refreshing", "changed": changed}
+
+    await asyncio.to_thread(pcache.touch, "films_watchlist", account.username)
+    return {"status": "current", "changed": False}
+
+
+@app.post("/api/profile/watchlist/check")
+async def check_my_watchlist(request: Request) -> dict:
+    """Non-blocking entry check: one Letterboxd page, full crawl only on change."""
+    _require_csrf(request)
+    await _enforce_heavy_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        return await _check_profile_watchlist_freshness(
+            account, get_settings(), _auth_service()
+        )
+    except ScrapeError as exc:
+        _raise_scrape_http(exc)
 
 
 @app.post("/api/profile/sync")

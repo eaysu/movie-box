@@ -243,6 +243,8 @@ onayı gelmeden uygulanmaz.
     için çek; kayıtlı Blend hesabında ise iki kullanıcının tüm aktif geçmişini
     analiz et.
 - [x] User film cache'inde stale-while-revalidate uygula.
+- [x] Profil girişinde watchlist'in yalnız ilk sayfasını fingerprint olarak kontrol et;
+  değişiklik varsa kullanıcıyı bekletmeden tam watchlist cache'ini arka planda yenile.
 - [x] İçerik tabanlı `profile + watchlist + model + sonuç sayısı + algoritma sürümü`
   anahtarı ile recommendation/LLM sonucunu cache'le; filtreler eklendiğinde aynı
   anahtara dahil et.

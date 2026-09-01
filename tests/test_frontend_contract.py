@@ -147,6 +147,14 @@ def test_manual_profile_refresh_also_forces_a_watchlist_check():
     assert "syncProfile(false, true)" in app_js
 
 
+def test_profile_entry_checks_watchlist_head_without_blocking_profile_render():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "else checkWatchlistFreshness();" in app_js
+    assert "'/api/profile/watchlist/check'" in app_js
+    assert "mb_watchlist_check:" in app_js
+
+
 def test_png_posters_are_fetched_with_credentials_into_local_blobs():
     share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
 

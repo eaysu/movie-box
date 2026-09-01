@@ -1740,8 +1740,26 @@ async function loadProfile() {
     const profile = await apiJSON('/api/profile/me');
     renderPersistedProfile(profile);
     if (_account?.profile_sync_status === 'pending' || profile.needs_refresh) syncProfile();
+    else checkWatchlistFreshness();
   } catch (_) {
     if (_account?.profile_sync_status === 'pending') syncProfile();
+  }
+}
+
+async function checkWatchlistFreshness() {
+  if (!_account) return;
+  const key = `mb_watchlist_check:${_account.username || _account.id}`;
+  const lastCheck = Number(sessionStorage.getItem(key) || 0);
+  if (Date.now() - lastCheck < 5 * 60 * 1000) return;
+  sessionStorage.setItem(key, String(Date.now()));
+  try {
+    await apiJSON('/api/profile/watchlist/check', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+    });
+  } catch (_) {
+    // The last known-good watchlist remains usable when Letterboxd is unavailable.
+    sessionStorage.removeItem(key);
   }
 }
 
