@@ -2514,16 +2514,27 @@ function renderBlendWatchlist(payload = {}) {
     $('br-wishlist-section').classList.add('flex');
     $('br-no-wishlist').classList.add('hidden');
   };
-  if (common_watchlist_films && common_watchlist_films.length > 0) {
+  // The backend fills missing common-watchlist slots with taste-matched bridge
+  // picks. Render both pools together; otherwise a four-film common list would
+  // hide the fifth recommendation that was already computed and persisted.
+  const common = Array.isArray(common_watchlist_films) ? common_watchlist_films : [];
+  const bridge = Array.isArray(bridge_films) ? bridge_films : [];
+  const combined = [...common, ...bridge].slice(0, 5);
+  if (combined.length > 0 && common.length > 0) {
     title.textContent = 'Birlikte İzlemek İstedikleriniz';
-    sub.classList.add('hidden');
-    sub.textContent = '';
-    show(common_watchlist_films);
-  } else if (bridge_films && bridge_films.length > 0) {
-    title.textContent = `Sizi Birleştirecek ${bridge_films.length} Film`;
+    if (bridge.length > 0) {
+      sub.textContent = `${common.length} ortak film ve zevklerinizi buluşturan ${combined.length - common.length} öneri.`;
+      sub.classList.remove('hidden');
+    } else {
+      sub.classList.add('hidden');
+      sub.textContent = '';
+    }
+    show(combined);
+  } else if (combined.length > 0) {
+    title.textContent = `Sizi Birleştirecek ${combined.length} Film`;
     sub.textContent = 'Watchlist’lerinizde ortak film çıkmadı — ikinizin zevkini buluşturacak, henüz kimsenin izlemediği filmler.';
     sub.classList.remove('hidden');
-    show(bridge_films);
+    show(combined);
   } else {
     $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.remove('hidden');

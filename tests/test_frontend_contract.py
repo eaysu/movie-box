@@ -232,6 +232,17 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
     assert "count.toLocaleString('tr-TR')" in app_js
 
 
+def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    render = app_js.split("function renderBlendWatchlist", 1)[1].split(
+        "// ── Blend SSE flow", 1
+    )[0]
+
+    assert "const combined = [...common, ...bridge].slice(0, 5);" in render
+    assert "show(combined);" in render
+    assert "common.length - 1" not in render
+
+
 def test_every_app_shell_asset_has_an_explicit_immutable_version():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -243,7 +254,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.19" in html
+    assert "/static/js/app.js?v=20260902.20" in html
     assert app_js.count(f"?{dependency_version}") == 7
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
