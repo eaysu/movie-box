@@ -223,6 +223,8 @@ onayı gelmeden uygulanmaz.
   consent guard contract testleri.
 - [x] Bekleyen Blend isteklerini gösteren sayılı inbox ışığı ekle; görünür sekmede
   hafif count endpoint'i ile periyodik güncelle ve `9+` üst sınırı uygula.
+- [x] Public hero için kullanıcı adı/kişisel veri döndürmeden, 5 dakika önbellekli
+  toplam aktif kayıtlı sinefil sayısı endpoint'i ve sosyal kanıt etiketi ekle.
 - [ ] Gerçek Supabase üzerinde iki kullanıcılı RLS/state-machine entegrasyon testi.
 - [ ] Login → profil senkronu → inbox → Blend kabulü browser E2E testi.
 - [ ] Eski anonim endpoint'ler için rollout flag'i, migration telemetry'si ve geri

@@ -75,6 +75,28 @@ def _events(response):
     ]
 
 
+class PublicStatsTests(unittest.TestCase):
+    def test_public_stats_returns_cached_active_account_count(self):
+        settings = SimpleNamespace(has_supabase=True)
+        original_cache = main._public_stats_cache
+        main._public_stats_cache = {"checked_at": 0.0, "registered_users": 0}
+        try:
+            with (
+                patch("app.main.get_settings", return_value=settings),
+                patch("app.main._count_registered_users", return_value=37) as counter,
+                TestClient(main.app) as client,
+            ):
+                first = client.get("/api/public/stats")
+                second = client.get("/api/public/stats")
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(first.json(), {"registered_users": 37})
+            self.assertEqual(second.json(), {"registered_users": 37})
+            counter.assert_called_once_with(settings)
+        finally:
+            main._public_stats_cache = original_cache
+
+
 class SseIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.original_limiter = main._heavy_rate_limiter

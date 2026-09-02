@@ -662,6 +662,34 @@ async function loadHealth() {
   } catch (_) { return null; }
 }
 
+let _publicStatsPromise = null;
+
+async function loadPublicStats() {
+  // Coalesce duplicate boot/logout calls so a single page never makes two
+  // identical anonymous requests.
+  if (_publicStatsPromise) return _publicStatsPromise;
+  _publicStatsPromise = apiJSON('/api/public/stats')
+    .then((data) => {
+      const count = Number(data?.registered_users || 0);
+      document.querySelectorAll('[data-public-user-count]').forEach((el) => {
+        const value = el.querySelector('[data-public-user-count-value]');
+        if (!value || count < 1) {
+          el.classList.add('hidden');
+          return;
+        }
+        value.textContent = count.toLocaleString('tr-TR');
+        el.classList.remove('hidden');
+      });
+      return data;
+    })
+    .catch(() => {
+      // Social proof is optional; never show an error state for it.
+      _publicStatsPromise = null;
+      return null;
+    });
+  return _publicStatsPromise;
+}
+
 // ── Account & persisted profile ───────────────────────────────────────────
 let _authEnabled = false;
 let _account = null;
@@ -2178,7 +2206,7 @@ async function boot() {
     apiJSON('/api/auth/me').catch(() => null),
   ]);
   _authEnabled = Boolean(health?.auth_enabled);
-  if (!_authEnabled) { showView('idle'); return; }
+  if (!_authEnabled) { showView('idle'); loadPublicStats(); return; }
   if (me?.account) {
     enterApp(me.account);
     return;
@@ -2193,6 +2221,7 @@ async function boot() {
     } catch (_) {}
   }
   showView('auth');
+  loadPublicStats();
 }
 
 // ── Loading steps ──────────────────────────────────────────────────────────
@@ -3077,6 +3106,7 @@ async function logoutAccount() {
   $('profile-settings-menu').classList.add('hidden');
   setAuthMode('login');
   showView('auth');
+  loadPublicStats();
 }
 
 function toggleProfileMenu(force) {

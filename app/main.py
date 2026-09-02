@@ -133,6 +133,29 @@ _delete_rate_limiter = SlidingWindowRateLimiter(
     burst=1,
     burst_seconds=15,
 )
+
+# Public social-proof stats are intentionally tiny and cached.  The hero is
+# reachable without a session, so querying the users table on every page load
+# would turn a harmless UI flourish into avoidable Supabase traffic.
+_PUBLIC_STATS_TTL_SECONDS = 5 * 60
+_public_stats_lock = asyncio.Lock()
+_public_stats_cache = {"checked_at": 0.0, "registered_users": 0}
+
+
+def _count_registered_users(settings) -> int:
+    """Return the number of active accounts without exposing user records."""
+    from supabase import create_client
+
+    client = create_client(settings.supabase_url, settings.supabase_key)
+    result = (
+        client.table("users")
+        .select("id", count="exact", head=True)
+        .eq("account_status", "active")
+        .execute()
+    )
+    return max(0, int(getattr(result, "count", 0) or 0))
+
+
 _auth_rate_limiter = SlidingWindowRateLimiter(
     limit=8,
     window_seconds=15 * 60,
@@ -1055,6 +1078,33 @@ def health() -> dict:
         "supabase_enabled": settings.has_supabase,
         "auth_enabled": getattr(settings, "has_auth", False),
     }
+
+
+@app.get("/api/public/stats")
+async def public_stats() -> dict:
+    """Small, anonymous social-proof payload used by the public hero."""
+    settings = get_settings()
+    if not settings.has_supabase:
+        return {"registered_users": 0}
+
+    now = time.monotonic()
+    if now - _public_stats_cache["checked_at"] < _PUBLIC_STATS_TTL_SECONDS:
+        return {"registered_users": _public_stats_cache["registered_users"]}
+
+    async with _public_stats_lock:
+        # Another request may have refreshed the value while this one waited.
+        now = time.monotonic()
+        if now - _public_stats_cache["checked_at"] >= _PUBLIC_STATS_TTL_SECONDS:
+            try:
+                count = await asyncio.to_thread(_count_registered_users, settings)
+            except Exception:
+                # Keep the last known value during a transient Supabase issue;
+                # this endpoint should never make the landing page fail.
+                log.warning("public user count unavailable", exc_info=True)
+                count = _public_stats_cache["registered_users"]
+            _public_stats_cache.update(checked_at=now, registered_users=count)
+
+    return {"registered_users": _public_stats_cache["registered_users"]}
 
 
 @app.get("/api/share/image")

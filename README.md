@@ -48,6 +48,7 @@ Open http://localhost:8000
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/health` | Shows which integrations are configured |
+| `GET /api/public/stats` | Returns the cached total of active registered users for the public hero |
 | `GET /api/readiness` | Returns 200 only when auth config and required Supabase tables are usable |
 | `POST /api/auth/register/start` | Creates a pending account and bio challenge |
 | `POST /api/auth/register/verify` | Verifies Letterboxd ownership |

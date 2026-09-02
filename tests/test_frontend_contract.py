@@ -219,6 +219,17 @@ def test_health_and_session_boot_requests_start_in_parallel():
     assert "apiJSON('/api/auth/me').catch(() => null)" in boot
 
 
+def test_public_registration_count_is_rendered_without_exposing_user_records():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert html.count('data-public-user-count class=') == 2
+    assert 'data-public-user-count-value' in html
+    assert "apiJSON('/api/public/stats')" in app_js
+    assert "data?.registered_users" in app_js
+    assert "count.toLocaleString('tr-TR')" in app_js
+
+
 def test_every_app_shell_asset_has_an_explicit_immutable_version():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -230,7 +241,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.18" in html
+    assert "/static/js/app.js?v=20260902.19" in html
     assert app_js.count(f"?{dependency_version}") == 7
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
