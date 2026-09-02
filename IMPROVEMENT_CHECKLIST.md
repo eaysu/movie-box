@@ -37,6 +37,8 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   yönetmen ve Letterboxd bağlantısını göster.
 - [x] Ana profile Letterboxd turuncusu “Mektup yolla” aksiyonu ile ona bitişik
   mektup alma aç/kapat anahtarını ekle.
+- [x] Sinefil Sineması kartlarını sade liste + detay modalına dönüştür; mektup
+  gelen kutusunu kişi bazlı profil başlıkları altında grupla.
 - [ ] **MANUEL UYGULAMA:** Güncel `supabase/schema.sql` dosyasını Supabase SQL
   Editor’da çalıştır; `user_letter_keys`, `cinephile_letters` ve RPC’leri
   oluşturmadan Render deploy etme.

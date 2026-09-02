@@ -1523,6 +1523,15 @@ function letterCard(item, payload) {
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(peer)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
 }
 
+function letterThreadCard(group) {
+  const peer = group.peer || {};
+  const username = escapeHTML(peer.username || '');
+  const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
+  const unread = group.items.filter(({ item }) => item.direction === 'received' && !item.read_at).length;
+  const details = group.items.map(({ item, payload }) => letterCard(item, payload)).join('');
+  return `<article class="overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container shadow-lg"><button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 p-4 text-left hover:bg-surface-variant/40"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="text-xs text-on-surface-variant">@${username} · ${group.items.length} mektup</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread} yeni</span>` : ''}<span class="material-symbols-outlined text-on-surface-variant transition-transform">expand_more</span></button><div data-letter-thread-body="${username}" class="hidden border-t border-outline-variant/20 p-3"><div class="flex flex-col gap-3">${details}</div></div></article>`;
+}
+
 async function ensureDeviceLetterIdentity() {
   if (!_account) return null;
   const crypto = await lettersCrypto();
@@ -1561,8 +1570,20 @@ async function loadLetters() {
         if (target) target.item.read_at = new Date().toISOString();
       }
     }));
+    const threads = new Map();
+    decoded.forEach(entry => {
+      const key = entry.item.peer?.username || 'unknown';
+      if (!threads.has(key)) threads.set(key, { peer: entry.item.peer, items: [] });
+      threads.get(key).items.push(entry);
+    });
+    threads.forEach(thread => thread.items.sort((a, b) => new Date(b.item.created_at) - new Date(a.item.created_at)));
+    const sortedThreads = [...threads.values()].sort((a, b) => {
+      const latestA = a.items[0]?.item?.created_at || '';
+      const latestB = b.items[0]?.item?.created_at || '';
+      return new Date(latestB) - new Date(latestA);
+    });
     $('letters-list').innerHTML = decoded.length
-      ? decoded.map(({ item, payload }) => letterCard(item, payload)).join('')
+      ? sortedThreads.map(letterThreadCard).join('')
       : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">Henüz mektubun yok. Mektuba açık sinefilleri Sinefil Sineması’nda bulabilirsin.</div>';
     if (unread.length) refreshBlendBadge();
   } catch (error) {
@@ -1896,6 +1917,13 @@ async function routeToExistingBlend(data) {
 }
 
 async function handleBlendInboxAction(event) {
+  const thread = event.target.closest('[data-letter-thread]');
+  if (thread) {
+    const username = thread.dataset.letterThread;
+    const body = document.querySelector(`[data-letter-thread-body="${CSS.escape(username)}"]`);
+    if (body) body.classList.toggle('hidden');
+    return;
+  }
   const letterButton = event.target.closest('[data-letter-action]');
   if (letterButton) {
     const action = letterButton.dataset.letterAction;
@@ -2892,6 +2920,8 @@ function renderBlendWatchlist(payload = {}) {
 
 // ── Sinefil Sineması ──────────────────────────────────────────────────────
 let _sinefilSearchTimer = null;
+let _activeSinefilProfile = null;
+let _sinefilProfiles = [];
 
 function sinefilMessage(kind, message = '') {
   const el = $(`sinefil-${kind}`);
@@ -2924,13 +2954,32 @@ function sinefilCard(profile) {
     </div>
     ${match}
     <div class="mt-4 grid grid-cols-4 gap-2">${posters}</div>
-    <div class="mt-4 flex flex-wrap items-center gap-2">
-      <button type="button" data-sinefil-personality="${username}" class="flex-1 rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Fav 4 okuması</button>
-      <button type="button" data-sinefil-blend="${username}" class="rounded-xl bg-tertiary-container px-3 py-2.5 font-label-sm text-label-sm text-on-tertiary-container hover:opacity-90">Blend</button>
-      ${profile.letters_open ? `<button type="button" data-sinefil-letter="${username}" class="rounded-xl border border-secondary-container/45 px-3 py-2.5 font-label-sm text-label-sm text-secondary-container hover:bg-secondary-container/10">Mektup</button>` : ''}
-    </div>
-    <div data-sinefil-personality-panel="${username}" class="hidden mt-3 rounded-xl border border-tertiary-container/20 bg-tertiary-container/10 p-3 text-sm leading-relaxed text-on-surface-variant"></div>
+    <button type="button" data-sinefil-profile="${username}" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Profili görüntüle</button>
   </article>`;
+}
+
+async function openSinefilProfile(username) {
+  const profile = _sinefilProfiles.find(item => item.username === username);
+  if (!profile) return;
+  _activeSinefilProfile = profile;
+  $('sinefil-profile-title').textContent = profile.display_name || username;
+  $('sinefil-profile-username').textContent = `@${username}`;
+  const fallback = $('sinefil-profile-avatar-fallback');
+  fallback.textContent = (profile.display_name || username || '?')[0].toUpperCase();
+  const avatar = $('sinefil-profile-avatar');
+  const avatarUrl = safeImageURL(profile.avatar_url);
+  avatar.classList.toggle('hidden', !avatarUrl); fallback.classList.toggle('hidden', Boolean(avatarUrl));
+  if (avatarUrl) { avatar.src = avatarUrl; avatar.alt = profile.display_name || username; }
+  const posters = (profile.favorites || []).slice(0, 4).map(film => { const url = safeImageURL(film.poster_url); return url ? `<img src="${url}" alt="${escapeHTML(film.title || 'Film')}" class="aspect-[2/3] w-full rounded-lg object-cover"/>` : `<div class="flex aspect-[2/3] items-center justify-center rounded-lg bg-surface-variant p-2 text-center text-[10px] text-on-surface-variant">${escapeHTML(film.title || 'Film')}</div>`; }).join('');
+  $('sinefil-profile-posters').innerHTML = posters || '<p class="col-span-4 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</p>';
+  $('sinefil-profile-personality').textContent = 'Okuma yükleniyor…';
+  $('sinefil-profile-blend').onclick = () => requestSinefilBlend(username, $('sinefil-profile-blend'));
+  const letterButton = $('sinefil-profile-letter');
+  letterButton.classList.toggle('hidden', !profile.letters_open);
+  letterButton.onclick = () => openLetterCompose(username);
+  $('dialog-sinefil-profile').showModal();
+  try { const data = await apiJSON(`/api/sinefil-alani/${encodeURIComponent(username)}/personality`); $('sinefil-profile-personality').textContent = data.personality || 'Bu profil için kişilik okuması henüz hazır değil.'; }
+  catch (error) { $('sinefil-profile-personality').textContent = error.message || 'Kişilik okuması yüklenemedi.'; }
 }
 
 async function loadSinefilArea() {
@@ -2940,6 +2989,7 @@ async function loadSinefilArea() {
   try {
     const data = await apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`);
     const profiles = data.profiles || [];
+    _sinefilProfiles = profiles;
     if (!profiles.length) {
       $('sinefil-grid').innerHTML = '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Henüz gösterilecek sinefil yok. Görünürlüğünü açan yeni profiller burada belirecek.</div>';
       return;
@@ -2952,25 +3002,6 @@ async function loadSinefilArea() {
     $('sinefil-grid').innerHTML = '';
     sinefilMessage('error', error.message || 'Sinefil Sineması yüklenemedi.');
   }
-}
-
-async function toggleSinefilPersonality(username, button) {
-  const panel = document.querySelector(`[data-sinefil-personality-panel="${CSS.escape(username)}"]`);
-  if (!panel) return;
-  if (panel.dataset.loaded === 'true') { panel.classList.toggle('hidden'); return; }
-  button.disabled = true;
-  button.textContent = 'Yükleniyor…';
-  try {
-    const data = await apiJSON(`/api/sinefil-alani/${encodeURIComponent(username)}/personality`);
-    panel.textContent = data.personality || 'Bu profil için kişilik okuması henüz hazır değil.';
-    panel.dataset.loaded = 'true';
-    panel.classList.remove('hidden');
-    button.textContent = 'Fav 4 okumasını gizle';
-  } catch (error) {
-    panel.textContent = error.message || 'Kişilik okuması yüklenemedi.';
-    panel.classList.remove('hidden');
-    button.textContent = 'Fav 4 okuması';
-  } finally { button.disabled = false; }
 }
 
 async function requestSinefilBlend(username, button) {
@@ -3617,7 +3648,7 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-letter-compose')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
@@ -3635,9 +3666,9 @@ $('sinefil-search').addEventListener('input', () => {
   _sinefilSearchTimer = setTimeout(loadSinefilArea, 280);
 });
 $('sinefil-grid').addEventListener('click', event => {
-  const personality = event.target.closest('[data-sinefil-personality]');
-  if (personality) {
-    toggleSinefilPersonality(personality.dataset.sinefilPersonality, personality);
+  const profile = event.target.closest('[data-sinefil-profile]');
+  if (profile) {
+    openSinefilProfile(profile.dataset.sinefilProfile);
     return;
   }
   const blend = event.target.closest('[data-sinefil-blend]');
@@ -3696,7 +3727,7 @@ document.querySelectorAll('[data-inbox-tab]').forEach(button => button.addEventL
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
 $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
 $('letter-compose-form').addEventListener('submit', sendLetter);
-$('letter-compose-body').addEventListener('input', () => { $('letter-compose-count').textContent = `${$('letter-compose-body').value.length} / 600`; });
+$('letter-compose-body').addEventListener('input', () => { $('letter-compose-count').textContent = `${600 - $('letter-compose-body').value.length} karakter kaldı`; });
 $('letter-film-search').addEventListener('input', () => { clearTimeout(_letterSearchTimer); _letterSearchTimer = setTimeout(searchLetterFilms, 250); });
 $('letter-film-results').addEventListener('click', event => {
   const pick = event.target.closest('[data-letter-film-index]');

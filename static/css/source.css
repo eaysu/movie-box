@@ -254,6 +254,9 @@
     background: transparent;
     border: 0;
   }
+  .sinefil-profile-dialog {
+    width: min(94vw, 760px);
+  }
   .auth-info-dialog::backdrop {
     background: rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(5px);

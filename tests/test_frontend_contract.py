@@ -238,7 +238,7 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
     assert "count.toLocaleString('tr-TR')" in app_js
 
 
-def test_sinefil_area_keeps_visibility_opt_in_and_lazy_personality_reads():
+def test_sinefil_area_uses_compact_cards_and_profile_modal():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     auth_py = (ROOT / "app" / "auth.py").read_text()
@@ -247,11 +247,13 @@ def test_sinefil_area_keeps_visibility_opt_in_and_lazy_personality_reads():
     assert 'id="profile-sinefil-area"' in html
     assert 'id="profile-discovery-toggle"' in html
     assert 'id="view-sinefil"' in html
+    assert 'id="dialog-sinefil-profile"' in html
     assert "Sinefil Sineması" in html
     assert "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;" in schema
     assert "idx_users_sinefil_directory" in schema
     assert "apiJSON('/api/profile/discovery-settings'" in app_js
     assert "apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`)" in app_js
+    assert 'data-sinefil-profile=' in app_js
     assert "/personality`" in app_js
     assert "Film zevkiniz benziyor" in app_js
     assert "def list_sinefil_cards" in auth_py
@@ -266,7 +268,8 @@ def test_sinefil_letters_are_client_encrypted_and_keep_inbox_private():
 
     assert 'id="inbox-letters-panel"' in html
     assert 'id="dialog-letter-help"' in html
-    assert 'data-sinefil-letter=' in app_js
+    assert 'function letterThreadCard' in app_js
+    assert 'data-letter-thread=' in app_js
     assert "apiJSON('/api/letters')" in app_js
     assert "ECDH" in crypto_js
     assert "AES-GCM" in crypto_js
@@ -303,9 +306,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260902.20"
+    css_version = "v=20260902.21"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260902.29" in html
+    assert "/static/js/app.js?v=20260902.30" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
