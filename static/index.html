@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.21"/>
+<link rel="stylesheet" href="/static/app.css?v=20260903.22"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -167,10 +167,12 @@
 <dialog id="dialog-sinefil-profile" class="auth-info-dialog sinefil-profile-dialog">
   <div class="glass-panel max-h-[88vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl">
     <div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sinefil profili</span><h2 id="sinefil-profile-title" class="mt-2 font-headline-md text-headline-md text-on-surface"></h2><p id="sinefil-profile-username" class="mt-1 text-sm text-on-surface-variant"></p></div><button type="button" data-close-dialog="dialog-sinefil-profile" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div>
-    <div class="mt-6 flex flex-col items-center gap-4 text-center"><img id="sinefil-profile-avatar" class="hidden h-28 w-28 rounded-full object-cover ring-2 ring-tertiary-container/50" alt=""/><div id="sinefil-profile-avatar-fallback" class="flex h-28 w-28 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-lg text-tertiary-container"></div></div>
-    <div id="sinefil-profile-posters" class="mt-6 grid grid-cols-4 gap-2"></div>
-    <div class="mt-6 rounded-xl border border-tertiary-container/20 bg-tertiary-container/10 p-4"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Fav 4’ün anlattığı</p><p id="sinefil-profile-personality" class="mt-2 text-sm leading-relaxed text-on-surface-variant">Okuma yükleniyor…</p></div>
-    <div class="mt-5 flex gap-2"><button id="sinefil-profile-blend" type="button" class="flex-1 rounded-xl bg-tertiary-container px-4 py-3 font-label-sm text-label-sm uppercase tracking-wide text-on-tertiary-container">Blend isteği</button><button id="sinefil-profile-letter" type="button" class="hidden flex-1 rounded-xl border border-secondary-container/45 px-4 py-3 font-label-sm text-label-sm uppercase tracking-wide text-secondary-container">Mektup yaz</button></div>
+    <div class="mt-7 grid grid-cols-1 items-center gap-7 md:grid-cols-[180px_minmax(0,1fr)] md:items-start">
+      <div class="flex justify-center md:justify-start"><img id="sinefil-profile-avatar" class="hidden h-44 w-44 rounded-full object-cover ring-2 ring-tertiary-container/50 shadow-[0_0_38px_rgba(0,224,84,.18)]" alt=""/><div id="sinefil-profile-avatar-fallback" class="flex h-44 w-44 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-lg text-tertiary-container ring-2 ring-tertiary-container/30">?</div></div>
+      <div class="min-w-0"><p class="mb-3 font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Fav 4</p><div id="sinefil-profile-posters" class="grid grid-cols-4 gap-2 sm:gap-3"></div></div>
+    </div>
+    <div class="mt-7 rounded-xl border border-tertiary-container/20 bg-tertiary-container/10 p-5"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Fav 4’ün anlattığı</p><p id="sinefil-profile-personality" class="mt-3 text-sm leading-relaxed text-on-surface-variant">Okuma yükleniyor…</p></div>
+    <div class="mt-5 flex flex-col gap-2 sm:flex-row"><button id="sinefil-profile-blend" type="button" class="flex-1 rounded-xl bg-tertiary-container px-4 py-3 font-label-sm text-label-sm uppercase tracking-wide text-on-tertiary-container">Blend isteği</button><button id="sinefil-profile-letter" type="button" class="hidden flex-1 rounded-xl border border-secondary-container/45 px-4 py-3 font-label-sm text-label-sm uppercase tracking-wide text-secondary-container">Mektup yaz</button></div>
   </div>
 </dialog>
 

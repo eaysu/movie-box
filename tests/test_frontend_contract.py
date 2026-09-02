@@ -306,7 +306,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260902.21"
+    css_version = "v=20260903.22"
     assert f"/static/app.css?{css_version}" in html
     assert "/static/js/app.js?v=20260902.30" in html
     assert app_js.count(f"?{dependency_version}") == 6
