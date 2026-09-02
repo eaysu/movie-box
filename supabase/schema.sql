@@ -27,9 +27,10 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT
 -- User-curated "top 10 films" (ordered list of watched film slugs). Empty =
 -- fall back to the highest-rated watched films.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAULT '[]'::jsonb;
--- Sinefil Sineması görünürlüğü açık ve bilinçli bir tercihtir. Mevcut ve yeni
--- kullanıcılar varsayılan olarak listelenmez.
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT FALSE;
+-- Sinefil Sineması varsayılan olarak açıktır; kullanıcı profilinden kapatabilir.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;
+UPDATE public.users SET discoverable = TRUE
+WHERE account_status = 'active' AND (discoverable IS NULL OR discoverable = FALSE);
 -- Mektup alma tercihi ayrı ve varsayılan olarak kapalıdır. Anahtar malzemesi
 -- users tablosunda değil, aşağıdaki private user_letter_keys tablosundadır.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS letter_receiving_enabled BOOLEAN NOT NULL DEFAULT FALSE;

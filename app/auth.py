@@ -68,7 +68,7 @@ class Account:
     profile_sync_status: str = "pending"
     onboarding_completed_at: str | None = None
     letterboxd_stats: dict = field(default_factory=dict)
-    discoverable: bool = False
+    discoverable: bool = True
     letter_receiving_enabled: bool = False
 
 
@@ -239,7 +239,7 @@ class AuthService:
             profile_sync_status=row.get("profile_sync_status") or "pending",
             onboarding_completed_at=row.get("onboarding_completed_at"),
             letterboxd_stats=row.get("letterboxd_stats") or {},
-            discoverable=bool(row.get("discoverable", False)),
+            discoverable=bool(row.get("discoverable", True)),
             letter_receiving_enabled=bool(row.get("letter_receiving_enabled", False)),
         )
 
@@ -698,7 +698,7 @@ class AuthService:
             visibility = self._first(
                 service.table("users").select("discoverable,letter_receiving_enabled").eq("id", account.id).limit(1).execute()
             ) or {}
-            account_data["discoverable"] = bool(visibility.get("discoverable", False))
+            account_data["discoverable"] = bool(visibility.get("discoverable", True))
             account_data["letter_receiving_enabled"] = bool(visibility.get("letter_receiving_enabled", False))
         except Exception:
             pass

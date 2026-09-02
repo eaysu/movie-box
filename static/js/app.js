@@ -2369,16 +2369,16 @@ function _obRenderPersonality(text) {
 }
 
 function _obRenderSinefilConsent() {
-  const visible = Boolean(_account?.discoverable);
+  const visible = _account?.discoverable !== false;
   _obStage(`
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Sinefil Sineması</p>
     <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevkini paylaşmak ister misin?</h2>
-    <p class="mt-3 font-body-md text-body-md leading-relaxed text-on-surface-variant/80">Açarsan diğer kayıtlı sinefiller profil fotoğrafını, Fav 4’ünü ve bu kişilik okumasını görebilir. İstediğin an profilinden geri kapatabilirsin.</p>
+    <p class="mt-3 font-body-md text-body-md leading-relaxed text-on-surface-variant/80">Profilin varsayılan olarak diğer kayıtlı sinefillere görünür. İstediğin an profilinden gizleyebilirsin.</p>
     <div class="mt-6 grid gap-3 sm:grid-cols-2">
-      <button type="button" data-ob-discoverable="true" class="rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Sinefil Sineması'nda görün</button>
-      <button type="button" data-ob-discoverable="false" class="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdilik gizli kal</button>
+      <button type="button" data-ob-discoverable="true" class="rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Görünür kal</button>
+      <button type="button" data-ob-discoverable="false" class="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Gizli yap</button>
     </div>
-    <p id="ob-discovery-note" class="mt-4 font-label-sm text-label-sm ${visible ? 'text-tertiary-container' : 'text-on-surface-variant/60'}">${visible ? 'Profilin görünür durumda.' : 'Varsayılan tercih: gizli.'}</p>`);
+    <p id="ob-discovery-note" class="mt-4 font-label-sm text-label-sm ${visible ? 'text-tertiary-container' : 'text-on-surface-variant/60'}">${visible ? 'Profilin Sinefil Sineması’nda görünür.' : 'Profilin gizli kalacak.'}</p>`);
   $('ob-stage').querySelectorAll('[data-ob-discoverable]').forEach(button => {
     button.addEventListener('click', async () => {
       const next = button.dataset.obDiscoverable === 'true';

@@ -16,8 +16,8 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
 
 ## P0 — Sinefil Mektupları (uçtan uca şifreli) — 2026-09-02
 
-- [x] Mektup alma tercihini ayrı, varsayılan kapalı bir görünürlük ayarı olarak
-  ekle; yalnız açık profiller Sinefil Sineması’nda mektup aksiyonu görsün.
+- [x] Mektup alma tercihini ayrı, varsayılan kapalı bir ayar olarak ekle; Sinefil
+  Sineması görünürlüğünü varsayılan açık tut ve kullanıcıya kapatma kontrolü ver.
 - [x] Tarayıcıda ECDH P-256 + HKDF + AES-256-GCM ile şifrele; sunucuda yalnız
   şifreli zarf, IV, salt ve public-key snapshot’ı tut. Gövde, film eki veya
   private key hiçbir zaman API’ye gönderilmez.
@@ -239,7 +239,7 @@ onayı gelmeden uygulanmaz.
 
 ### P1 — Test, gözlemlenebilirlik ve rollout
 
-- [x] **Sinefil Sineması:** Varsayılanı gizli olan görünürlük tercihi, onboarding
+- [x] **Sinefil Sineması:** Varsayılanı açık olan görünürlük tercihi, onboarding
   onayı, profil üstü aç/kapat doğrulaması, block-aware kart listesi, Fav 4 ↔
   Başucu 10 ağırlıklı eşleşme ve lazy kişilik okuması eklendi.
 
