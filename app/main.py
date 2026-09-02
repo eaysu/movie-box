@@ -281,6 +281,24 @@ def _ip_hash(request: Request) -> str:
     ).hexdigest()
 
 
+async def _record_activity_event(
+    service: AuthService | None,
+    account: Account | None,
+    event_type: str,
+    metadata: dict | None = None,
+) -> None:
+    """Best-effort product telemetry that never blocks a user flow forever."""
+    if service is None or account is None:
+        return
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(
+            service.record_activity_event,
+            account.id,
+            event_type,
+            metadata or {},
+        )
+
+
 def _set_session_cookies(response: Response, session) -> str:
     settings = get_settings()
     access_age = max(60, min(int(session.expires_in), settings.auth_session_max_age))
@@ -1364,6 +1382,9 @@ async def complete_profile_onboarding(request: Request) -> dict:
             detail="Tüm Letterboxd geçmişi henüz taranmadı.",
         )
     completed_at = await asyncio.to_thread(service.complete_onboarding, account)
+    await _record_activity_event(
+        service, account, "onboarding_completed", {"source": "profile"}
+    )
     return {"ok": True, "completed_at": completed_at}
 
 
@@ -2473,10 +2494,16 @@ async def check_my_watchlist(request: Request) -> dict:
     _require_csrf(request)
     await _enforce_heavy_rate_limit(request)
     account = await _require_account(request)
+    service = _auth_service()
     try:
-        return await _check_profile_watchlist_freshness(
-            account, get_settings(), _auth_service()
+        result = await _check_profile_watchlist_freshness(account, get_settings(), service)
+        await _record_activity_event(
+            service,
+            account,
+            "watchlist_checked",
+            {"status": result.get("status", ""), "changed": bool(result.get("changed"))},
         )
+        return result
     except ScrapeError as exc:
         _raise_scrape_http(exc)
 
@@ -2492,6 +2519,12 @@ async def sync_my_profile(
     account = await _require_account(request)
     settings = get_settings()
     service = _auth_service()
+    await _record_activity_event(
+        service,
+        account,
+        "profile_sync_requested",
+        {"force": bool(force), "refresh_watchlist": bool(refresh_watchlist)},
+    )
     try:
         await asyncio.to_thread(service.check_schema)
     except Exception as exc:
@@ -2812,6 +2845,16 @@ async def _compute_accepted_blend(
         payload,
         algorithm_version=BLEND_VERSION,
     )
+    await _record_activity_event(
+        service,
+        account,
+        "blend_result_computed",
+        {
+            "score": int(payload.get("score") or 0),
+            "common_count": int(payload.get("common_count") or 0),
+            "watchlist_pending": True,
+        },
+    )
     response = {
         **payload,
         "request_id": request_id,
@@ -2956,6 +2999,15 @@ async def _complete_blend_watchlists(
         request_id,
         completed,
         algorithm_version=BLEND_VERSION,
+    )
+    await _record_activity_event(
+        service,
+        account,
+        "blend_watchlist_completed",
+        {
+            "common_watchlist_count": len(common_watchlist),
+            "bridge_count": len(bridge_films),
+        },
     )
 
 
@@ -3243,6 +3295,12 @@ async def recommend(req: RecommendRequest, request: Request):
                 if "error" in hs:
                     exc = hs["error"]
                     if isinstance(exc, ScrapeError):
+                        await _record_activity_event(
+                            service,
+                            account,
+                            "recommendation_failed",
+                            {"stage": "scraping", "error_code": exc.code},
+                        )
                         yield _scrape_error_event(exc)
                         return
                     raise exc
@@ -3306,6 +3364,12 @@ async def recommend(req: RecommendRequest, request: Request):
                     ]
                     discover_fallback = True
                     if not watchlist_films:
+                        await _record_activity_event(
+                            service,
+                            account,
+                            "recommendation_failed",
+                            {"stage": "candidate_pool", "error_code": "empty_watchlist"},
+                        )
                         yield _sse({"type": "error", "detail": "Watchlist boş; alternatif öneri de bulunamadı."})
                         return
 
@@ -3341,6 +3405,18 @@ async def recommend(req: RecommendRequest, request: Request):
                     }
                     log.warning("pipeline_metrics %s", json.dumps(metrics, sort_keys=True))
                     log.warning("recommendation cache HIT %s", req.username)
+                    await _record_activity_event(
+                        service,
+                        account,
+                        "recommendation_completed",
+                        {
+                            "success": True,
+                            "cache_hit": True,
+                            "watched_count": len(watched_films),
+                            "watchlist_count": watchlist_count,
+                            "result_count": len(cached_recommendation.get("recommendations") or []),
+                        },
+                    )
                     yield _sse({
                         "type": "result",
                         "username": req.username,
@@ -3438,6 +3514,20 @@ async def recommend(req: RecommendRequest, request: Request):
                 }
                 log.warning("pipeline_metrics %s", json.dumps(metrics, sort_keys=True))
 
+                await _record_activity_event(
+                    service,
+                    account,
+                    "recommendation_completed",
+                    {
+                        "success": True,
+                        "cache_hit": False,
+                        "llm_used": bool(result.get("llm_used")),
+                        "watched_count": len(watched_films),
+                        "watchlist_count": watchlist_count,
+                        "result_count": len(result.get("recommendations") or []),
+                    },
+                )
+
                 yield _sse({
                     "type": "result",
                     "username": req.username,
@@ -3456,6 +3546,12 @@ async def recommend(req: RecommendRequest, request: Request):
 
             except Exception as exc:
                 log.warning("pipeline error: %s", exc)
+                await _record_activity_event(
+                    service,
+                    account,
+                    "recommendation_failed",
+                    {"stage": "pipeline", "error": type(exc).__name__},
+                )
                 yield _sse({"type": "error", "detail": "Beklenmeyen bir hata oluştu."})
 
             finally:
@@ -3526,12 +3622,30 @@ async def random_pick(req: RandomRequest, request: Request):
                 chosen = await _random_discover_pick(settings, service, account, cache, req.username)
                 discover_fallback = True
                 if not chosen:
+                    await _record_activity_event(
+                        service,
+                        account,
+                        "random_failed",
+                        {"error_code": "empty_watchlist", "stage": "fallback"},
+                    )
                     yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
                     return
             else:
                 chosen = _daily_pick(req.username, pool, 3)
             _add_random_reasons(chosen, discover_fallback=discover_fallback)
             log.warning("cache HIT  watchlist/%s (random pick)", req.username)
+            await _record_activity_event(
+                service,
+                account,
+                "random_completed",
+                {
+                    "success": True,
+                    "cache_hit": True,
+                    "watchlist_count": watchlist_count,
+                    "result_count": len(chosen),
+                    "discover_fallback": discover_fallback,
+                },
+            )
             yield _sse({
                 "type": "result",
                 "username": req.username,
@@ -3555,6 +3669,12 @@ async def random_pick(req: RandomRequest, request: Request):
         if "error" in hr:
             exc = hr["error"]
             if isinstance(exc, ScrapeError):
+                await _record_activity_event(
+                    service,
+                    account,
+                    "random_failed",
+                    {"error_code": exc.code, "stage": "scraping"},
+                )
                 yield _scrape_error_event(exc)
                 return
             raise exc
@@ -3564,9 +3684,27 @@ async def random_pick(req: RandomRequest, request: Request):
         if not scraped_watchlist:
             chosen = await _random_discover_pick(settings, service, account, cache, req.username)
             if not chosen:
+                await _record_activity_event(
+                    service,
+                    account,
+                    "random_failed",
+                    {"error_code": "empty_watchlist", "stage": "fallback"},
+                )
                 yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
                 return
             _add_random_reasons(chosen, discover_fallback=True)
+            await _record_activity_event(
+                service,
+                account,
+                "random_completed",
+                {
+                    "success": True,
+                    "cache_hit": False,
+                    "watchlist_count": 0,
+                    "result_count": len(chosen),
+                    "discover_fallback": True,
+                },
+            )
             yield _sse({
                 "type": "result",
                 "username": req.username,
@@ -3609,6 +3747,19 @@ async def random_pick(req: RandomRequest, request: Request):
             ]
 
         _add_random_reasons(films, discover_fallback=False)
+
+        await _record_activity_event(
+            service,
+            account,
+            "random_completed",
+            {
+                "success": True,
+                "cache_hit": False,
+                "watchlist_count": watchlist_count,
+                "result_count": len(films),
+                "discover_fallback": False,
+            },
+        )
 
         yield _sse({
             "type": "result",

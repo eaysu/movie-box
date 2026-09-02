@@ -207,13 +207,38 @@ async def run_job(pipeline, service, account) -> None:
     if not claimed:
         log.warning("profile_sync lease BUSY user=%s", uid)
         return
+    job = {}
+    with contextlib.suppress(Exception):
+        job = await asyncio.to_thread(service.get_sync_job, uid) or {}
+    await _record_event(
+        service,
+        uid,
+        "profile_sync_started",
+        {"scope": job.get("scope") or "full"},
+    )
     try:
         async with _job_sem:
             await _crawl(pipeline, service, account, lease_token=lease_token)
+        finished = await asyncio.to_thread(service.get_sync_job, uid) or {}
+        await _record_event(
+            service,
+            uid,
+            "profile_sync_completed",
+            {
+                "scope": finished.get("scope") or job.get("scope") or "full",
+                "films": int(finished.get("films_processed") or 0),
+            },
+        )
     except asyncio.CancelledError:
         raise
     except Exception as exc:  # keep the last good snapshot; retry after a cooldown
         log.warning("profile_sync job FAILED user=%s: %s", uid, exc)
+        await _record_event(
+            service,
+            uid,
+            "profile_sync_failed",
+            {"error": type(exc).__name__},
+        )
         with contextlib.suppress(Exception):
             await asyncio.to_thread(
                 service.touch_sync_job,
@@ -244,6 +269,17 @@ async def _touch(service, user_id: int, owner_token: str | None, **fields) -> No
     )
     if ok is False:
         raise RuntimeError("profile sync lease lost")
+
+
+async def _record_event(
+    service, user_id: int, event_type: str, metadata: dict | None = None
+) -> None:
+    """Record sync lifecycle telemetry without coupling the runner to schema."""
+    recorder = getattr(service, "record_activity_event", None)
+    if recorder is None:
+        return
+    with contextlib.suppress(Exception):
+        await asyncio.to_thread(recorder, user_id, event_type, metadata or {})
 
 
 async def _crawl(pipeline, service, account, *, lease_token: str | None = None) -> None:

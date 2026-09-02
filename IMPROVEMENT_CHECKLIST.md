@@ -405,6 +405,11 @@ onayı gelmeden uygulanmaz.
 
 ## Hedef metrikler
 
+- [x] Service-role ile yalnızca lokal çalışan `python -m scripts.admin_users`
+  raporu ve `user_activity_events` telemetrisi eklendi. Kullanıcı, tarama,
+  öneri, rastgele seçim, onboarding ve Blend yaşam döngüsü özetleri raporlanıyor;
+  hassas metadata tutulmuyor.
+
 - [ ] North star: “Bunu izleyeceğim” dönüşüm oranı.
 - [ ] Warm p95 time-to-result hedefi: 2 saniyenin altı.
 - [ ] Recommendation cache-hit hedefi: %90+.

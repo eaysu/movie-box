@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -111,6 +113,7 @@ class AuthService:
         self._service_client_instance = None
         self._service_client_ready = False
         self._service_client_lock = threading.Lock()
+        self._activity_disabled_until = 0.0
 
     def _service_client(self):
         if self._service_client_ready:
@@ -217,6 +220,53 @@ class AuthService:
             ).execute()
         except Exception:
             pass
+        # Keep product-usage telemetry separate from the security audit log.
+        # The table is deployed independently, so an older schema must never
+        # make authentication or Blend actions fail.
+        self.record_activity_event(
+            user_id,
+            event,
+            {"source": "auth_audit"},
+        )
+
+    def record_activity_event(
+        self,
+        user_id: int | None,
+        event_type: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Best-effort, non-sensitive product activity telemetry.
+
+        This intentionally swallows schema/network errors: analytics must not
+        block a user action. Callers should only pass counts, booleans, status
+        codes and other bounded metadata—never tokens, passwords or raw URLs.
+        """
+        if not event_type or user_id is None:
+            return
+        # A deployment may receive traffic before the optional analytics
+        # migration has been applied. Back off after the first schema failure
+        # instead of adding a failed Supabase round-trip to every request.
+        if time.monotonic() < self._activity_disabled_until:
+            return
+        payload = metadata if isinstance(metadata, dict) else {}
+        try:
+            # Prevent an accidental large response/request from becoming an
+            # unbounded analytics row.
+            encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            if len(encoded) > 4000:
+                payload = {"truncated": True}
+        except (TypeError, ValueError):
+            payload = {"metadata_invalid": True}
+        try:
+            self._service_client().table("user_activity_events").insert(
+                {
+                    "user_id": int(user_id) if user_id is not None else None,
+                    "event_type": str(event_type)[:80],
+                    "metadata": payload,
+                }
+            ).execute()
+        except Exception:
+            self._activity_disabled_until = time.monotonic() + 300.0
 
     def start_registration(
         self,
@@ -1209,6 +1259,7 @@ class AuthService:
                     "p_requester_user_id": account.id,
                 },
             ).execute()
+            self._audit(self._service_client(), account.id, "blend_request_cancelled")
         except Exception as exc:
             raise BlendServiceError("request_not_cancellable") from exc
 
@@ -1423,6 +1474,7 @@ class AuthService:
                     "p_blocked_username": username,
                 },
             ).execute()
+            self._audit(self._service_client(), account.id, "user_blocked")
         except Exception as exc:
             message = str(exc)
             code = next(
@@ -1440,6 +1492,7 @@ class AuthService:
                     "p_blocked_username": username,
                 },
             ).execute()
+            self._audit(self._service_client(), account.id, "user_unblocked")
         except Exception as exc:
             raise BlendServiceError("unblock_failed") from exc
 
@@ -1456,6 +1509,7 @@ class AuthService:
                     "p_detail": detail[:500],
                 },
             ).execute()
+            self._audit(self._service_client(), account.id, "user_reported")
             return str(self._rpc_value(response))
         except Exception as exc:
             message = str(exc)

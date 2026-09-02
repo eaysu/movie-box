@@ -70,6 +70,24 @@ Open http://localhost:8000
 | `POST /api/blend` | Legacy anonymous Blend; disabled in account mode |
 | `DELETE /api/data` | Deletes the signed-in account and username-scoped caches |
 
+## Local admin activity report
+
+The repository includes a local-only, service-role report for aggregate account
+usage. It is deliberately not an HTTP admin endpoint and never prints
+passwords, tokens, raw event metadata or film rows:
+
+```bash
+python -m scripts.admin_users
+python -m scripts.admin_users --username enesaysu --json
+python -m scripts.admin_users --include-non-active
+```
+
+Run the current `supabase/schema.sql` in Supabase SQL Editor before using the
+command. The `user_activity_events` table records bounded product events such
+as profile sync lifecycle, recommendation success/failure, random picks,
+onboarding completion and Blend lifecycle actions. Event writes are
+best-effort and never block the user-facing flow.
+
 The browser client handles the HttpOnly session and CSRF header. If account
 environment variables are absent, the legacy username-only endpoints remain
 available as a temporary rollout fallback.

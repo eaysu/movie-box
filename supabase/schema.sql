@@ -380,6 +380,164 @@ CREATE TABLE IF NOT EXISTS public.auth_audit_log (
 CREATE INDEX IF NOT EXISTS idx_auth_audit_user_time
   ON public.auth_audit_log (user_id, created_at DESC);
 
+-- Product activity telemetry. This is deliberately separate from the security
+-- audit log: it stores bounded event metadata (counts/status flags only), and
+-- cascades on account deletion so user data can be fully removed on request.
+CREATE TABLE IF NOT EXISTS public.user_activity_events (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  event_type  TEXT NOT NULL,
+  metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_activity_events_user_time
+  ON public.user_activity_events (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_activity_events_type_time
+  ON public.user_activity_events (event_type, created_at DESC);
+
+ALTER TABLE public.user_activity_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "service_all_user_activity_events" ON public.user_activity_events;
+REVOKE ALL ON TABLE public.user_activity_events FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.user_activity_events_id_seq FROM anon, authenticated;
+GRANT ALL ON TABLE public.user_activity_events TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.user_activity_events_id_seq TO service_role;
+
+-- One call for the local admin report. It returns aggregates only; raw film
+-- rows, passwords, tokens and event metadata are never exposed by the report.
+DROP FUNCTION IF EXISTS public.admin_user_activity_report(BOOLEAN);
+CREATE OR REPLACE FUNCTION public.admin_user_activity_report(
+  p_include_non_active BOOLEAN DEFAULT FALSE
+)
+RETURNS TABLE (
+  user_id BIGINT,
+  username TEXT,
+  account_status TEXT,
+  profile_sync_status TEXT,
+  created_at TIMESTAMPTZ,
+  profile_synced_at TIMESTAMPTZ,
+  onboarding_completed_at TIMESTAMPTZ,
+  scan_total BIGINT,
+  scan_processed BIGINT,
+  watched_count BIGINT,
+  watchlist_count BIGINT,
+  blend_requests_sent BIGINT,
+  blend_requests_received BIGINT,
+  completed_blends BIGINT,
+  profile_sync_requests BIGINT,
+  watchlist_checks BIGINT,
+  recommendation_attempts BIGINT,
+  recommendation_successes BIGINT,
+  random_attempts BIGINT,
+  login_count BIGINT,
+  last_activity_at TIMESTAMPTZ
+)
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+WITH watched AS (
+  SELECT f.user_id, COUNT(*) FILTER (WHERE f.is_active) AS watched_count
+  FROM public.user_watched_films f
+  GROUP BY f.user_id
+),
+blend_activity AS (
+  SELECT
+    b.user_id,
+    COUNT(*) FILTER (WHERE b.direction = 'sent') AS blend_requests_sent,
+    COUNT(*) FILTER (WHERE b.direction = 'received') AS blend_requests_received
+  FROM (
+    SELECT br.requester_user_id AS user_id, 'sent' AS direction
+    FROM public.blend_requests br
+    UNION ALL
+    SELECT br.recipient_user_id AS user_id, 'received' AS direction
+    FROM public.blend_requests br
+  ) b
+  GROUP BY b.user_id
+),
+blend_completed AS (
+  SELECT b.user_id, COUNT(*) AS completed_blends
+  FROM (
+    SELECT br.requester_user_id AS user_id
+    FROM public.blend_requests br
+    JOIN public.blend_results result ON result.request_id = br.id
+    UNION ALL
+    SELECT br.recipient_user_id AS user_id
+    FROM public.blend_requests br
+    JOIN public.blend_results result ON result.request_id = br.id
+  ) b
+  GROUP BY b.user_id
+),
+events AS (
+  SELECT
+    e.user_id,
+    COUNT(*) FILTER (
+      WHERE e.event_type IN ('recommendation_completed', 'recommendation_failed')
+    ) AS recommendation_attempts,
+    COUNT(*) FILTER (
+      WHERE e.event_type = 'recommendation_completed'
+        AND e.metadata->>'success' = 'true'
+    ) AS recommendation_successes,
+    COUNT(*) FILTER (
+      WHERE e.event_type IN ('random_completed', 'random_failed')
+    ) AS random_attempts,
+    COUNT(*) FILTER (WHERE e.event_type = 'profile_sync_requested')
+      AS profile_sync_requests,
+    COUNT(*) FILTER (WHERE e.event_type = 'watchlist_checked')
+      AS watchlist_checks,
+    COUNT(*) FILTER (WHERE e.event_type = 'login_succeeded') AS login_count,
+    MAX(e.created_at) AS last_activity_at
+  FROM public.user_activity_events e
+  GROUP BY e.user_id
+),
+watchlist_cache AS (
+  SELECT
+    c.key AS username,
+    CASE
+      WHEN jsonb_typeof(c.value) = 'array' THEN jsonb_array_length(c.value)
+      ELSE 0
+    END::BIGINT AS watchlist_count
+  FROM public.tmdb_cache c
+  WHERE c.namespace = 'films_watchlist'
+)
+SELECT
+  u.id,
+  u.username,
+  u.account_status,
+  u.profile_sync_status,
+  u.created_at,
+  u.profile_synced_at,
+  u.onboarding_completed_at,
+  COALESCE(NULLIF(job.films_total, 0), watched.watched_count, 0)::BIGINT,
+  COALESCE(job.films_processed, 0)::BIGINT,
+  COALESCE(watched.watched_count, 0)::BIGINT,
+  COALESCE(watchlist_cache.watchlist_count, 0)::BIGINT,
+  COALESCE(blend_activity.blend_requests_sent, 0)::BIGINT,
+  COALESCE(blend_activity.blend_requests_received, 0)::BIGINT,
+  COALESCE(blend_completed.completed_blends, 0)::BIGINT,
+  COALESCE(events.profile_sync_requests, 0)::BIGINT,
+  COALESCE(events.watchlist_checks, 0)::BIGINT,
+  COALESCE(events.recommendation_attempts, 0)::BIGINT,
+  COALESCE(events.recommendation_successes, 0)::BIGINT,
+  COALESCE(events.random_attempts, 0)::BIGINT,
+  COALESCE(events.login_count, 0)::BIGINT,
+  events.last_activity_at
+FROM public.users u
+LEFT JOIN public.profile_sync_jobs job ON job.user_id = u.id
+LEFT JOIN watched ON watched.user_id = u.id
+LEFT JOIN blend_activity ON blend_activity.user_id = u.id
+LEFT JOIN blend_completed ON blend_completed.user_id = u.id
+LEFT JOIN events ON events.user_id = u.id
+LEFT JOIN watchlist_cache ON watchlist_cache.username = u.username
+WHERE p_include_non_active OR u.account_status = 'active'
+ORDER BY u.created_at DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_user_activity_report(BOOLEAN)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_user_activity_report(BOOLEAN)
+  TO service_role;
+
 -- A profile refresh must become visible as one coherent snapshot. The backend
 -- invokes this function only with the service_role key; browser roles cannot
 -- execute it directly.
