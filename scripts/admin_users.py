@@ -65,6 +65,7 @@ def _print_table(rows: list[dict]) -> None:
     columns = [
         ("username", "KULLANICI"),
         ("account_status", "DURUM"),
+        ("created_at", "KAYIT"),
         ("scan", "TARAMA"),
         ("watched_count", "İZLENEN"),
         ("watchlist_count", "WATCHLIST"),
@@ -84,6 +85,7 @@ def _print_table(rows: list[dict]) -> None:
         rendered.append([
             str(row.get("username") or "-"),
             str(row.get("account_status") or "-"),
+            _short_date(row.get("created_at")),
             f"{processed}/{total}" if total else str(processed),
             str(row.get("watched_count") or 0),
             str(row.get("watchlist_count") or 0),
