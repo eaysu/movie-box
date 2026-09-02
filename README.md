@@ -56,7 +56,7 @@ Open http://localhost:8000
 | `GET /api/profile/me` | Returns the stored profile and taste snapshot |
 | `GET /api/profile/directors/{rank}/films` | Lazy-loads one ranked director's watched films |
 | `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
-| `POST /api/profile/discovery-settings` | Opts the signed-in user into/out of Sinefil Alanı |
+| `POST /api/profile/discovery-settings` | Opts the signed-in user into/out of Sinefil Sineması |
 | `GET /api/sinefil-alani` | Lists opted-in, safe profile cards ranked by taste overlap |
 | `GET /api/sinefil-alani/{username}/personality` | Lazy-loads an opted-in profile's Fav 4 reading |
 | `POST /api/recommendations/feedback` | Saves watch/skip/block feedback for a recommendation |

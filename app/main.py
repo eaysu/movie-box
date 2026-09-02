@@ -1461,7 +1461,7 @@ async def update_discovery_settings(
         log.warning("discovery visibility update failed account=%s", account.id, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Sinefil Alanı ayarı henüz hazır değil. SQL güncellemesini kontrol et.",
+            detail="Sinefil Sineması ayarı henüz hazır değil. SQL güncellemesini kontrol et.",
         ) from exc
     account.discoverable = visible
     await _record_activity_event(
@@ -1483,7 +1483,7 @@ async def list_sinefil_alani(request: Request, q: str = "") -> dict:
         log.warning("sinefil directory unavailable account=%s", account.id, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail="Sinefil Alanı henüz hazır değil. SQL güncellemesini kontrol et.",
+            detail="Sinefil Sineması henüz hazır değil. SQL güncellemesini kontrol et.",
         ) from exc
     await _record_activity_event(service, account, "sinefil_area_opened", {"query": bool(query)})
     return {"profiles": cards[:48]}

@@ -247,7 +247,7 @@ def test_sinefil_area_keeps_visibility_opt_in_and_lazy_personality_reads():
     assert 'id="profile-sinefil-area"' in html
     assert 'id="profile-discovery-toggle"' in html
     assert 'id="view-sinefil"' in html
-    assert "Sinefil Alanı" in html
+    assert "Sinefil Sineması" in html
     assert "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT FALSE;" in schema
     assert "idx_users_sinefil_directory" in schema
     assert "apiJSON('/api/profile/discovery-settings'" in app_js
@@ -281,7 +281,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260902.16"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260902.22" in html
+    assert "/static/js/app.js?v=20260902.23" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

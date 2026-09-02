@@ -757,14 +757,14 @@ async function saveDiscoveryVisibility(visible) {
 async function toggleDiscoveryVisibility() {
   const next = !_account?.discoverable;
   const message = next
-    ? 'Sinefil Alanında görünür olacaksın. Diğer kayıtlı sinefiller profil fotoğrafını, Fav 4 filmlerini ve Fav 4 kişilik okumanı görebilecek. Devam edilsin mi?'
-    : 'Sinefil Alanından gizleneceksin. Profilin yeni listelerde görünmeyecek. Devam edilsin mi?';
+    ? "Sinefil Sineması'nda görünür olacaksın. Diğer kayıtlı sinefiller profil fotoğrafını, Fav 4 filmlerini ve Fav 4 kişilik okumanı görebilecek. Devam edilsin mi?"
+    : "Sinefil Sineması'ndan gizleneceksin. Profilin yeni listelerde görünmeyecek. Devam edilsin mi?";
   if (!window.confirm(message)) return;
   const button = $('profile-discovery-toggle');
   button.disabled = true;
   try {
     const visible = await saveDiscoveryVisibility(next);
-    profileActionNotice(visible ? 'Sinefil Alanında görünürsün.' : 'Sinefil Alanından gizlendin.');
+    profileActionNotice(visible ? "Sinefil Sineması'nda görünürsün." : "Sinefil Sineması'ndan gizlendin.");
   } catch (error) {
     profileActionError(error.message || 'Görünürlük ayarı değiştirilemedi.');
   } finally {
@@ -2096,11 +2096,11 @@ function _obRenderPersonality(text) {
 function _obRenderSinefilConsent() {
   const visible = Boolean(_account?.discoverable);
   _obStage(`
-    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Sinefil Alanı</p>
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Sinefil Sineması</p>
     <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevkini paylaşmak ister misin?</h2>
     <p class="mt-3 font-body-md text-body-md leading-relaxed text-on-surface-variant/80">Açarsan diğer kayıtlı sinefiller profil fotoğrafını, Fav 4’ünü ve bu kişilik okumasını görebilir. İstediğin an profilinden geri kapatabilirsin.</p>
     <div class="mt-6 grid gap-3 sm:grid-cols-2">
-      <button type="button" data-ob-discoverable="true" class="rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Sinefil Alanında görün</button>
+      <button type="button" data-ob-discoverable="true" class="rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Sinefil Sineması'nda görün</button>
       <button type="button" data-ob-discoverable="false" class="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdilik gizli kal</button>
     </div>
     <p id="ob-discovery-note" class="mt-4 font-label-sm text-label-sm ${visible ? 'text-tertiary-container' : 'text-on-surface-variant/60'}">${visible ? 'Profilin görünür durumda.' : 'Varsayılan tercih: gizli.'}</p>`);
@@ -2615,7 +2615,7 @@ function renderBlendWatchlist(payload = {}) {
   }
 }
 
-// ── Sinefil Alanı ─────────────────────────────────────────────────────────
+// ── Sinefil Sineması ──────────────────────────────────────────────────────
 let _sinefilSearchTimer = null;
 
 function sinefilMessage(kind, message = '') {
@@ -2669,12 +2669,12 @@ async function loadSinefilArea() {
       return;
     }
     sinefilMessage('notice', _account?.discoverable
-      ? 'Profilin Sinefil Alanında görünür. İstediğin an profilindeki Görünür anahtarıyla gizleyebilirsin.'
+      ? "Profilin Sinefil Sineması'nda görünür. İstediğin an profilindeki Görünür anahtarıyla gizleyebilirsin."
       : 'Profilin şu an gizli; yine de diğer sinefilleri keşfedebilirsin.');
     $('sinefil-grid').innerHTML = profiles.map(sinefilCard).join('');
   } catch (error) {
     $('sinefil-grid').innerHTML = '';
-    sinefilMessage('error', error.message || 'Sinefil Alanı yüklenemedi.');
+    sinefilMessage('error', error.message || 'Sinefil Sineması yüklenemedi.');
   }
 }
 

@@ -702,7 +702,7 @@ class AuthService:
         }
 
     def set_discoverable(self, account: Account, visible: bool) -> bool:
-        """Opt a user in/out of the authenticated Sinefil Alanı directory."""
+        """Opt a user in/out of the authenticated Sinefil Sineması directory."""
         self._service_client().table("users").update(
             {
                 "discoverable": bool(visible),

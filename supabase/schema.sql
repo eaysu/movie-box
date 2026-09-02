@@ -27,7 +27,7 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT
 -- User-curated "top 10 films" (ordered list of watched film slugs). Empty =
 -- fall back to the highest-rated watched films.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAULT '[]'::jsonb;
--- Sinefil Alanı görünürlüğü açık ve bilinçli bir tercihtir. Mevcut ve yeni
+-- Sinefil Sineması görünürlüğü açık ve bilinçli bir tercihtir. Mevcut ve yeni
 -- kullanıcılar varsayılan olarak listelenmez.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT FALSE;
 
