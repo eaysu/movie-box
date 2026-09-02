@@ -227,6 +227,8 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
     assert html.count('data-public-user-count class=') == 2
     assert 'data-public-user-count-value' in html
     assert 'Letterboxd parolanı burada kullanma' in html
+    assert 'directed by:' in html
+    assert 'href="https://twitter.com/caddebogasi"' in html
     assert 'id="auth-title"' in html
     assert "title.textContent = login ? 'Movieboxd’a giriş yap' : 'Movieboxd’da hesap oluştur'" in (ROOT / "static" / "js" / "auth.js").read_text()
     auth = html.split('id="view-auth"', 1)[1].split('id="view-idle"', 1)[0]
