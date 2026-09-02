@@ -160,15 +160,17 @@
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
 <div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <div class="absolute inset-0 z-[2] pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
+  <div data-public-user-count class="hidden relative z-10 w-full max-w-[460px] mb-3 px-1" aria-live="polite">
+    <div class="inline-flex items-center gap-2 rounded-full border border-primary-container/20 bg-primary-container/5 px-3 py-2 text-on-surface-variant">
+      <span class="material-symbols-outlined text-[18px] text-primary-container" aria-hidden="true">groups</span>
+      <span class="font-label-sm text-label-sm"><strong data-public-user-count-value class="text-primary-container">0</strong> kayıtlı sinefil burada film keşfediyor</span>
+    </div>
+  </div>
   <main class="relative z-10 w-full max-w-[460px] glass-panel rounded-xl p-6 md:p-8">
     <div class="mb-6">
       <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Kişisel sinema profilin</span>
       <h1 class="font-headline-lg text-headline-lg text-on-surface mt-2">Movieboxd’a giriş yap</h1>
       <p class="font-body-md text-body-md text-on-surface-variant mt-2">Yalnızca Letterboxd kullanıcı adın yeterli. Verilerini kendi doğrudan scraper’ımızla okuyoruz.</p>
-      <div data-public-user-count class="hidden mt-4 inline-flex items-center gap-2 rounded-full border border-primary-container/20 bg-primary-container/5 px-3 py-2 text-left text-on-surface-variant" aria-live="polite">
-        <span class="material-symbols-outlined text-[18px] text-primary-container" aria-hidden="true">groups</span>
-        <span class="font-label-sm text-label-sm"><strong data-public-user-count-value class="text-primary-container">0</strong> kayıtlı sinefil burada film keşfediyor</span>
-      </div>
     </div>
 
     <div id="auth-tabs" class="grid grid-cols-2 gap-2 mb-5">

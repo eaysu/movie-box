@@ -225,6 +225,8 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
 
     assert html.count('data-public-user-count class=') == 2
     assert 'data-public-user-count-value' in html
+    auth = html.split('id="view-auth"', 1)[1].split('id="view-idle"', 1)[0]
+    assert auth.index('data-public-user-count') < auth.index('<main')
     assert "apiJSON('/api/public/stats')" in app_js
     assert "data?.registered_users" in app_js
     assert "count.toLocaleString('tr-TR')" in app_js
