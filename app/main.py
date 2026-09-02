@@ -3367,6 +3367,8 @@ async def recommend(req: RecommendRequest, request: Request):
         global _q_waiting, _q_active
         t0 = time.perf_counter()
         settings = get_settings()
+        pipeline_id = secrets.token_hex(6)
+        stage = "queue"
 
         # Sıraya gir
         async with _q_lock:
@@ -3383,6 +3385,7 @@ async def recommend(req: RecommendRequest, request: Request):
 
             try:
                 # Cache + enricher hazırlığı
+                stage = "setup"
                 supabase_client, cache = _make_cache(settings)
                 pcache = _make_persistent_cache(settings, supabase_client)
                 if supabase_client is not None:
@@ -3406,6 +3409,7 @@ async def recommend(req: RecommendRequest, request: Request):
                 )
 
                 # 1+2. Cache'ten oku ya da scrape + TMDb enrich (heartbeat'li)
+                stage = "load_films"
                 yield _sse({"type": "step", "step": "scraping"})
                 t1 = time.perf_counter()
                 hs: dict = {}
@@ -3443,6 +3447,7 @@ async def recommend(req: RecommendRequest, request: Request):
                 top_genres: list[str] = []
                 favorite_slugs: list[str] = []
                 favorite_four_slugs: list[str] = []
+                stage = "profile_signals"
                 if service is not None and account is not None:
                     with contextlib.suppress(Exception):
                         stored_profile = await asyncio.to_thread(
@@ -3475,6 +3480,7 @@ async def recommend(req: RecommendRequest, request: Request):
 
                 discover_fallback = False
                 if len(watchlist_films) < settings.num_recommendations:
+                    stage = "discover_fallback"
                     # Watchlist empty or too thin to fill a recommendation set →
                     # top up from TMDb Discover, biased by taste, excluding
                     # everything already watched (and the films we already hold).
@@ -3510,7 +3516,10 @@ async def recommend(req: RecommendRequest, request: Request):
                     favorite_slugs=favorite_slugs,
                     favorite_four_slugs=favorite_four_slugs,
                 )
+                stage = "cache_lookup"
                 cached_recommendation = await asyncio.to_thread(
+                    # Local/Supabase cache lookup happens after all inputs are
+                    # known, so a failure here has its own useful stage label.
                     pcache.get,
                     _recommendation_namespace(req.username),
                     recommendation_key,
@@ -3562,6 +3571,7 @@ async def recommend(req: RecommendRequest, request: Request):
                     return
 
                 # 3. TF-IDF ranking
+                stage = "ranking"
                 yield _sse({"type": "step", "step": "ranking"})
                 t3 = time.perf_counter()
                 if enricher is not None:
@@ -3604,6 +3614,7 @@ async def recommend(req: RecommendRequest, request: Request):
                 log.warning("⏱ tfidf rank      %.2fs  (candidates=%d)", time.perf_counter() - t3, len(candidates))
 
                 # 4. LLM
+                stage = "llm"
                 yield _sse({"type": "step", "step": "llm"})
                 t4 = time.perf_counter()
                 result = await rank_candidates(
@@ -3616,6 +3627,7 @@ async def recommend(req: RecommendRequest, request: Request):
                 llm_ms = round((time.perf_counter() - t4) * 1000)
                 cacheable_result = result.get("llm_used", False) or not settings.has_openai
                 if pcache is not None and result.get("recommendations") and cacheable_result:
+                    stage = "cache_result"
                     await asyncio.to_thread(
                         pcache.set,
                         _recommendation_namespace(req.username),
@@ -3672,14 +3684,33 @@ async def recommend(req: RecommendRequest, request: Request):
                 })
 
             except Exception as exc:
-                log.warning("pipeline error: %s", exc)
+                # `str(exc)` can be empty (notably InvalidStateError's
+                # "Exception is not set."), so include the type, current
+                # pipeline stage and traceback. The short random id lets a
+                # user-visible SSE failure be matched to one log sequence
+                # without logging account data or request payloads.
+                log.exception(
+                    "pipeline failure id=%s stage=%s type=%s detail=%r",
+                    pipeline_id,
+                    stage,
+                    type(exc).__name__,
+                    str(exc)[:500],
+                )
                 await _record_activity_event(
                     service,
                     account,
                     "recommendation_failed",
-                    {"stage": "pipeline", "error": type(exc).__name__},
+                    {
+                        "stage": stage,
+                        "error": type(exc).__name__,
+                        "pipeline_id": pipeline_id,
+                    },
                 )
-                yield _sse({"type": "error", "detail": "Beklenmeyen bir hata oluştu."})
+                yield _sse({
+                    "type": "error",
+                    "detail": "Beklenmeyen bir hata oluştu.",
+                    "error_id": pipeline_id,
+                })
 
             finally:
                 async with _q_lock:
