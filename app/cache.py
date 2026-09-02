@@ -14,15 +14,38 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+_cache_locks_guard = threading.Lock()
+_cache_write_locks: dict[str, threading.RLock] = {}
+
+
+def _write_lock_for(db_path: Path) -> threading.RLock:
+    """Share one write lock between Cache instances that use the same file."""
+    path = str(db_path.resolve())
+    with _cache_locks_guard:
+        return _cache_write_locks.setdefault(path, threading.RLock())
+
+
 class Cache:
     """Namespaced JSON cache with optional per-entry TTL."""
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
+        self._write_lock = _write_lock_for(db_path)
         self._init_db()
 
+    def _connect(self) -> sqlite3.Connection:
+        # Cache objects are created per request in a few call paths. A generous
+        # busy timeout plus WAL lets their short reads proceed while a batched
+        # write commits, instead of failing a profile sync with "database is
+        # locked".
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA busy_timeout = 30000")
+        return conn
+
     def _init_db(self) -> None:
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache (
@@ -48,7 +71,7 @@ class Cache:
         self, namespace: str, key: str, ttl: Optional[float] = None
     ) -> Optional[tuple[Any, bool]]:
         """Return ``(value, fresh)`` without discarding an expired entry."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             row = conn.execute(
                 "SELECT value, created_at FROM cache WHERE namespace = ? AND key = ?",
                 (namespace, str(key)),
@@ -61,7 +84,7 @@ class Cache:
 
     def set(self, namespace: str, key: str, value: Any) -> None:
         """Store a JSON-serialisable value."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO cache (namespace, key, value, created_at)
@@ -79,7 +102,7 @@ class Cache:
         if not keys:
             return {}
         placeholders = ",".join("?" for _ in keys)
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             rows = conn.execute(
                 f"SELECT key, value, created_at FROM cache "
                 f"WHERE namespace = ? AND key IN ({placeholders})",
@@ -100,7 +123,7 @@ class Cache:
             (namespace, str(key), json.dumps(value), created_at)
             for key, value in values.items()
         ]
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
             conn.executemany(
                 """
                 INSERT INTO cache (namespace, key, value, created_at)
@@ -114,7 +137,7 @@ class Cache:
 
     def touch(self, namespace: str, key: str) -> bool:
         """Refresh an existing entry's timestamp without rewriting its value."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
             cursor = conn.execute(
                 "UPDATE cache SET created_at = ? WHERE namespace = ? AND key = ?",
                 (time.time(), namespace, str(key)),
@@ -124,7 +147,7 @@ class Cache:
 
     def delete(self, namespace: str, key: str) -> bool:
         """Idempotently delete one cache entry."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
             conn.execute(
                 "DELETE FROM cache WHERE namespace = ? AND key = ?",
                 (namespace, str(key)),
@@ -134,7 +157,7 @@ class Cache:
 
     def clear(self, namespace: Optional[str] = None) -> None:
         """Drop one namespace, or the whole cache when namespace is None."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with self._write_lock, closing(self._connect()) as conn:
             if namespace is None:
                 conn.execute("DELETE FROM cache")
             else:

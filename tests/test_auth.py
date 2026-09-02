@@ -191,6 +191,29 @@ def test_transient_cloudflare_storage_read_retries_then_returns_clear_error():
     assert sleep.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "httpx.RemoteProtocolError: Server disconnected",
+        "httpx.RemoteProtocolError: <ConnectionTerminated error_code:1>",
+        "httpx.WriteError: EOF occurred in violation of protocol (_ssl.c:2417)",
+    ],
+)
+def test_transient_storage_read_retries_transport_disconnects(message):
+    service = AuthService(_settings(), client_factory=lambda *_args: None)
+    attempts = []
+
+    def unavailable():
+        attempts.append(True)
+        raise RuntimeError(message)
+
+    with patch("app.auth.time.sleep"):
+        with pytest.raises(TransientStorageError, match="Veri bağlantısı"):
+            service._retry_storage_read(unavailable)
+
+    assert len(attempts) == 3
+
+
 def test_login_sets_http_only_session_and_readable_csrf_cookies():
     session = AuthSession(
         account=_account(),

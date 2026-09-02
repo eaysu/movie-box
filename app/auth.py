@@ -141,16 +141,20 @@ class AuthService:
 
     @staticmethod
     def _is_transient_storage_error(exc: Exception) -> bool:
-        """Recognise edge HTML responses without retrying real PostgREST 400s."""
+        """Recognise transient Supabase edge failures, not real API 4xx errors."""
         detail = f"{type(exc).__name__} {exc}".casefold()
         return (
             "cloudflare" in detail
             or "json could not be generated" in detail
             or "json_invalid" in detail
+            or "server disconnected" in detail
+            or "connectionterminated" in detail
+            or "remoteprotocolerror" in detail
+            or "eof occurred in violation of protocol" in detail
         )
 
-    def _retry_storage_read(self, operation: Callable[[], Any]) -> Any:
-        """Retry only idempotent Supabase reads after a transient edge response."""
+    def _retry_storage_operation(self, operation: Callable[[], Any]) -> Any:
+        """Retry a caller-confirmed idempotent Supabase operation after edge errors."""
         for attempt in range(self.STORAGE_READ_ATTEMPTS):
             try:
                 return operation()
@@ -164,6 +168,10 @@ class AuthService:
                 # This function is called from asyncio.to_thread, so the small
                 # backoff does not block FastAPI's event loop.
                 time.sleep(0.25 * (attempt + 1))
+
+    def _retry_storage_read(self, operation: Callable[[], Any]) -> Any:
+        """Backward-compatible name for retrying idempotent storage reads."""
+        return self._retry_storage_operation(operation)
 
     def check_schema(self) -> bool:
         """Verify the account schema without exposing or reading user records."""
@@ -1023,14 +1031,17 @@ class AuthService:
 
     # ── Full-history background sync ──────────────────────────────────────
     def get_sync_job(self, user_id: int) -> dict | None:
-        return self._first(
-            self._service_client()
-            .table("profile_sync_jobs")
-            .select("*")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
+        def read():
+            return (
+                self._service_client()
+                .table("profile_sync_jobs")
+                .select("*")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+
+        return self._first(self._retry_storage_read(read))
 
     def upsert_sync_job(self, user_id: int, **fields) -> dict:
         payload = {
@@ -1038,24 +1049,30 @@ class AuthService:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             **fields,
         }
-        row = self._first(
-            self._service_client()
-            .table("profile_sync_jobs")
-            .upsert(payload, on_conflict="user_id")
-            .execute()
-        )
+        def write():
+            return (
+                self._service_client()
+                .table("profile_sync_jobs")
+                .upsert(payload, on_conflict="user_id")
+                .execute()
+            )
+
+        row = self._first(self._retry_storage_operation(write))
         return row or payload
 
     def touch_sync_job(
         self, user_id: int, *, owned_by: str | None = None, **fields
     ) -> bool:
         now = datetime.now(timezone.utc).isoformat()
-        query = self._service_client().table("profile_sync_jobs").update(
-            {"heartbeat_at": now, "updated_at": now, **fields}
-        ).eq("user_id", user_id)
-        if owned_by:
-            query = query.eq("lease_token", owned_by)
-        result = query.execute()
+        def write():
+            query = self._service_client().table("profile_sync_jobs").update(
+                {"heartbeat_at": now, "updated_at": now, **fields}
+            ).eq("user_id", user_id)
+            if owned_by:
+                query = query.eq("lease_token", owned_by)
+            return query.execute()
+
+        result = self._retry_storage_operation(write)
         return bool(result.data)
 
     def claim_sync_job(
@@ -1085,10 +1102,12 @@ class AuthService:
         """Atomic batch upsert into user_watched_films via the SQL guard."""
         if not films:
             return 0
-        result = self._service_client().rpc(
-            "upsert_watched_films",
-            {"p_user_id": user_id, "p_films": films},
-        ).execute()
+        result = self._retry_storage_operation(
+            lambda: self._service_client().rpc(
+                "upsert_watched_films",
+                {"p_user_id": user_id, "p_films": films},
+            ).execute()
+        )
         # Every public film observation feeds the account-independent catalog.
         # Keeping promotion at this boundary means account deletion can remove
         # personal ratings/history without discarding reusable film metadata.
@@ -1139,18 +1158,21 @@ class AuthService:
         offset = 0
         out: list[dict] = []
         while True:
-            rows = (
-                service.table("user_watched_films")
-                .select(
-                    "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
-                    "user_rating,poster_url,poster_resolver_url,watched_rank,details_loaded"
+            def read():
+                return (
+                    service.table("user_watched_films")
+                    .select(
+                        "film_slug,title,release_year,tmdb_id,director,genres,keywords,"
+                        "user_rating,poster_url,poster_resolver_url,watched_rank,details_loaded"
+                    )
+                    .eq("user_id", user_id)
+                    .eq("is_active", True)
+                    .order("watched_rank")
+                    .range(offset, offset + page - 1)
+                    .execute()
                 )
-                .eq("user_id", user_id)
-                .eq("is_active", True)
-                .order("watched_rank")
-                .range(offset, offset + page - 1)
-                .execute()
-            ).data or []
+
+            rows = self._retry_storage_read(read).data or []
             out.extend(rows)
             if len(rows) < page:
                 return out
@@ -1162,14 +1184,17 @@ class AuthService:
         offset = 0
         slugs: set[str] = set()
         while True:
-            rows = (
-                service.table("user_watched_films")
-                .select("film_slug")
-                .eq("user_id", user_id)
-                .eq("is_active", True)
-                .range(offset, offset + page - 1)
-                .execute()
-            ).data or []
+            def read():
+                return (
+                    service.table("user_watched_films")
+                    .select("film_slug")
+                    .eq("user_id", user_id)
+                    .eq("is_active", True)
+                    .range(offset, offset + page - 1)
+                    .execute()
+                )
+
+            rows = self._retry_storage_read(read).data or []
             slugs.update(row["film_slug"] for row in rows if row.get("film_slug"))
             if len(rows) < page:
                 return slugs
@@ -1184,9 +1209,11 @@ class AuthService:
         if not rows:
             return 0
         try:
-            result = self._service_client().rpc(
-                "upsert_film_posters", {"p_films": rows}
-            ).execute()
+            result = self._retry_storage_operation(
+                lambda: self._service_client().rpc(
+                    "upsert_film_posters", {"p_films": rows}
+                ).execute()
+            )
             return int(result.data)
         except Exception:
             return 0

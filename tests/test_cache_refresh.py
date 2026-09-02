@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,6 +27,35 @@ class CacheFreshnessTests(unittest.TestCase):
 
             self.assertFalse(fresh)
             self.assertEqual(value[0]["slug"], "old")
+
+    def test_cache_instances_share_a_write_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "cache.sqlite3"
+            first = Cache(db_path)
+            second = Cache(db_path)
+            barrier = threading.Barrier(2)
+            errors = []
+
+            def write(cache, prefix):
+                try:
+                    barrier.wait()
+                    for index in range(50):
+                        cache.set("concurrent", f"{prefix}-{index}", {"index": index})
+                except Exception as exc:  # pragma: no cover - assertion below
+                    errors.append(exc)
+
+            left = threading.Thread(target=write, args=(first, "left"))
+            right = threading.Thread(target=write, args=(second, "right"))
+            left.start()
+            right.start()
+            left.join()
+            right.join()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(len(first.get_many("concurrent", [
+                *(f"left-{index}" for index in range(50)),
+                *(f"right-{index}" for index in range(50)),
+            ])), 100)
 
 
 class LayeredCacheTests(unittest.TestCase):
