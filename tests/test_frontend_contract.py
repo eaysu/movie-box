@@ -252,7 +252,9 @@ def test_sinefil_area_uses_compact_cards_and_profile_modal():
     assert "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;" in schema
     assert "idx_users_sinefil_directory" in schema
     assert "apiJSON('/api/profile/discovery-settings'" in app_js
-    assert "apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`)" in app_js
+    assert "apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}&page=${_sinefilPage}&per_page=${_sinefilPerPage}`)" in app_js
+    assert 'id="sinefil-pagination"' in html
+    assert 'data-sinefil-page' in app_js
     assert 'data-sinefil-profile=' in app_js
     assert "/personality`" in app_js
     assert "Film zevkiniz benziyor" in app_js
@@ -308,7 +310,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260903.22"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260903.31" in html
+    assert "/static/js/app.js?v=20260903.32" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

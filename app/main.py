@@ -1601,11 +1601,15 @@ async def mark_letter_read(letter_id: str, request: Request) -> dict:
 
 
 @app.get("/api/sinefil-alani")
-async def list_sinefil_alani(request: Request, q: str = "") -> dict:
+async def list_sinefil_alani(request: Request, q: str = "", page: int = 1, per_page: int = 12) -> dict:
     account = await _require_account(request)
     query = str(q or "").strip().lstrip("@").lower()
     if len(query) > 80:
         raise HTTPException(status_code=422, detail="Arama metni çok uzun.")
+    if page < 1 or page > 10000:
+        raise HTTPException(status_code=422, detail="Geçersiz sayfa.")
+    if per_page < 1 or per_page > 24:
+        raise HTTPException(status_code=422, detail="Geçersiz sayfa boyutu.")
     service = _auth_service()
     try:
         cards = await asyncio.to_thread(service.list_sinefil_cards, account, query)
@@ -1616,7 +1620,15 @@ async def list_sinefil_alani(request: Request, q: str = "") -> dict:
             detail="Sinefil Sineması henüz hazır değil. SQL güncellemesini kontrol et.",
         ) from exc
     await _record_activity_event(service, account, "sinefil_area_opened", {"query": bool(query)})
-    return {"profiles": cards[:48]}
+    total = len(cards)
+    pages = max(1, (total + per_page - 1) // per_page)
+    if page > pages and total:
+        page = pages
+    start = (page - 1) * per_page
+    return {
+        "profiles": cards[start : start + per_page],
+        "pagination": {"page": page, "per_page": per_page, "total": total, "pages": pages},
+    }
 
 
 @app.get("/api/sinefil-alani/{username}/personality")

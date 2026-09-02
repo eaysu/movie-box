@@ -2924,6 +2924,8 @@ function renderBlendWatchlist(payload = {}) {
 let _sinefilSearchTimer = null;
 let _activeSinefilProfile = null;
 let _sinefilProfiles = [];
+let _sinefilPage = 1;
+const _sinefilPerPage = 12;
 
 function sinefilMessage(kind, message = '') {
   const el = $(`sinefil-${kind}`);
@@ -2984,24 +2986,48 @@ async function openSinefilProfile(username) {
   catch (error) { $('sinefil-profile-personality').textContent = error.message || 'Kişilik okuması yüklenemedi.'; }
 }
 
-async function loadSinefilArea() {
+function renderSinefilPagination(pagination = {}) {
+  const nav = $('sinefil-pagination');
+  const pages = Math.max(1, Number(pagination.pages) || 1);
+  const page = Math.min(pages, Math.max(1, Number(pagination.page) || 1));
+  nav.innerHTML = '';
+  nav.classList.toggle('hidden', pages <= 1);
+  nav.classList.toggle('flex', pages > 1);
+  if (pages <= 1) return;
+  const button = (label, target, disabled = false, current = false) => `<button type="button" data-sinefil-page="${target}"${disabled ? ' disabled' : ''}${current ? ' aria-current="page"' : ''} class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border px-3 text-sm transition-colors ${current ? 'border-tertiary-container/60 bg-tertiary-container/15 text-tertiary-container' : 'border-outline-variant/25 text-on-surface-variant hover:border-tertiary-container/45 hover:text-tertiary-container'} disabled:cursor-not-allowed disabled:opacity-35">${label}</button>`;
+  nav.insertAdjacentHTML('beforeend', button('<span class="material-symbols-outlined text-[18px]">chevron_left</span>', page - 1, page === 1));
+  for (let number = 1; number <= pages; number += 1) {
+    nav.insertAdjacentHTML('beforeend', button(String(number), number, false, number === page));
+  }
+  nav.insertAdjacentHTML('beforeend', button('<span class="material-symbols-outlined text-[18px]">chevron_right</span>', page + 1, page === pages));
+}
+
+async function loadSinefilArea(page = 1) {
+  _sinefilPage = Math.max(1, Number(page) || 1);
   sinefilMessage('error');
   const query = $('sinefil-search').value.trim();
   $('sinefil-grid').innerHTML = '<div class="col-span-full py-12 text-center text-on-surface-variant">Sinefiller aranıyor…</div>';
+  $('sinefil-pagination').classList.add('hidden');
+  $('sinefil-pagination').classList.remove('flex');
   try {
-    const data = await apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`);
+    const data = await apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}&page=${_sinefilPage}&per_page=${_sinefilPerPage}`);
     const profiles = data.profiles || [];
     _sinefilProfiles = profiles;
+    const pagination = data.pagination || { page: _sinefilPage, pages: profiles.length === _sinefilPerPage ? _sinefilPage + 1 : 1, per_page: _sinefilPerPage, total: profiles.length };
+    _sinefilPage = Number(pagination.page) || _sinefilPage;
     if (!profiles.length) {
       $('sinefil-grid').innerHTML = '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Henüz gösterilecek sinefil yok. Görünürlüğünü açan yeni profiller burada belirecek.</div>';
+      renderSinefilPagination({ pages: 1, page: 1 });
       return;
     }
     sinefilMessage('notice', _account?.discoverable
       ? "Profilin Sinefil Sineması'nda görünür. İstediğin an profilindeki Görünür anahtarıyla gizleyebilirsin."
       : 'Profilin şu an gizli; yine de diğer sinefilleri keşfedebilirsin.');
     $('sinefil-grid').innerHTML = profiles.map(sinefilCard).join('');
+    renderSinefilPagination(pagination);
   } catch (error) {
     $('sinefil-grid').innerHTML = '';
+    renderSinefilPagination({ pages: 1, page: 1 });
     sinefilMessage('error', error.message || 'Sinefil Sineması yüklenemedi.');
   }
 }
@@ -3665,7 +3691,12 @@ $('btn-sinefil-back').addEventListener('click', () => showView(homeView()));
 $('btn-sinefil-refresh').addEventListener('click', loadSinefilArea);
 $('sinefil-search').addEventListener('input', () => {
   clearTimeout(_sinefilSearchTimer);
-  _sinefilSearchTimer = setTimeout(loadSinefilArea, 280);
+  _sinefilSearchTimer = setTimeout(() => loadSinefilArea(1), 280);
+});
+$('sinefil-pagination').addEventListener('click', event => {
+  const button = event.target.closest('[data-sinefil-page]');
+  if (!button || button.disabled) return;
+  loadSinefilArea(Number(button.dataset.sinefilPage));
 });
 $('sinefil-grid').addEventListener('click', event => {
   const profile = event.target.closest('[data-sinefil-profile]');
