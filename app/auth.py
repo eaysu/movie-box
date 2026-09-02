@@ -725,28 +725,20 @@ class AuthService:
     def get_letter_key_material(self, account: Account) -> dict | None:
         row = self._first(
             self._service_client().table("user_letter_keys")
-            .select("public_key,encrypted_private_key,recovery_private_key,key_version,created_at,updated_at")
+            .select("public_key,key_version,created_at,updated_at")
             .eq("user_id", account.id).limit(1).execute()
         )
         return row or None
 
     def save_letter_key_material(self, account: Account, payload: dict) -> dict:
         public_key = str(payload.get("public_key") or "")
-        encrypted = payload.get("encrypted_private_key")
-        recovery = payload.get("recovery_private_key")
-        try:
-            envelopes_size = len(json.dumps({"encrypted": encrypted, "recovery": recovery}, separators=(",", ":")))
-        except (TypeError, ValueError):
-            envelopes_size = 0
-        if not (40 <= len(public_key) <= 512) or not isinstance(encrypted, dict) or not isinstance(recovery, dict) or not 50 <= envelopes_size <= 40000:
+        if not (40 <= len(public_key) <= 512):
             raise BlendServiceError("invalid_letter_key")
         now = datetime.now(timezone.utc).isoformat()
         row = self._service_client().table("user_letter_keys").upsert(
             {
                 "user_id": account.id,
                 "public_key": public_key,
-                "encrypted_private_key": encrypted,
-                "recovery_private_key": recovery,
                 "key_version": 1,
                 "updated_at": now,
             }, on_conflict="user_id"

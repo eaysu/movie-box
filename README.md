@@ -59,7 +59,7 @@ Open http://localhost:8000
 | `POST /api/profile/discovery-settings` | Opts the signed-in user into/out of Sinefil Sineması |
 | `GET /api/sinefil-alani` | Lists opted-in, safe profile cards ranked by taste overlap |
 | `GET /api/sinefil-alani/{username}/personality` | Lazy-loads an opted-in profile's Fav 4 reading |
-| `GET/PUT /api/letters/key-material` | Reads/writes only the caller's browser-encrypted letter-key envelopes |
+| `GET/PUT /api/letters/key-material` | Reads/writes only the caller's device public encryption key |
 | `POST /api/letters/receiving` | Opens or closes voluntary letter receiving |
 | `GET/POST /api/letters` | Lists opaque inbox packets or sends one client-encrypted letter per 24h |
 | `GET /api/letters/recipients/{username}` | Gets an eligible recipient's public encryption key |
@@ -80,11 +80,10 @@ Open http://localhost:8000
 
 ### Sinefil Mektupları
 
-Mektuplar, uygulama giriş parolasından ayrı bir istemci tarafı kilit parolasıyla
-korunur. Tarayıcı ECDH P-256, HKDF ve AES-GCM kullanarak gövdeyi ve isteğe bağlı
-film hediyesini şifreler; API yalnızca şifreli paketi taşır. İlk kurulumda verilen
-tek seferlik kurtarma kodu tekrar gösterilmez. Kilit parolası ve kurtarma kodu
-birlikte kaybolursa eski mektuplar teknik olarak geri getirilemez.
+Mektuplar cihaz-yerel bir ECDH anahtarıyla korunur. Tarayıcı ECDH P-256, HKDF ve
+AES-GCM kullanarak gövdeyi ve isteğe bağlı film hediyesini şifreler; API yalnızca
+şifreli paketi taşır. Anahtar tarayıcının IndexedDB deposundadır; tarayıcı verisi
+silinir veya başka cihaza geçilirse eski mektuplar teknik olarak açılamaz.
 
 ## Local admin activity report
 

@@ -1079,8 +1079,6 @@ class DiscoveryVisibilityRequest(BaseModel):
 
 class LetterKeyMaterialRequest(BaseModel):
     public_key: str
-    encrypted_private_key: dict
-    recovery_private_key: dict
 
     @field_validator("public_key")
     @classmethod

@@ -22,7 +22,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 
 let _lettersCryptoModule = null;
 function lettersCrypto() {
-  _lettersCryptoModule ||= import('./letters-crypto.js?v=20260902.24');
+  _lettersCryptoModule ||= import('./letters-crypto.js?v=20260902.27');
   return _lettersCryptoModule;
 }
 
@@ -1431,12 +1431,10 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && _account) refreshBlendBadge();
 });
 
-let _letterKeyMaterial = null;
 let _letterIdentity = null;
 let _letterRecipient = null;
 let _letterPickedFilm = null;
 let _letterSearchTimer = null;
-let _pendingLetterIdentity = null;
 let _letterSendStatus = { can_send: true, seconds_remaining: 0 };
 let _letterCooldownTimer = null;
 
@@ -1500,7 +1498,6 @@ function renderLetterSettings() {
   $('letters-status').textContent = open
     ? 'Diğer sinefiller sana günde bir şifreli mektup gönderebilir.'
     : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
-  $('btn-letters-unlock').textContent = _letterIdentity ? 'Kilit açık' : (_letterKeyMaterial ? 'Kilidi aç' : 'Mektupları kur');
 }
 
 function letterFilmMarkup(film) {
@@ -1526,26 +1523,30 @@ function letterCard(item, payload) {
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(peer)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
 }
 
-async function loadLetterKeyMaterial() {
-  const data = await apiJSON('/api/letters/key-material');
-  _letterKeyMaterial = data.key_material || null;
-  renderLetterSettings();
-  return _letterKeyMaterial;
+async function ensureDeviceLetterIdentity() {
+  if (!_account) return null;
+  const crypto = await lettersCrypto();
+  const identity = await crypto.loadOrCreateDeviceIdentity(_account.id);
+  _letterIdentity = identity;
+  const existing = await apiJSON('/api/letters/key-material');
+  if (existing.key_material?.public_key !== identity.publicKey) {
+    await apiJSON('/api/letters/key-material', {
+      method: 'PUT', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ public_key: identity.publicKey }),
+    });
+  }
+  return identity;
 }
 
 async function loadLetters() {
   if (!_account) return;
   letterMessage('error');
   try {
-    await loadLetterKeyMaterial();
+    await ensureDeviceLetterIdentity();
     const unreadData = await apiJSON('/api/letters/unread-count');
     const unreadCount = Math.max(0, Number(unreadData.count) || 0);
     $('inbox-letters-badge').textContent = unreadCount > 9 ? '9+' : String(unreadCount);
     $('inbox-letters-badge').classList.toggle('hidden', unreadCount === 0);
-    if (!_letterIdentity) {
-      $('letters-list').innerHTML = `<div class="rounded-2xl border border-dashed border-outline-variant/30 p-7 text-center text-sm text-on-surface-variant">Mektupların cihazında şifreli. İçeriği görmek için <button data-letter-action="unlock" class="text-tertiary-container underline">kilidi aç</button>.</div>`;
-      return;
-    }
     const data = await apiJSON('/api/letters');
     const crypto = await lettersCrypto();
     const decoded = await Promise.all((data.letters || []).map(async item => {
@@ -1570,111 +1571,9 @@ async function loadLetters() {
   }
 }
 
-async function unlockLetters() {
-  await loadLetterKeyMaterial();
-  if (!_letterKeyMaterial) {
-    _pendingLetterIdentity = null;
-    $('letter-lock-password').value = '';
-    $('letter-lock-password-confirm').value = '';
-    document.querySelectorAll('[data-letter-password-toggle]').forEach(button => {
-      const input = $(button.dataset.letterPasswordToggle);
-      if (input) input.type = 'password';
-      button.setAttribute('aria-pressed', 'false');
-      button.setAttribute('aria-label', 'Mektup kilit parolasını göster');
-      button.querySelector('.material-symbols-outlined').textContent = 'visibility';
-    });
-    $('letter-recovery-confirm').checked = false;
-    $('letter-recovery-panel').classList.add('hidden');
-    $('letter-key-setup-error').classList.add('hidden');
-    $('btn-letter-key-create').textContent = 'Şifreli kasayı oluştur';
-    $('dialog-letter-key-setup').showModal();
-    return;
-  }
-  $('letter-unlock-password').value = '';
-  $('letter-unlock-error').classList.add('hidden');
-  $('dialog-letter-unlock').showModal();
-}
-
-async function createLetterKeys(event) {
-  event.preventDefault();
-  const password = $('letter-lock-password').value;
-  if (password !== $('letter-lock-password-confirm').value) { $('letter-key-setup-error').textContent = 'Mektup kilit parolaları eşleşmiyor.'; $('letter-key-setup-error').classList.remove('hidden'); return; }
-  const button = $('btn-letter-key-create');
-  button.disabled = true;
-  try {
-    if (!_pendingLetterIdentity) {
-      const crypto = await lettersCrypto();
-      _pendingLetterIdentity = await crypto.createLetterIdentity(password);
-      $('letter-recovery-code').textContent = _pendingLetterIdentity.recovery;
-      $('letter-recovery-panel').classList.remove('hidden');
-    }
-    if (!$('letter-recovery-confirm').checked) { button.textContent = 'Kodu kaydettiğini onayla'; return; }
-    const created = _pendingLetterIdentity;
-    await apiJSON('/api/letters/key-material', { method: 'PUT', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(created.payload) });
-    _letterIdentity = created.keyPair;
-    _letterKeyMaterial = { ...created.payload, key_version: 1 };
-    _pendingLetterIdentity = null;
-    $('dialog-letter-key-setup').close();
-    letterMessage('notice', 'Şifreli mektup kasan hazır. İstersen şimdi mektup almaya açabilirsin.');
-    renderLetterSettings();
-  } catch (error) {
-    $('letter-key-setup-error').textContent = error.message || 'Mektup anahtarı oluşturulamadı.';
-    $('letter-key-setup-error').classList.remove('hidden');
-  } finally { button.disabled = false; }
-}
-
-async function submitLetterUnlock(event) {
-  event.preventDefault();
-  const button = $('btn-letter-unlock'); button.disabled = true;
-  try {
-    const crypto = await lettersCrypto();
-    _letterIdentity = await crypto.unlockLetterIdentity(_letterKeyMaterial, $('letter-unlock-password').value);
-    $('letter-unlock-password').value = '';
-    $('dialog-letter-unlock').close();
-    renderLetterSettings();
-    await loadLetters();
-  } catch (_) {
-    $('letter-unlock-error').textContent = 'Kilit parolası doğru değil veya bu cihazdaki anahtar açılamadı.';
-    $('letter-unlock-error').classList.remove('hidden');
-  } finally { button.disabled = false; }
-}
-
-function openLetterRecovery() {
-  $('letter-recovery-input').value = '';
-  $('letter-recovery-new-password').value = '';
-  $('letter-recover-error').classList.add('hidden');
-  $('dialog-letter-unlock').close();
-  $('dialog-letter-recover').showModal();
-}
-
-async function recoverLetterLock(event) {
-  event.preventDefault();
-  try {
-    const crypto = await lettersCrypto();
-    const recovered = await crypto.recoverLetterIdentity(
-      _letterKeyMaterial,
-      $('letter-recovery-input').value.trim().toUpperCase(),
-      $('letter-recovery-new-password').value,
-    );
-    const payload = {
-      public_key: _letterKeyMaterial.public_key,
-      encrypted_private_key: recovered.encrypted_private_key,
-      recovery_private_key: _letterKeyMaterial.recovery_private_key,
-    };
-    await apiJSON('/api/letters/key-material', { method: 'PUT', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
-    _letterIdentity = { privateKey: recovered.privateKey };
-    _letterKeyMaterial = { ..._letterKeyMaterial, ...payload };
-    $('dialog-letter-recover').close();
-    letterMessage('notice', 'Mektup kilidin yenilendi. Kurtarma kodunu güvenle saklamaya devam et.');
-    await loadLetters();
-  } catch (_) {
-    $('letter-recover-error').textContent = 'Kurtarma kodu doğrulanamadı veya yeni parola geçersiz.';
-    $('letter-recover-error').classList.remove('hidden');
-  }
-}
-
 async function toggleLetterReceiving(trigger = null) {
-  if (!_letterKeyMaterial) { await unlockLetters(); return; }
+  try { await ensureDeviceLetterIdentity(); }
+  catch (error) { letterMessage('error', error.message || 'Bu cihazda şifreli mektup anahtarı hazırlanamadı.'); return; }
   const next = !_account?.letter_receiving_enabled;
   const prompt = next
     ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana günde bir şifreli mektup gönderebilir. Açmak istiyor musun?'
@@ -1691,7 +1590,10 @@ async function toggleLetterReceiving(trigger = null) {
 }
 
 function openLetterCompose(username) {
-  if (!_letterIdentity) { unlockLetters(); return; }
+  if (!_letterIdentity) {
+    ensureDeviceLetterIdentity().then(() => openLetterCompose(username)).catch(error => sinefilMessage('error', error.message || 'Mektup bu cihazda hazırlanamadı.'));
+    return;
+  }
   _letterRecipient = { username };
   _letterPickedFilm = null;
   $('letter-compose-title').textContent = `@${username} için mektup`;
@@ -1736,7 +1638,7 @@ async function sendLetter(event) {
     const recipientData = await apiJSON(`/api/letters/recipients/${encodeURIComponent(_letterRecipient.username)}`);
     const recipient = recipientData.recipient;
     const crypto = await lettersCrypto();
-    const envelope = await crypto.encryptLetter(_letterIdentity.privateKey, _letterKeyMaterial.public_key, {
+    const envelope = await crypto.encryptLetter(_letterIdentity.privateKey, _letterIdentity.publicKey, {
       ...recipient, body: $('letter-compose-body').value, film: _letterPickedFilm,
     });
     await apiJSON('/api/letters', { method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ recipient_username: recipient.username, envelope }) });
@@ -1998,7 +1900,6 @@ async function handleBlendInboxAction(event) {
   if (letterButton) {
     const action = letterButton.dataset.letterAction;
     const username = letterButton.dataset.peerUsername;
-    if (action === 'unlock') { unlockLetters(); return; }
     if (!username) return;
     if (action === 'block') {
       if (!window.confirm(`@${username} engellensin mi? Aranızdaki mektuplar iki taraftan da silinir.`)) return;
@@ -3711,23 +3612,12 @@ document.querySelectorAll('[data-password-toggle]').forEach(button => {
     setPasswordVisibility(button, button.getAttribute('aria-pressed') !== 'true');
   });
 });
-document.querySelectorAll('[data-letter-password-toggle]').forEach(button => {
-  button.addEventListener('click', () => {
-    const input = $(button.dataset.letterPasswordToggle);
-    if (!input) return;
-    const visible = input.type === 'password';
-    input.type = visible ? 'text' : 'password';
-    button.setAttribute('aria-pressed', String(visible));
-    button.setAttribute('aria-label', visible ? 'Mektup kilit parolasını gizle' : 'Mektup kilit parolasını göster');
-    button.querySelector('.material-symbols-outlined').textContent = visible ? 'visibility_off' : 'visibility';
-  });
-});
 $('header-how-it-works').addEventListener('click', () => openInfoDialog('dialog-how-it-works'));
 $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-privacy'));
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-letter-key-setup'), $('dialog-letter-unlock'), $('dialog-letter-recover'), $('dialog-letter-compose')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-letter-compose')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
@@ -3805,11 +3695,6 @@ $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 document.querySelectorAll('[data-inbox-tab]').forEach(button => button.addEventListener('click', () => setInboxTab(button.dataset.inboxTab)));
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
 $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
-$('btn-letters-unlock').addEventListener('click', unlockLetters);
-$('letter-key-setup-form').addEventListener('submit', createLetterKeys);
-$('letter-unlock-form').addEventListener('submit', submitLetterUnlock);
-$('btn-letter-recover-open').addEventListener('click', openLetterRecovery);
-$('letter-recover-form').addEventListener('submit', recoverLetterLock);
 $('letter-compose-form').addEventListener('submit', sendLetter);
 $('letter-compose-body').addEventListener('input', () => { $('letter-compose-count').textContent = `${$('letter-compose-body').value.length} / 600`; });
 $('letter-film-search').addEventListener('input', () => { clearTimeout(_letterSearchTimer); _letterSearchTimer = setTimeout(searchLetterFilms, 250); });

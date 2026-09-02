@@ -389,12 +389,15 @@ CREATE INDEX IF NOT EXISTS idx_user_reports_reporter_time
 CREATE TABLE IF NOT EXISTS public.user_letter_keys (
   user_id                 BIGINT PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   public_key              TEXT NOT NULL CHECK (char_length(public_key) BETWEEN 40 AND 512),
-  encrypted_private_key   JSONB NOT NULL,
-  recovery_private_key    JSONB NOT NULL,
   key_version             SMALLINT NOT NULL DEFAULT 1 CHECK (key_version >= 1),
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Remove the short-lived password/recovery-key columns from the first E2EE
+-- prototype. Device-only keys must never be persisted on the server.
+ALTER TABLE public.user_letter_keys DROP COLUMN IF EXISTS encrypted_private_key;
+ALTER TABLE public.user_letter_keys DROP COLUMN IF EXISTS recovery_private_key;
 
 CREATE TABLE IF NOT EXISTS public.cinephile_letters (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -1,11 +1,12 @@
-// Sinefil Mektupları crypto boundary. This module deliberately has no network
-// code: lock passwords, recovery codes and decrypted private keys never leave
-// the browser. Packets are ECDH P-256 + HKDF-SHA-256 + AES-256-GCM.
+// Device-local E2EE identity for Sinefil Mektupları. The private CryptoKey is
+// non-extractable and stored only in this browser's IndexedDB; the API sees
+// the public key and encrypted letter packets, never a private key or text.
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const LOCK_ITERATIONS = 310000;
-const INFO = encoder.encode('movieboxd-sinefil-mektubu-v1');
+const INFO = encoder.encode('movieboxd-sinefil-mektubu-v2');
+const DB_NAME = 'movieboxd-letter-identity';
+const STORE = 'keys';
 
 function toB64(bytes) {
   let binary = '';
@@ -15,64 +16,51 @@ function toB64(bytes) {
 }
 
 function fromB64(value) {
-  const padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/')
-    + '='.repeat((4 - String(value || '').length % 4) % 4);
-  const binary = atob(padded);
-  return Uint8Array.from(binary, char => char.charCodeAt(0));
+  const raw = String(value || '');
+  const padded = raw.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - raw.length % 4) % 4);
+  return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
 }
 
 function random(size) { return crypto.getRandomValues(new Uint8Array(size)); }
 
-async function passwordKey(secret, salt, iterations = LOCK_ITERATIONS) {
-  const material = await crypto.subtle.importKey('raw', encoder.encode(secret), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Yerel anahtar deposu açılamadı.'));
+  });
 }
 
-async function wrapPrivate(privateKey, secret) {
-  const salt = random(16);
-  const iv = random(12);
-  const key = await passwordKey(secret, salt);
-  const raw = await crypto.subtle.exportKey('pkcs8', privateKey);
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, raw);
-  return { v: 1, alg: 'PBKDF2-SHA-256/AES-256-GCM', iterations: LOCK_ITERATIONS, salt: toB64(salt), iv: toB64(iv), ciphertext: toB64(ciphertext) };
+async function readDeviceKey(accountId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, 'readonly').objectStore(STORE).get(String(accountId));
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error || new Error('Yerel anahtar okunamadı.'));
+  });
 }
 
-async function unwrapPrivate(envelope, secret) {
-  if (!envelope || envelope.v !== 1 || !envelope.salt || !envelope.iv || !envelope.ciphertext) throw new Error('Mektup anahtarı bulunamadı.');
-  const key = await passwordKey(secret, fromB64(envelope.salt), Number(envelope.iterations) || LOCK_ITERATIONS);
-  const raw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(envelope.iv) }, key, fromB64(envelope.ciphertext));
-  return crypto.subtle.importKey('pkcs8', raw, { name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+async function writeDeviceKey(accountId, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, 'readwrite').objectStore(STORE).put(value, String(accountId));
+    request.onsuccess = () => resolve(value);
+    request.onerror = () => reject(request.error || new Error('Yerel anahtar kaydedilemedi.'));
+  });
 }
 
-function recoveryCode() {
-  // A human-copyable 128-bit secret; format makes transcription less error-prone.
-  return [...random(16)].map(n => n.toString(16).padStart(2, '0')).join('').match(/.{1,4}/g).join('-').toUpperCase();
-}
-
-export async function createLetterIdentity(lockPassword) {
-  if (String(lockPassword || '').length < 10) throw new Error('Mektup kilit parolası en az 10 karakter olmalı.');
-  const pair = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
-  const recovery = recoveryCode();
-  return {
-    keyPair: pair,
-    recovery,
-    payload: {
-      public_key: toB64(await crypto.subtle.exportKey('raw', pair.publicKey)),
-      encrypted_private_key: await wrapPrivate(pair.privateKey, lockPassword),
-      recovery_private_key: await wrapPrivate(pair.privateKey, recovery),
-    },
-  };
-}
-
-export async function unlockLetterIdentity(material, lockPassword) {
-  const privateKey = await unwrapPrivate(material?.encrypted_private_key, lockPassword);
-  return { privateKey, publicKey: await crypto.subtle.importKey('raw', fromB64(material.public_key), { name: 'ECDH', namedCurve: 'P-256' }, true, []) };
-}
-
-export async function recoverLetterIdentity(material, recovery, newLockPassword) {
-  if (String(newLockPassword || '').length < 10) throw new Error('Yeni mektup kilit parolası en az 10 karakter olmalı.');
-  const privateKey = await unwrapPrivate(material?.recovery_private_key, recovery);
-  return { privateKey, encrypted_private_key: await wrapPrivate(privateKey, newLockPassword) };
+export async function loadOrCreateDeviceIdentity(accountId) {
+  const saved = await readDeviceKey(accountId);
+  if (saved?.privateKey && saved?.publicKey) return saved;
+  // Generate exportable once, then re-import the private key as non-extractable
+  // before it is persisted. This allows IndexedDB to retain a CryptoKey without
+  // ever putting private bytes in application/server storage.
+  const generated = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const privateRaw = await crypto.subtle.exportKey('pkcs8', generated.privateKey);
+  const privateKey = await crypto.subtle.importKey('pkcs8', privateRaw, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+  const publicKey = await crypto.subtle.exportKey('raw', generated.publicKey);
+  return writeDeviceKey(accountId, { privateKey, publicKey: toB64(publicKey), createdAt: new Date().toISOString() });
 }
 
 async function sharedAesKey(privateKey, otherPublicKeyB64, salt) {
@@ -85,11 +73,9 @@ async function sharedAesKey(privateKey, otherPublicKeyB64, salt) {
 export async function encryptLetter(privateKey, senderPublicKey, recipient) {
   const body = String(recipient.body || '').trim();
   if (!body || body.length > 600) throw new Error('Mektup 1–600 karakter arasında olmalı.');
-  const salt = random(16);
-  const iv = random(12);
+  const salt = random(16); const iv = random(12);
   const key = await sharedAesKey(privateKey, recipient.public_key, salt);
-  const payload = JSON.stringify({ v: 1, body, film: recipient.film || null });
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(payload));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(JSON.stringify({ v: 2, body, film: recipient.film || null })));
   return { ciphertext: toB64(ciphertext), iv: toB64(iv), salt: toB64(salt), sender_public_key: senderPublicKey, recipient_public_key: recipient.public_key };
 }
 
@@ -98,6 +84,6 @@ export async function decryptLetter(privateKey, packet, isSender) {
   const key = await sharedAesKey(privateKey, peerKey, fromB64(packet.salt));
   const raw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(packet.iv) }, key, fromB64(packet.ciphertext));
   const payload = JSON.parse(decoder.decode(raw));
-  if (!payload || payload.v !== 1 || typeof payload.body !== 'string') throw new Error('Mektup biçimi desteklenmiyor.');
+  if (!payload || ![1, 2].includes(payload.v) || typeof payload.body !== 'string') throw new Error('Mektup biçimi desteklenmiyor.');
   return payload;
 }
