@@ -1576,6 +1576,13 @@ async function unlockLetters() {
     _pendingLetterIdentity = null;
     $('letter-lock-password').value = '';
     $('letter-lock-password-confirm').value = '';
+    document.querySelectorAll('[data-letter-password-toggle]').forEach(button => {
+      const input = $(button.dataset.letterPasswordToggle);
+      if (input) input.type = 'password';
+      button.setAttribute('aria-pressed', 'false');
+      button.setAttribute('aria-label', 'Mektup kilit parolasını göster');
+      button.querySelector('.material-symbols-outlined').textContent = 'visibility';
+    });
     $('letter-recovery-confirm').checked = false;
     $('letter-recovery-panel').classList.add('hidden');
     $('letter-key-setup-error').classList.add('hidden');
@@ -3702,6 +3709,17 @@ $('btn-logout').addEventListener('click', logoutAccount);
 document.querySelectorAll('[data-password-toggle]').forEach(button => {
   button.addEventListener('click', () => {
     setPasswordVisibility(button, button.getAttribute('aria-pressed') !== 'true');
+  });
+});
+document.querySelectorAll('[data-letter-password-toggle]').forEach(button => {
+  button.addEventListener('click', () => {
+    const input = $(button.dataset.letterPasswordToggle);
+    if (!input) return;
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(visible));
+    button.setAttribute('aria-label', visible ? 'Mektup kilit parolasını gizle' : 'Mektup kilit parolasını göster');
+    button.querySelector('.material-symbols-outlined').textContent = visible ? 'visibility_off' : 'visibility';
   });
 });
 $('header-how-it-works').addEventListener('click', () => openInfoDialog('dialog-how-it-works'));
