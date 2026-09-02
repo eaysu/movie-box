@@ -831,6 +831,22 @@ class AuthService:
             "recipient_user_id", account.id).is_("read_at", "null").execute().data or []
         return len(rows)
 
+    def letter_send_status(self, account: Account) -> dict:
+        """Expose only the sender's own 24h cooldown, never letter content."""
+        row = self._first(
+            self._service_client().table("cinephile_letters").select("created_at")
+            .eq("sender_user_id", account.id).order("created_at", desc=True).limit(1).execute()
+        )
+        if not row or not row.get("created_at"):
+            return {"can_send": True, "seconds_remaining": 0, "next_send_at": None}
+        try:
+            sent_at = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
+            next_at = sent_at + timedelta(hours=24)
+            remaining = max(0, int((next_at - datetime.now(timezone.utc)).total_seconds()))
+            return {"can_send": remaining == 0, "seconds_remaining": remaining, "next_send_at": next_at.isoformat()}
+        except ValueError:
+            return {"can_send": False, "seconds_remaining": 60, "next_send_at": None}
+
     @staticmethod
     def _safe_slug_set(values) -> set[str]:
         return {

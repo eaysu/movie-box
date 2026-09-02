@@ -734,6 +734,16 @@ function applyAccount(account) {
   $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
   $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
   renderDiscoveryVisibility(Boolean(account.discoverable));
+  renderProfileLetterSettings(Boolean(account.letter_receiving_enabled));
+}
+
+function renderProfileLetterSettings(open) {
+  const toggle = $('profile-letter-toggle');
+  if (!toggle) return;
+  toggle.setAttribute('aria-pressed', String(Boolean(open)));
+  $('profile-letter-icon').textContent = open ? 'mark_email_read' : 'mail_lock';
+  $('profile-letter-label').textContent = open ? 'Açık' : 'Kapalı';
+  toggle.classList.toggle('bg-[#ff8000]/15', Boolean(open));
 }
 
 function renderDiscoveryVisibility(visible) {
@@ -1427,12 +1437,45 @@ let _letterRecipient = null;
 let _letterPickedFilm = null;
 let _letterSearchTimer = null;
 let _pendingLetterIdentity = null;
+let _letterSendStatus = { can_send: true, seconds_remaining: 0 };
+let _letterCooldownTimer = null;
 
 function letterMessage(kind, message = '') {
   const node = $(`letters-${kind}`);
   if (!node) return;
   node.textContent = message;
   node.classList.toggle('hidden', !message);
+}
+
+function formatLetterCooldown(seconds) {
+  const total = Math.max(0, Math.ceil(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours ? `${hours} sa ${minutes} dk` : `${Math.max(1, minutes)} dk`;
+}
+
+function renderLetterCooldown() {
+  const remaining = Math.max(0, Number(_letterSendStatus.seconds_remaining) || 0);
+  const blocked = !_letterSendStatus.can_send && remaining > 0;
+  const notice = $('letter-compose-cooldown');
+  const send = $('btn-letter-send');
+  notice.textContent = blocked ? `Yeni mektup hakkın ${formatLetterCooldown(remaining)} sonra açılacak.` : '';
+  notice.classList.toggle('hidden', !blocked);
+  send.disabled = blocked;
+  if (_letterCooldownTimer) clearInterval(_letterCooldownTimer);
+  if (blocked) {
+    _letterCooldownTimer = setInterval(() => {
+      _letterSendStatus.seconds_remaining = Math.max(0, _letterSendStatus.seconds_remaining - 60);
+      _letterSendStatus.can_send = _letterSendStatus.seconds_remaining === 0;
+      renderLetterCooldown();
+    }, 60000);
+  }
+}
+
+async function loadLetterSendStatus() {
+  _letterSendStatus = await apiJSON('/api/letters/send-status');
+  renderLetterCooldown();
+  return _letterSendStatus;
 }
 
 function setInboxTab(tab) {
@@ -1451,6 +1494,7 @@ function setInboxTab(tab) {
 
 function renderLetterSettings() {
   const open = Boolean(_account?.letter_receiving_enabled);
+  renderProfileLetterSettings(open);
   $('btn-letter-receiving').setAttribute('aria-pressed', String(open));
   $('btn-letter-receiving').textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
   $('letters-status').textContent = open
@@ -1463,8 +1507,11 @@ function letterFilmMarkup(film) {
   if (!film) return '';
   const title = escapeHTML(film.title || 'Film');
   const year = film.release_year || film.year || '';
+  const director = escapeHTML(film.director || '');
   const poster = safeImageURL(film.poster_url);
-  return `<div class="flex min-w-0 items-center gap-3">${poster ? `<img src="${poster}" alt="" class="h-11 w-8 rounded object-cover"/>` : ''}<span class="min-w-0 truncate"><strong>${title}</strong>${year ? ` <span class="text-on-surface-variant">(${escapeHTML(year)})</span>` : ''}</span></div>`;
+  const href = letterboxdFilmURL(film.slug || film.film_slug);
+  const text = `<span class="min-w-0"><strong class="block truncate">${title}${year ? ` <span class="text-on-surface-variant">(${escapeHTML(year)})</span>` : ''}</strong>${director ? `<span class="mt-0.5 block truncate text-xs text-on-surface-variant">${director}</span>` : ''}</span>`;
+  return `<div class="flex min-w-0 items-center gap-3">${poster ? `<img src="${poster}" alt="" class="h-12 w-9 rounded object-cover"/>` : ''}${href ? `<a href="${href}" target="_blank" rel="noopener" class="min-w-0 hover:underline">${text}</a>` : text}</div>`;
 }
 
 function letterCard(item, payload) {
@@ -1474,8 +1521,9 @@ function letterCard(item, payload) {
   const username = escapeHTML(peer.username || '');
   const body = escapeHTML(payload?.body || 'Mektup bu cihazda çözülemedi.');
   const date = new Date(item.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const seen = item.read_at ? new Date(item.read_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const attachment = payload?.film ? `<div class="mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"><span class="mb-2 block text-[10px] font-bold uppercase tracking-wide">Film hediyesi</span>${letterFilmMarkup(payload.film)}</div>` : '';
-  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(peer)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${incoming && !item.read_at ? '<span class="self-center text-xs text-secondary-container">Okundu</span>' : ''}</div></article>`;
+  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(peer)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${username}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
 }
 
 async function loadLetterKeyMaterial() {
@@ -1504,11 +1552,17 @@ async function loadLetters() {
       try { return { item, payload: await crypto.decryptLetter(_letterIdentity.privateKey, item, item.direction === 'sent') }; }
       catch (_) { return { item, payload: null }; }
     }));
+    const unread = decoded.filter(({ item, payload }) => item.direction === 'received' && !item.read_at && payload).map(({ item }) => item.id);
+    await Promise.all(unread.map(async id => {
+      const response = await apiJSON(`/api/letters/${encodeURIComponent(id)}/read`, { method: 'POST', headers: csrfHeaders() });
+      if (response.read) {
+        const target = decoded.find(({ item }) => item.id === id);
+        if (target) target.item.read_at = new Date().toISOString();
+      }
+    }));
     $('letters-list').innerHTML = decoded.length
       ? decoded.map(({ item, payload }) => letterCard(item, payload)).join('')
       : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">Henüz mektubun yok. Mektuba açık sinefilleri Sinefil Sineması’nda bulabilirsin.</div>';
-    const unread = decoded.filter(({ item, payload }) => item.direction === 'received' && !item.read_at && payload).map(({ item }) => item.id);
-    await Promise.all(unread.map(id => apiJSON(`/api/letters/${encodeURIComponent(id)}/read`, { method: 'POST', headers: csrfHeaders() })));
     if (unread.length) refreshBlendBadge();
   } catch (error) {
     $('letters-list').innerHTML = '';
@@ -1612,14 +1666,14 @@ async function recoverLetterLock(event) {
   }
 }
 
-async function toggleLetterReceiving() {
+async function toggleLetterReceiving(trigger = null) {
   if (!_letterKeyMaterial) { await unlockLetters(); return; }
   const next = !_account?.letter_receiving_enabled;
   const prompt = next
     ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana günde bir şifreli mektup gönderebilir. Açmak istiyor musun?'
     : 'Mektupları kapatırsan yeni mektup alamazsın. Mevcut mektupların korunur. Kapatmak istiyor musun?';
   if (!window.confirm(prompt)) return;
-  const button = $('btn-letter-receiving'); button.disabled = true;
+  const button = trigger || $('btn-letter-receiving'); button.disabled = true;
   try {
     const data = await apiJSON('/api/letters/receiving', { method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ enabled: next }) });
     _account.letter_receiving_enabled = data.letter_receiving_enabled;
@@ -1635,12 +1689,16 @@ function openLetterCompose(username) {
   _letterPickedFilm = null;
   $('letter-compose-title').textContent = `@${username} için mektup`;
   $('letter-compose-body').value = '';
-  $('letter-compose-count').textContent = '0 / 600';
+  $('letter-compose-count').textContent = '600 karakter kaldı';
   $('letter-film-search').value = '';
   $('letter-film-results').innerHTML = '';
   $('letter-film-picked').classList.add('hidden');
   $('letter-compose-error').classList.add('hidden');
   $('dialog-letter-compose').showModal();
+  loadLetterSendStatus().catch(error => {
+    $('letter-compose-error').textContent = error.message || 'Gönderim hakkı kontrol edilemedi.';
+    $('letter-compose-error').classList.remove('hidden');
+  });
 }
 
 function renderPickedLetterFilm() {
@@ -1655,7 +1713,7 @@ async function searchLetterFilms() {
   if (query.length < 2) { $('letter-film-results').innerHTML = ''; return; }
   try {
     const data = await apiJSON(`/api/profile/watched?q=${encodeURIComponent(query)}`);
-    const films = (data.films || []).slice(0, 6);
+    const films = (data.films || []).slice(0, 6).map(film => ({ ...film, slug: film.slug || film.film_slug || '' }));
     $('letter-film-results').innerHTML = films.map((film, index) => `<button type="button" data-letter-film-index="${index}" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-variant">${letterFilmMarkup(film)}</button>`).join('');
     $('letter-film-results')._letterFilms = films;
   } catch (_) { $('letter-film-results').innerHTML = ''; }
@@ -1664,6 +1722,8 @@ async function searchLetterFilms() {
 async function sendLetter(event) {
   event.preventDefault();
   if (!_letterRecipient || !_letterIdentity) return;
+  if (!_letterSendStatus.can_send) return;
+  if (!window.confirm('Bu mektup gönderildikten sonra geri alınamaz. Şifreleyip göndermek istiyor musun?')) return;
   const button = $('btn-letter-send'); button.disabled = true;
   try {
     const recipientData = await apiJSON(`/api/letters/recipients/${encodeURIComponent(_letterRecipient.username)}`);
@@ -1673,6 +1733,7 @@ async function sendLetter(event) {
       ...recipient, body: $('letter-compose-body').value, film: _letterPickedFilm,
     });
     await apiJSON('/api/letters', { method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ recipient_username: recipient.username, envelope }) });
+    _letterSendStatus = { can_send: false, seconds_remaining: 24 * 60 * 60 };
     $('dialog-letter-compose').close();
     letterMessage('notice', `Mektubun @${recipient.username} için şifrelendi ve gönderildi.`);
     await loadLetters();
@@ -1879,6 +1940,17 @@ async function loadBlendInbox(show = true) {
     }
   }
   return null;
+}
+
+async function openLetterInbox() {
+  await loadBlendInbox(true);
+  setInboxTab('letters');
+}
+
+async function openLetterSendingArea() {
+  showView('sinefil');
+  await loadSinefilArea();
+  sinefilMessage('notice', 'Mektup yazmak için mektuplara açık bir sinefilin Mektup düğmesine dokun.');
 }
 
 async function routeToExistingBlend(data) {
@@ -3691,6 +3763,8 @@ document.addEventListener('keydown', event => {
   }
 });
 $('profile-inbox').addEventListener('click', () => loadBlendInbox(true));
+$('profile-letters').addEventListener('click', openLetterSendingArea);
+$('profile-letter-toggle').addEventListener('click', event => toggleLetterReceiving(event.currentTarget));
 $('profile-blends').addEventListener('click', () => loadMyBlends(true));
 $('profile-settings-btn').addEventListener('click', event => {
   event.stopPropagation();

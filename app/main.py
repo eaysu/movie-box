@@ -1569,6 +1569,12 @@ async def unread_letter_count(request: Request) -> dict:
     return {"count": count}
 
 
+@app.get("/api/letters/send-status")
+async def letter_send_status(request: Request) -> dict:
+    account = await _require_account(request)
+    return await asyncio.to_thread(_auth_service().letter_send_status, account)
+
+
 @app.post("/api/letters")
 async def send_letter(req: SendLetterRequest, request: Request) -> dict:
     _require_csrf(request)

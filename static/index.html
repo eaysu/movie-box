@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.17"/>
+<link rel="stylesheet" href="/static/app.css?v=20260902.18"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -185,7 +185,7 @@
 </dialog>
 
 <dialog id="dialog-letter-compose" class="auth-info-dialog">
-  <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Günde bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektup yalnızca alıcısının cihazında çözülebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count">0 / 600</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu şifrele ve gönder</button></form>
+  <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Günde bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektup yalnızca alıcısının cihazında çözülebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu şifrele ve gönder</button></form>
 </dialog>
 
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
@@ -345,6 +345,15 @@
               </button>
               <button id="profile-discovery-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container transition-colors" title="Sinefil Sineması görünürlüğü">
                 <span id="profile-discovery-icon" class="material-symbols-outlined text-[15px]">visibility_off</span><span id="profile-discovery-label">Gizli</span>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button id="profile-letters" type="button" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#ff8000] px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-black shadow-[0_8px_24px_-12px_rgba(255,128,0,.85)] hover:bg-[#ff962f] transition-colors">
+                <span class="material-symbols-outlined text-[16px]">mail</span>Mektup yolla
+              </button>
+              <button id="profile-letter-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#ff8000]/45 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-[#ffb56f] hover:bg-[#ff8000]/10 transition-colors" title="Mektup alma ayarı">
+                <span id="profile-letter-icon" class="material-symbols-outlined text-[15px]">mail_lock</span><span id="profile-letter-label">Kapalı</span>
               </button>
             </div>
 
@@ -1122,6 +1131,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260902.24"></script>
+<script type="module" src="/static/js/app.js?v=20260902.25"></script>
 </body>
 </html>

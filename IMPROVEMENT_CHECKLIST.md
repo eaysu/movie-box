@@ -32,6 +32,12 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
   mektup gövdesiyle birlikte istemcide şifrelenir.
 - [x] Engelleme mevcut/pending mektupları iki taraftan kaldırır; bildirim akışı
   kullanıcıyı raporlar ancak mektup içeriğini otomatik olarak paylaşmaz.
+- [x] Gönderim alanında kalan karakter sayısını, 24 saatlik gönderim hakkı geri
+  sayımını ve geri alınamaz gönderim onayını görünür yap.
+- [x] Gönderilen mektupta zorunlu görüldü zamanını; film hediyesinde afiş,
+  yönetmen ve Letterboxd bağlantısını göster.
+- [x] Ana profile Letterboxd turuncusu “Mektup yolla” aksiyonu ile ona bitişik
+  mektup alma aç/kapat anahtarını ekle.
 - [ ] **MANUEL UYGULAMA:** Güncel `supabase/schema.sql` dosyasını Supabase SQL
   Editor’da çalıştır; `user_letter_keys`, `cinephile_letters` ve RPC’leri
   oluşturmadan Render deploy etme.

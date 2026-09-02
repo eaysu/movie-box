@@ -274,6 +274,11 @@ def test_sinefil_letters_are_client_encrypted_and_keep_inbox_private():
     assert "user_letter_keys" in schema
     assert "cinephile_letters" in schema
     assert "send_cinephile_letter" in schema
+    assert 'id="profile-letters"' in html
+    assert 'id="profile-letter-toggle"' in html
+    assert "600 karakter kaldı" in html
+    assert "/api/letters/send-status" in app_js
+    assert "Görüldü" in app_js
 
 
 def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():
@@ -297,9 +302,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260902.17"
+    css_version = "v=20260902.18"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260902.24" in html
+    assert "/static/js/app.js?v=20260902.25" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
