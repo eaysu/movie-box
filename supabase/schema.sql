@@ -27,9 +27,15 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT
 -- User-curated "top 10 films" (ordered list of watched film slugs). Empty =
 -- fall back to the highest-rated watched films.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Sinefil Alanı görünürlüğü açık ve bilinçli bir tercihtir. Mevcut ve yeni
+-- kullanıcılar varsayılan olarak listelenmez.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_user_id
   ON public.users (auth_user_id) WHERE auth_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_sinefil_directory
+  ON public.users (username)
+  WHERE account_status = 'active' AND profile_sync_status = 'ready' AND discoverable = TRUE;
 
 DO $$ BEGIN
   ALTER TABLE public.users ADD CONSTRAINT users_account_status_check

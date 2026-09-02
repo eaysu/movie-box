@@ -212,6 +212,10 @@ onayı gelmeden uygulanmaz.
 
 ### P1 — Test, gözlemlenebilirlik ve rollout
 
+- [x] **Sinefil Alanı:** Varsayılanı gizli olan görünürlük tercihi, onboarding
+  onayı, profil üstü aç/kapat doğrulaması, block-aware kart listesi, Fav 4 ↔
+  Başucu 10 ağırlıklı eşleşme ve lazy kişilik okuması eklendi.
+
 - [x] Auth password/identity/login cookie/CSRF sınırı testleri.
 - [x] Parola eşleşme sınırı, authenticated account deletion ve session cookie
   temizleme güvenlik testleri.

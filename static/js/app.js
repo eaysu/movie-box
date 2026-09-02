@@ -597,7 +597,7 @@ function setAuthHeaderLinks(visible) {
 }
 
 function showView(name) {
-  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
@@ -727,6 +727,49 @@ function applyAccount(account) {
   $('btn-mode-blend').disabled = false;
   $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
   $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
+  renderDiscoveryVisibility(Boolean(account.discoverable));
+}
+
+function renderDiscoveryVisibility(visible) {
+  const button = $('profile-discovery-toggle');
+  if (!button) return;
+  button.setAttribute('aria-pressed', String(Boolean(visible)));
+  $('profile-discovery-icon').textContent = visible ? 'visibility' : 'visibility_off';
+  $('profile-discovery-label').textContent = visible ? 'Görünür' : 'Gizli';
+  button.classList.toggle('border-tertiary-container/50', Boolean(visible));
+  button.classList.toggle('text-tertiary-container', Boolean(visible));
+  button.classList.toggle('border-outline-variant/30', !visible);
+  button.classList.toggle('text-on-surface-variant', !visible);
+}
+
+async function saveDiscoveryVisibility(visible) {
+  const data = await apiJSON('/api/profile/discovery-settings', {
+    method: 'POST',
+    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ visible: Boolean(visible) }),
+  });
+  if (_account) _account.discoverable = Boolean(data.discoverable);
+  if (_persistedProfile?.account) _persistedProfile.account.discoverable = Boolean(data.discoverable);
+  renderDiscoveryVisibility(Boolean(data.discoverable));
+  return Boolean(data.discoverable);
+}
+
+async function toggleDiscoveryVisibility() {
+  const next = !_account?.discoverable;
+  const message = next
+    ? 'Sinefil Alanında görünür olacaksın. Diğer kayıtlı sinefiller profil fotoğrafını, Fav 4 filmlerini ve Fav 4 kişilik okumanı görebilecek. Devam edilsin mi?'
+    : 'Sinefil Alanından gizleneceksin. Profilin yeni listelerde görünmeyecek. Devam edilsin mi?';
+  if (!window.confirm(message)) return;
+  const button = $('profile-discovery-toggle');
+  button.disabled = true;
+  try {
+    const visible = await saveDiscoveryVisibility(next);
+    profileActionNotice(visible ? 'Sinefil Alanında görünürsün.' : 'Sinefil Alanından gizlendin.');
+  } catch (error) {
+    profileActionError(error.message || 'Görünürlük ayarı değiştirilemedi.');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function renderPersistedProfile(data) {
@@ -2050,6 +2093,33 @@ function _obRenderPersonality(text) {
   streamText($('ob-personality'), text);
 }
 
+function _obRenderSinefilConsent() {
+  const visible = Boolean(_account?.discoverable);
+  _obStage(`
+    <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Sinefil Alanı</p>
+    <h2 class="mt-3 font-headline-lg text-[26px] text-on-surface">Zevkini paylaşmak ister misin?</h2>
+    <p class="mt-3 font-body-md text-body-md leading-relaxed text-on-surface-variant/80">Açarsan diğer kayıtlı sinefiller profil fotoğrafını, Fav 4’ünü ve bu kişilik okumasını görebilir. İstediğin an profilinden geri kapatabilirsin.</p>
+    <div class="mt-6 grid gap-3 sm:grid-cols-2">
+      <button type="button" data-ob-discoverable="true" class="rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Sinefil Alanında görün</button>
+      <button type="button" data-ob-discoverable="false" class="rounded-xl border border-outline-variant/30 bg-surface-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdilik gizli kal</button>
+    </div>
+    <p id="ob-discovery-note" class="mt-4 font-label-sm text-label-sm ${visible ? 'text-tertiary-container' : 'text-on-surface-variant/60'}">${visible ? 'Profilin görünür durumda.' : 'Varsayılan tercih: gizli.'}</p>`);
+  $('ob-stage').querySelectorAll('[data-ob-discoverable]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const next = button.dataset.obDiscoverable === 'true';
+      button.disabled = true;
+      try {
+        const saved = await saveDiscoveryVisibility(next);
+        const note = $('ob-discovery-note');
+        note.textContent = saved ? 'Profilin görünür durumda.' : 'Profilin gizli kalacak.';
+        note.className = `mt-4 font-label-sm text-label-sm ${saved ? 'text-tertiary-container' : 'text-on-surface-variant/60'}`;
+      } catch (error) {
+        $('ob-discovery-note').textContent = error.message || 'Tercih kaydedilemedi; profilin gizli kalacak.';
+      } finally { button.disabled = false; }
+    });
+  });
+}
+
 function _obRenderOutro(full) {
   _obStage(`
     <p class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Hazır</p>
@@ -2191,6 +2261,7 @@ async function startOnboarding() {
     favs.length ? () => _obRenderFavs(favs) : null,
     personality ? () => _obRenderPersonality(personality) : null,
     (dir && dir.name) ? () => _obRenderDirector(dir) : null,
+    () => _obRenderSinefilConsent(),
     () => _obRenderOutro(profile?.sync_job?.state === 'done'),
   ].filter(Boolean);
 
@@ -2542,6 +2613,103 @@ function renderBlendWatchlist(payload = {}) {
     $('br-wishlist-section').classList.add('hidden');
     $('br-no-wishlist').classList.remove('hidden');
   }
+}
+
+// ── Sinefil Alanı ─────────────────────────────────────────────────────────
+let _sinefilSearchTimer = null;
+
+function sinefilMessage(kind, message = '') {
+  const el = $(`sinefil-${kind}`);
+  if (!message) { el.textContent = ''; el.classList.add('hidden'); return; }
+  el.textContent = message;
+  el.classList.remove('hidden');
+}
+
+function sinefilCard(profile) {
+  const username = escapeHTML(profile.username || '');
+  const name = escapeHTML(profile.display_name || profile.username || '');
+  const avatar = safeImageURL(profile.avatar_url);
+  const initial = escapeHTML((profile.display_name || profile.username || '?')[0].toUpperCase());
+  const favorites = (profile.favorites || []).slice(0, 4);
+  const posters = favorites.map(film => {
+    const poster = safeImageURL(film.poster_url);
+    const title = escapeHTML(film.title || 'Film');
+    return poster
+      ? `<img src="${poster}" alt="${title}" class="h-20 w-full rounded-lg object-cover bg-surface-variant" loading="lazy"/>`
+      : `<div class="flex h-20 items-center justify-center rounded-lg bg-surface-variant p-2 text-center font-label-sm text-[9px] text-on-surface-variant">${title}</div>`;
+  }).join('') || '<div class="col-span-4 py-5 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</div>';
+  const shared = (profile.shared_titles || []).map(title => `<span class="rounded-full bg-tertiary-container/15 px-2 py-1 text-[10px] text-tertiary-container">${escapeHTML(title)}</span>`).join('');
+  const match = profile.has_favorite_match
+    ? `<div class="mt-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 p-3"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Film zevkiniz benziyor</p>${shared ? `<div class="mt-2 flex flex-wrap gap-1.5">${shared}</div>` : ''}</div>`
+    : `<p class="mt-4 font-label-sm text-label-sm text-on-surface-variant">${escapeHTML(profile.match_note || 'Zevk haritalarınız yakın')}</p>`;
+  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl">
+    <div class="flex items-center gap-3">
+      ${avatar ? `<img src="${avatar}" alt="${name}" class="h-12 w-12 rounded-full object-cover ring-1 ring-tertiary-container/35"/>` : `<div class="flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-md text-tertiary-container">${initial}</div>`}
+      <div class="min-w-0"><h2 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h2><p class="mt-0.5 text-sm text-on-surface-variant">@${username}</p></div>
+    </div>
+    ${match}
+    <div class="mt-4 grid grid-cols-4 gap-2">${posters}</div>
+    <div class="mt-4 flex items-center gap-2">
+      <button type="button" data-sinefil-personality="${username}" class="flex-1 rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Fav 4 okuması</button>
+      <button type="button" data-sinefil-blend="${username}" class="rounded-xl bg-tertiary-container px-3 py-2.5 font-label-sm text-label-sm text-on-tertiary-container hover:opacity-90">Blend</button>
+    </div>
+    <div data-sinefil-personality-panel="${username}" class="hidden mt-3 rounded-xl border border-tertiary-container/20 bg-tertiary-container/10 p-3 text-sm leading-relaxed text-on-surface-variant"></div>
+  </article>`;
+}
+
+async function loadSinefilArea() {
+  sinefilMessage('error');
+  const query = $('sinefil-search').value.trim();
+  $('sinefil-grid').innerHTML = '<div class="col-span-full py-12 text-center text-on-surface-variant">Sinefiller aranıyor…</div>';
+  try {
+    const data = await apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`);
+    const profiles = data.profiles || [];
+    if (!profiles.length) {
+      $('sinefil-grid').innerHTML = '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Henüz gösterilecek sinefil yok. Görünürlüğünü açan yeni profiller burada belirecek.</div>';
+      return;
+    }
+    sinefilMessage('notice', _account?.discoverable
+      ? 'Profilin Sinefil Alanında görünür. İstediğin an profilindeki Görünür anahtarıyla gizleyebilirsin.'
+      : 'Profilin şu an gizli; yine de diğer sinefilleri keşfedebilirsin.');
+    $('sinefil-grid').innerHTML = profiles.map(sinefilCard).join('');
+  } catch (error) {
+    $('sinefil-grid').innerHTML = '';
+    sinefilMessage('error', error.message || 'Sinefil Alanı yüklenemedi.');
+  }
+}
+
+async function toggleSinefilPersonality(username, button) {
+  const panel = document.querySelector(`[data-sinefil-personality-panel="${CSS.escape(username)}"]`);
+  if (!panel) return;
+  if (panel.dataset.loaded === 'true') { panel.classList.toggle('hidden'); return; }
+  button.disabled = true;
+  button.textContent = 'Yükleniyor…';
+  try {
+    const data = await apiJSON(`/api/sinefil-alani/${encodeURIComponent(username)}/personality`);
+    panel.textContent = data.personality || 'Bu profil için kişilik okuması henüz hazır değil.';
+    panel.dataset.loaded = 'true';
+    panel.classList.remove('hidden');
+    button.textContent = 'Fav 4 okumasını gizle';
+  } catch (error) {
+    panel.textContent = error.message || 'Kişilik okuması yüklenemedi.';
+    panel.classList.remove('hidden');
+    button.textContent = 'Fav 4 okuması';
+  } finally { button.disabled = false; }
+}
+
+async function requestSinefilBlend(username, button) {
+  button.disabled = true;
+  try {
+    const data = await apiJSON('/api/blends/requests', {
+      method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ recipient_username: username }),
+    });
+    if (data.existing) { await routeToExistingBlend(data); return; }
+    button.textContent = 'İstek gönderildi';
+    sinefilMessage('notice', `@${data.recipient_username} kullanıcısına Blend isteği gönderildi.`);
+  } catch (error) {
+    sinefilMessage('error', error.message || 'Blend isteği gönderilemedi.');
+  } finally { button.disabled = false; }
 }
 
 // ── Blend SSE flow ──────────────────────────────────────────────────────────
@@ -3179,6 +3347,26 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
   });
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
+$('profile-sinefil-area').addEventListener('click', () => {
+  showView('sinefil');
+  loadSinefilArea();
+});
+$('profile-discovery-toggle').addEventListener('click', toggleDiscoveryVisibility);
+$('btn-sinefil-back').addEventListener('click', () => showView(homeView()));
+$('btn-sinefil-refresh').addEventListener('click', loadSinefilArea);
+$('sinefil-search').addEventListener('input', () => {
+  clearTimeout(_sinefilSearchTimer);
+  _sinefilSearchTimer = setTimeout(loadSinefilArea, 280);
+});
+$('sinefil-grid').addEventListener('click', event => {
+  const personality = event.target.closest('[data-sinefil-personality]');
+  if (personality) {
+    toggleSinefilPersonality(personality.dataset.sinefilPersonality, personality);
+    return;
+  }
+  const blend = event.target.closest('[data-sinefil-blend]');
+  if (blend) requestSinefilBlend(blend.dataset.sinefilBlend, blend);
+});
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });

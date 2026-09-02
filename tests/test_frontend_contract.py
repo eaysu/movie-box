@@ -238,6 +238,26 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
     assert "count.toLocaleString('tr-TR')" in app_js
 
 
+def test_sinefil_area_keeps_visibility_opt_in_and_lazy_personality_reads():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    auth_py = (ROOT / "app" / "auth.py").read_text()
+    schema = (ROOT / "supabase" / "schema.sql").read_text()
+
+    assert 'id="profile-sinefil-area"' in html
+    assert 'id="profile-discovery-toggle"' in html
+    assert 'id="view-sinefil"' in html
+    assert "Sinefil Alanı" in html
+    assert "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT FALSE;" in schema
+    assert "idx_users_sinefil_directory" in schema
+    assert "apiJSON('/api/profile/discovery-settings'" in app_js
+    assert "apiJSON(`/api/sinefil-alani?q=${encodeURIComponent(query)}`)" in app_js
+    assert "/personality`" in app_js
+    assert "Film zevkiniz benziyor" in app_js
+    assert "def list_sinefil_cards" in auth_py
+    assert "def sinefil_personality" in auth_py
+
+
 def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     render = app_js.split("function renderBlendWatchlist", 1)[1].split(
@@ -260,7 +280,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.21" in html
+    assert "/static/js/app.js?v=20260902.22" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

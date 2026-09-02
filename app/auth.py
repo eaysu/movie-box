@@ -62,6 +62,7 @@ class Account:
     profile_sync_status: str = "pending"
     onboarding_completed_at: str | None = None
     letterboxd_stats: dict = field(default_factory=dict)
+    discoverable: bool = False
 
 
 @dataclass
@@ -194,6 +195,7 @@ class AuthService:
             profile_sync_status=row.get("profile_sync_status") or "pending",
             onboarding_completed_at=row.get("onboarding_completed_at"),
             letterboxd_stats=row.get("letterboxd_stats") or {},
+            discoverable=bool(row.get("discoverable", False)),
         )
 
     @staticmethod
@@ -630,11 +632,185 @@ class AuthService:
             .order("position")
             .execute()
         ).data or []
+        account_data = dict(account.__dict__)
+        # Keşfet alanı migration'ı henüz uygulanmadıysa mevcut profil akışını
+        # bozma; kullanıcı yalnızca varsayılan olarak gizli kalır.
+        try:
+            visibility = self._first(
+                service.table("users").select("discoverable").eq("id", account.id).limit(1).execute()
+            ) or {}
+            account_data["discoverable"] = bool(visibility.get("discoverable", False))
+        except Exception:
+            pass
         return {
-            "account": account.__dict__,
+            "account": account_data,
             "taste": taste,
             "favorite_films": favorites,
         }
+
+    def set_discoverable(self, account: Account, visible: bool) -> bool:
+        """Opt a user in/out of the authenticated Sinefil Alanı directory."""
+        self._service_client().table("users").update(
+            {
+                "discoverable": bool(visible),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", account.id).execute()
+        return bool(visible)
+
+    @staticmethod
+    def _safe_slug_set(values) -> set[str]:
+        return {
+            str(value).strip().lower()
+            for value in (values or [])
+            if isinstance(value, str) and value.strip()
+        }
+
+    @staticmethod
+    def _overlap(left, right) -> set[str]:
+        return {
+            str(value).strip().casefold()
+            for value in (left or [])
+            if isinstance(value, str) and value.strip()
+        } & {
+            str(value).strip().casefold()
+            for value in (right or [])
+            if isinstance(value, str) and value.strip()
+        }
+
+    def list_sinefil_cards(self, account: Account, query: str = "") -> list[dict]:
+        """Build safe, lightweight discovery cards without scraping or LLM calls."""
+        service = self._service_client()
+        viewer = self.get_profile(account)
+        viewer_favorites = viewer.get("favorite_films") or []
+        viewer_fav_titles = {
+            str(row.get("slug") or "").lower(): str(row.get("title") or "")
+            for row in viewer_favorites if row.get("slug")
+        }
+        viewer_fav = set(viewer_fav_titles)
+        viewer_top = self._safe_slug_set(self.get_curated_top_film_slugs(account))
+        viewer_taste = viewer.get("taste") or {}
+
+        candidates_query = (
+            service.table("users")
+            .select("id,username,display_name,avatar_url,top_films")
+            .eq("account_status", "active")
+            .eq("profile_sync_status", "ready")
+            .eq("discoverable", True)
+            .neq("id", account.id)
+            .order("username")
+            .limit(250)
+        )
+        if query:
+            candidates_query = candidates_query.ilike("username", f"%{query}%")
+        candidates = candidates_query.execute().data or []
+        if not candidates:
+            return []
+
+        block_rows = (
+            service.table("user_blocks")
+            .select("blocker_user_id,blocked_user_id")
+            .or_(f"blocker_user_id.eq.{account.id},blocked_user_id.eq.{account.id}")
+            .execute()
+        ).data or []
+        blocked = {
+            int(row["blocked_user_id"])
+            if int(row["blocker_user_id"]) == account.id
+            else int(row["blocker_user_id"])
+            for row in block_rows
+        }
+        candidates = [row for row in candidates if int(row["id"]) not in blocked]
+        ids = [int(row["id"]) for row in candidates]
+        if not ids:
+            return []
+        favorites_rows = (
+            service.table("profile_favorites")
+            .select("user_id,position,slug,title,release_year,poster_url")
+            .in_("user_id", ids)
+            .order("position")
+            .execute()
+        ).data or []
+        taste_rows = (
+            service.table("taste_profiles")
+            .select("user_id,top_directors,top_genres,top_keywords")
+            .in_("user_id", ids)
+            .execute()
+        ).data or []
+        favorites_by_user: dict[int, list[dict]] = {}
+        for row in favorites_rows:
+            favorites_by_user.setdefault(int(row["user_id"]), []).append(row)
+        taste_by_user = {int(row["user_id"]): row for row in taste_rows}
+
+        cards: list[dict] = []
+        for candidate in candidates:
+            user_id = int(candidate["id"])
+            favorites = favorites_by_user.get(user_id, [])[:4]
+            candidate_fav_titles = {
+                str(row.get("slug") or "").lower(): str(row.get("title") or "")
+                for row in favorites if row.get("slug")
+            }
+            candidate_fav = set(candidate_fav_titles)
+            candidate_top = self._safe_slug_set(candidate.get("top_films"))
+            same_fav4 = viewer_fav & candidate_fav
+            viewer_fav_to_top10 = viewer_fav & candidate_top
+            viewer_top_to_fav4 = viewer_top & candidate_fav
+            shared_top10 = viewer_top & candidate_top
+            taste = taste_by_user.get(user_id, {})
+            directors = self._overlap(viewer_taste.get("top_directors"), taste.get("top_directors"))
+            genres = self._overlap(viewer_taste.get("top_genres"), taste.get("top_genres"))
+            keywords = self._overlap(viewer_taste.get("top_keywords"), taste.get("top_keywords"))
+            score = min(100, (
+                len(same_fav4) * 42
+                + (len(viewer_fav_to_top10) + len(viewer_top_to_fav4)) * 22
+                + len(shared_top10) * 7
+                + len(directors) * 6 + len(genres) * 4 + len(keywords) * 2
+            ))
+            shared_titles: list[str] = []
+            for slug in list(same_fav4) + list(viewer_fav_to_top10):
+                title = viewer_fav_titles.get(slug)
+                if title and title not in shared_titles:
+                    shared_titles.append(title)
+            for slug in list(viewer_top_to_fav4):
+                title = candidate_fav_titles.get(slug)
+                if title and title not in shared_titles:
+                    shared_titles.append(title)
+            has_favorite_match = bool(same_fav4 or viewer_fav_to_top10 or viewer_top_to_fav4)
+            cards.append({
+                "username": candidate["username"],
+                "display_name": candidate.get("display_name") or candidate["username"],
+                "avatar_url": candidate.get("avatar_url") or "",
+                "favorites": [
+                    {
+                        "slug": row.get("slug") or "",
+                        "title": row.get("title") or "",
+                        "release_year": row.get("release_year"),
+                        "poster_url": row.get("poster_url") or "",
+                    }
+                    for row in favorites
+                ],
+                "match_score": score,
+                "has_favorite_match": has_favorite_match,
+                "shared_titles": shared_titles[:3],
+                "match_note": (
+                    "Film zevkiniz benziyor"
+                    if has_favorite_match
+                    else ("Benzer yönetmenlere dönüyorsunuz" if directors else "Zevk haritalarınız yakın")
+                ),
+            })
+        return sorted(cards, key=lambda card: (-int(card["has_favorite_match"]), -card["match_score"], card["username"]))
+
+    def sinefil_personality(self, account: Account, username: str) -> str:
+        """Return only the opted-in profile's saved Fav-4 read."""
+        cards = self.list_sinefil_cards(account, query=username)
+        if not any(card["username"] == username for card in cards):
+            raise BlendServiceError("recipient_not_found")
+        row = self._first(
+            self._service_client().table("users").select("id").eq("username", username).limit(1).execute()
+        ) or {}
+        taste = self._first(
+            self._service_client().table("taste_profiles").select("personality").eq("user_id", row.get("id")).limit(1).execute()
+        ) or {}
+        return str(taste.get("personality") or "")
 
     # ── "Top 10 films" — user-curated, falls back to highest rated ────────
     _WATCHED_PICK_COLS = (

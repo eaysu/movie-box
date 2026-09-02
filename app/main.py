@@ -1059,6 +1059,10 @@ class ReportUserRequest(BaseModel):
         return detail
 
 
+class DiscoveryVisibilityRequest(BaseModel):
+    visible: bool
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(
@@ -1436,6 +1440,67 @@ async def complete_profile_onboarding(request: Request) -> dict:
         service, account, "onboarding_completed", {"source": "profile"}
     )
     return {"ok": True, "completed_at": completed_at}
+
+
+@app.post("/api/profile/discovery-settings")
+async def update_discovery_settings(
+    req: DiscoveryVisibilityRequest, request: Request
+) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    try:
+        visible = await asyncio.to_thread(service.set_discoverable, account, req.visible)
+    except Exception as exc:
+        log.warning("discovery visibility update failed account=%s", account.id, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Sinefil Alanı ayarı henüz hazır değil. SQL güncellemesini kontrol et.",
+        ) from exc
+    account.discoverable = visible
+    await _record_activity_event(
+        service, account, "sinefil_visibility_changed", {"visible": visible}
+    )
+    return {"ok": True, "discoverable": visible}
+
+
+@app.get("/api/sinefil-alani")
+async def list_sinefil_alani(request: Request, q: str = "") -> dict:
+    account = await _require_account(request)
+    query = str(q or "").strip().lstrip("@").lower()
+    if len(query) > 80:
+        raise HTTPException(status_code=422, detail="Arama metni çok uzun.")
+    service = _auth_service()
+    try:
+        cards = await asyncio.to_thread(service.list_sinefil_cards, account, query)
+    except Exception as exc:
+        log.warning("sinefil directory unavailable account=%s", account.id, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Sinefil Alanı henüz hazır değil. SQL güncellemesini kontrol et.",
+        ) from exc
+    await _record_activity_event(service, account, "sinefil_area_opened", {"query": bool(query)})
+    return {"profiles": cards[:48]}
+
+
+@app.get("/api/sinefil-alani/{username}/personality")
+async def sinefil_personality(username: str, request: Request) -> dict:
+    account = await _require_account(request)
+    try:
+        normalized = _normalize_username(username)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    service = _auth_service()
+    try:
+        personality = await asyncio.to_thread(
+            service.sinefil_personality, account, normalized
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    except Exception as exc:
+        log.warning("sinefil personality unavailable username=%s", normalized, exc_info=True)
+        raise HTTPException(status_code=503, detail="Kişilik okuması yüklenemedi.") from exc
+    return {"username": normalized, "personality": personality}
 
 
 @app.get("/api/profile/directors/{rank}/films")
