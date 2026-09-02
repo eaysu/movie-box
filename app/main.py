@@ -41,6 +41,7 @@ from .auth import (
     AuthService,
     BlendServiceError,
     InvalidCredentialsError,
+    TransientStorageError,
     VerificationError,
     validate_password,
 )
@@ -457,6 +458,11 @@ async def _enforce_account_username(request: Request, username: str) -> Account 
 
 
 def _raise_auth_http(exc: Exception) -> None:
+    if isinstance(exc, TransientStorageError):
+        raise HTTPException(
+            status_code=503,
+            detail="Veri bağlantısı kısa süreli yanıt vermedi. Lütfen tekrar dene.",
+        ) from exc
     if isinstance(exc, AccountExistsError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(exc, InvalidCredentialsError):
@@ -1851,7 +1857,13 @@ async def profile_film_overview(
     if not re.match(r"^[a-z0-9][a-z0-9-]{0,159}$", clean):
         raise HTTPException(status_code=422, detail="Geçersiz film.")
     service = _auth_service()
-    row = await asyncio.to_thread(service.watched_film_by_slug, account.id, clean)
+    try:
+        row = await asyncio.to_thread(service.watched_film_by_slug, account.id, clean)
+    except TransientStorageError:
+        # This is a best-effort panel; a temporary database edge error should
+        # not turn expanding a film card into a user-visible 500.
+        log.warning("film overview storage read unavailable account=%s", account.id)
+        return {"overview": ""}
     if row is None:
         row = {"slug": clean, "title": title.strip()[:200], "year": year}
     if not row.get("title"):

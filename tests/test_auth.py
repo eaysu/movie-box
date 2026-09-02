@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from app import main
-from app.auth import Account, AuthService, AuthSession, validate_password
+from app.auth import Account, AuthService, AuthSession, TransientStorageError, validate_password
 from app.scraper import AccessBlockedError
 
 
@@ -164,6 +164,31 @@ def test_check_sync_schema_probes_only_the_new_tables_with_zero_rows():
     assert probed == {
         "user_watched_films", "profile_sync_jobs", "director_images", "film_posters"
     }
+
+
+def test_readiness_requires_discovery_visibility_column():
+    client = _RecordingClient()
+    service = AuthService(_settings(), client_factory=lambda *_args: client)
+
+    assert service.check_schema() is True
+    users_query = next(columns for name, columns in client.calls if name == "users")
+    assert "discoverable" in users_query
+
+
+def test_transient_cloudflare_storage_read_retries_then_returns_clear_error():
+    service = AuthService(_settings(), client_factory=lambda *_args: None)
+    attempts = []
+
+    def unavailable():
+        attempts.append(True)
+        raise RuntimeError("Cloudflare 400 Bad Request: JSON could not be generated")
+
+    with patch("app.auth.time.sleep") as sleep:
+        with pytest.raises(TransientStorageError, match="Veri bağlantısı"):
+            service._retry_storage_read(unavailable)
+
+    assert len(attempts) == 3
+    assert sleep.call_count == 2
 
 
 def test_login_sets_http_only_session_and_readable_csrf_cookies():

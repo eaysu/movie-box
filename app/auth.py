@@ -51,6 +51,12 @@ class BlendServiceError(AuthError):
     code = "blend_failed"
 
 
+class TransientStorageError(AuthError):
+    """A safe retryable Supabase edge failure surfaced to the HTTP layer."""
+
+    code = "storage_temporarily_unavailable"
+
+
 @dataclass
 class Account:
     id: int
@@ -93,6 +99,7 @@ def validate_password(password: str, confirmation: str | None = None) -> str:
 class AuthService:
     CHALLENGE_TTL_MINUTES = 15
     MAX_CHALLENGE_ATTEMPTS = 5
+    STORAGE_READ_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -132,11 +139,37 @@ class AuthService:
             self.settings.supabase_url, self.settings.supabase_anon_key
         )
 
+    @staticmethod
+    def _is_transient_storage_error(exc: Exception) -> bool:
+        """Recognise edge HTML responses without retrying real PostgREST 400s."""
+        detail = f"{type(exc).__name__} {exc}".casefold()
+        return (
+            "cloudflare" in detail
+            or "json could not be generated" in detail
+            or "json_invalid" in detail
+        )
+
+    def _retry_storage_read(self, operation: Callable[[], Any]) -> Any:
+        """Retry only idempotent Supabase reads after a transient edge response."""
+        for attempt in range(self.STORAGE_READ_ATTEMPTS):
+            try:
+                return operation()
+            except Exception as exc:
+                if not self._is_transient_storage_error(exc):
+                    raise
+                if attempt + 1 >= self.STORAGE_READ_ATTEMPTS:
+                    raise TransientStorageError(
+                        "Veri bağlantısı kısa süreli yanıt vermedi. Lütfen tekrar dene."
+                    ) from exc
+                # This function is called from asyncio.to_thread, so the small
+                # backoff does not block FastAPI's event loop.
+                time.sleep(0.25 * (attempt + 1))
+
     def check_schema(self) -> bool:
         """Verify the account schema without exposing or reading user records."""
         service = self._service_client()
         required = {
-            "users": "id,auth_user_id,account_status,onboarding_completed_at,letterboxd_stats",
+            "users": "id,auth_user_id,account_status,onboarding_completed_at,letterboxd_stats,discoverable",
             "taste_profiles": "user_id,source_fingerprint,top_directors",
             "profile_favorites": "user_id,position",
             "blend_requests": "id,status",
@@ -203,16 +236,18 @@ class AuthService:
         return (result.data or [None])[0]
 
     def _account_row_by_username(self, client, username: str) -> dict | None:
-        result = (
-            client.table("users")
-            .select(
-                "id,auth_user_id,username,display_name,avatar_url,"
-                "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
+        def read():
+            return (
+                client.table("users")
+                .select(
+                    "id,auth_user_id,username,display_name,avatar_url,"
+                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
+                )
+                .eq("username", username)
+                .limit(1)
+                .execute()
             )
-            .eq("username", username)
-            .limit(1)
-            .execute()
-        )
+        result = self._retry_storage_read(read)
         return self._first(result)
 
     def _audit(self, client, user_id: int | None, event: str, ip_hash: str = "") -> None:
@@ -341,6 +376,16 @@ class AuthService:
             self._audit(service, int(account_row["id"]), event, ip_hash)
             return RegistrationChallenge(username, code, expires.isoformat())
         except AccountExistsError:
+            raise
+        except TransientStorageError:
+            # A retryable read can also occur after creating the Supabase Auth
+            # identity. Preserve the original cleanup guarantee before the
+            # HTTP layer asks the user to retry.
+            if auth_user_id and created_new_auth_user:
+                try:
+                    service.auth.admin.delete_user(auth_user_id)
+                except Exception:
+                    pass
             raise
         except Exception as exc:
             if auth_user_id and created_new_auth_user:
@@ -844,15 +889,18 @@ class AuthService:
         return {r["film_slug"]: self._film_row(r) for r in rows if r.get("film_slug")}
 
     def watched_film_by_slug(self, user_id: int, slug: str) -> dict | None:
-        rows = (
-            self._service_client()
-            .table("user_watched_films")
-            .select(self._WATCHED_PICK_COLS)
-            .eq("user_id", user_id)
-            .eq("film_slug", slug)
-            .limit(1)
-            .execute()
-        ).data or []
+        def read():
+            return (
+                self._service_client()
+                .table("user_watched_films")
+                .select(self._WATCHED_PICK_COLS)
+                .eq("user_id", user_id)
+                .eq("film_slug", slug)
+                .limit(1)
+                .execute()
+            )
+
+        rows = self._retry_storage_read(read).data or []
         return self._film_row(rows[0]) if rows else None
 
     def _default_top_films(self, user_id: int, limit: int = 10) -> list[dict]:
