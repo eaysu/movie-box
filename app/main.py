@@ -498,6 +498,14 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "block_failed": (400, "Kullanıcı engellenemedi."),
         "unblock_failed": (400, "Engel kaldırılamadı."),
         "report_failed": (400, "Bildirim gönderilemedi."),
+        "invalid_letter_key": (422, "Mektup anahtarı geçersiz."),
+        "letter_key_required": (409, "Mektupları açmadan önce şifreli mektup anahtarını oluşturmalısın."),
+        "letter_recipient_unavailable": (403, "Bu kullanıcı şu anda mektup almaya açık değil."),
+        "letter_send_cooldown": (429, "Bugün bir mektup gönderdin. Yeni bir mektup için 24 saat beklemelisin."),
+        "letter_blocked": (403, "Bu kullanıcıyla mektuplaşamazsın."),
+        "invalid_letter": (422, "Mektup zarfı geçersiz."),
+        "invalid_letter_envelope": (422, "Mektup zarfı geçersiz."),
+        "letter_send_failed": (503, "Mektup şu an gönderilemedi. Lütfen tekrar dene."),
     }
     status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
     raise HTTPException(
@@ -1069,6 +1077,34 @@ class DiscoveryVisibilityRequest(BaseModel):
     visible: bool
 
 
+class LetterKeyMaterialRequest(BaseModel):
+    public_key: str
+    encrypted_private_key: dict
+    recovery_private_key: dict
+
+    @field_validator("public_key")
+    @classmethod
+    def validate_public_key(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not 40 <= len(value) <= 512:
+            raise ValueError("Geçersiz mektup anahtarı.")
+        return value
+
+
+class LetterReceivingRequest(BaseModel):
+    enabled: bool
+
+
+class SendLetterRequest(BaseModel):
+    recipient_username: str
+    envelope: dict
+
+    @field_validator("recipient_username", mode="before")
+    @classmethod
+    def validate_recipient(cls, value: str) -> str:
+        return _normalize_username(value)
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(
@@ -1468,6 +1504,96 @@ async def update_discovery_settings(
         service, account, "sinefil_visibility_changed", {"visible": visible}
     )
     return {"ok": True, "discoverable": visible}
+
+
+@app.get("/api/letters/key-material")
+async def get_letter_key_material(request: Request) -> dict:
+    """Return only the caller's opaque, browser-encrypted key envelopes."""
+    account = await _require_account(request)
+    material = await asyncio.to_thread(_auth_service().get_letter_key_material, account)
+    return {"key_material": material}
+
+
+@app.put("/api/letters/key-material")
+async def save_letter_key_material(req: LetterKeyMaterialRequest, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    material = await asyncio.to_thread(
+        _auth_service().save_letter_key_material, account, req.model_dump()
+    )
+    await _record_activity_event(_auth_service(), account, "letter_key_created", {})
+    return {"ok": True, "key_material": material}
+
+
+@app.post("/api/letters/receiving")
+async def update_letter_receiving(req: LetterReceivingRequest, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        enabled = await asyncio.to_thread(
+            _auth_service().set_letter_receiving, account, req.enabled
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    account.letter_receiving_enabled = enabled
+    await _record_activity_event(_auth_service(), account, "letter_receiving_changed", {"enabled": enabled})
+    return {"ok": True, "letter_receiving_enabled": enabled}
+
+
+@app.get("/api/letters/recipients/{username}")
+async def get_letter_recipient(username: str, request: Request) -> dict:
+    account = await _require_account(request)
+    try:
+        normalized = _normalize_username(username)
+        recipient = await asyncio.to_thread(
+            _auth_service().get_letter_recipient, account, normalized
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"recipient": recipient}
+
+
+@app.get("/api/letters")
+async def list_letters(request: Request) -> dict:
+    account = await _require_account(request)
+    letters = await asyncio.to_thread(_auth_service().list_letters, account)
+    return {"letters": letters}
+
+
+@app.get("/api/letters/unread-count")
+async def unread_letter_count(request: Request) -> dict:
+    account = await _require_account(request)
+    count = await asyncio.to_thread(_auth_service().count_unread_letters, account)
+    return {"count": count}
+
+
+@app.post("/api/letters")
+async def send_letter(req: SendLetterRequest, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_auth_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        letter_id = await asyncio.to_thread(
+            _auth_service().send_letter, account, req.recipient_username, req.envelope
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    await _record_activity_event(_auth_service(), account, "letter_sent", {})
+    return {"ok": True, "letter_id": letter_id}
+
+
+@app.post("/api/letters/{letter_id}/read")
+async def mark_letter_read(letter_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", letter_id):
+        raise HTTPException(status_code=422, detail="Geçersiz mektup kimliği.")
+    marked = await asyncio.to_thread(_auth_service().mark_letter_read, account, letter_id)
+    if marked:
+        await _record_activity_event(_auth_service(), account, "letter_read", {})
+    return {"ok": True, "read": marked}
 
 
 @app.get("/api/sinefil-alani")
@@ -2842,12 +2968,13 @@ async def list_my_blends(request: Request) -> dict:
 
 @app.get("/api/blends/pending-count")
 async def pending_blend_count(request: Request) -> dict:
-    """Small polling endpoint for the numbered inbox notification badge."""
+    """Small unified inbox badge: pending Blends plus unread encrypted letters."""
     account = await _require_account(request)
-    count = await asyncio.to_thread(
-        _auth_service().count_pending_blend_requests, account
+    blend_count, letter_count = await asyncio.gather(
+        asyncio.to_thread(_auth_service().count_pending_blend_requests, account),
+        asyncio.to_thread(_auth_service().count_unread_letters, account),
     )
-    return {"count": count}
+    return {"count": blend_count + letter_count, "blend_count": blend_count, "letter_count": letter_count}
 
 
 @app.delete("/api/blends/requests/{request_id}")

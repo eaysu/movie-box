@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.16"/>
+<link rel="stylesheet" href="/static/app.css?v=20260902.17"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -155,6 +155,37 @@
       <button id="top-films-save" type="button" class="flex-1 rounded-lg bg-primary-container text-black py-3 font-label-md text-label-md uppercase tracking-wide hover:opacity-90 transition-opacity disabled:opacity-40">Kaydet</button>
     </div>
   </div>
+</dialog>
+
+<dialog id="dialog-letter-help" class="auth-info-dialog">
+  <div class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Gizlilik</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Sinefil Mektupları nasıl çalışır?</h2></div><button type="button" data-close-dialog="dialog-letter-help" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div>
+    <div class="mt-5 space-y-3 text-sm leading-relaxed text-on-surface-variant"><p>Mektup almaya açık olmak tamamen isteğe bağlıdır; varsayılan olarak kapalıdır.</p><p>Mektuplar cihazında şifrelenir. Movieboxd yalnızca şifreli zarfı taşır; içeriği veya eklediğin filmi okuyamaz.</p><p>Günde yalnızca bir kişiye bir mektup gönderebilirsin. Gelen bir mektup açıldığında otomatik olarak okundu görünür.</p><p>Mektup kilit parolan ve tek seferlik kurtarma kodun yalnızca sende kalır. İkisini de kaybedersen eski mektuplar geri getirilemez.</p><p>Bir kullanıcıyı engellediğinde aranızdaki mektuplar iki taraftan da kaldırılır. Bildirim, içeriği otomatik paylaşmaz.</p></div>
+  </div>
+</dialog>
+
+<dialog id="dialog-letter-key-setup" class="auth-info-dialog">
+  <form id="letter-key-setup-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Mektup kasası</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Mektupları aç</h2></div><button type="button" data-close-dialog="dialog-letter-key-setup" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div>
+    <p class="mt-3 text-sm leading-relaxed text-on-surface-variant">Bu parola yalnızca bu tarayıcıda mektup anahtarını açar; Movieboxd’a gönderilmez. Uygulama giriş parolandan farklı seç.</p>
+    <input id="letter-lock-password" type="password" minlength="10" autocomplete="new-password" placeholder="Mektup kilit parolası (en az 10 karakter)" class="mt-5 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none" required/>
+    <input id="letter-lock-password-confirm" type="password" minlength="10" autocomplete="new-password" placeholder="Mektup kilit parolasını tekrar yaz" class="mt-3 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none" required/>
+    <div id="letter-recovery-panel" class="hidden mt-5 rounded-xl border border-secondary-container/30 bg-secondary-container/10 p-4"><p class="font-label-sm text-label-sm uppercase tracking-wide text-secondary-container">Tek seferlik kurtarma kodun</p><code id="letter-recovery-code" class="mt-2 block break-all select-all text-base text-on-surface"></code><label class="mt-3 flex gap-2 text-xs leading-relaxed text-on-surface-variant"><input id="letter-recovery-confirm" type="checkbox" class="mt-0.5"/> Bu kodu güvenli bir yere kaydettim; Movieboxd tekrar gösteremez.</label></div>
+    <p id="letter-key-setup-error" class="hidden mt-3 text-sm text-error"></p>
+    <button id="btn-letter-key-create" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Şifreli kasayı oluştur</button>
+  </form>
+</dialog>
+
+<dialog id="dialog-letter-unlock" class="auth-info-dialog">
+  <form id="letter-unlock-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Şifreli alan</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Mektupların kilidini aç</h2></div><button type="button" data-close-dialog="dialog-letter-unlock" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Kilit parolan yalnızca bu cihazda kullanılır ve saklanmaz.</p><input id="letter-unlock-password" type="password" autocomplete="current-password" placeholder="Mektup kilit parolası" class="mt-5 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none" required/><p id="letter-unlock-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-unlock" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Kilidi aç</button><button id="btn-letter-recover-open" type="button" class="mt-3 w-full text-xs text-tertiary-container underline">Mektup kilit parolamı unuttum</button></form>
+</dialog>
+
+<dialog id="dialog-letter-recover" class="auth-info-dialog">
+  <form id="letter-recover-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary-container">Kurtarma</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup kilidini yenile</h2></div><button type="button" data-close-dialog="dialog-letter-recover" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm leading-relaxed text-on-surface-variant">Tek seferlik kurtarma kodunu gir. Kod yoksa eski mektuplar geri getirilemez; yeni bir kasa kurmak gerekir.</p><input id="letter-recovery-input" type="text" autocomplete="off" placeholder="Kurtarma kodu" class="mt-5 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none" required/><input id="letter-recovery-new-password" type="password" minlength="10" autocomplete="new-password" placeholder="Yeni mektup kilit parolası" class="mt-3 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none" required/><p id="letter-recover-error" class="hidden mt-3 text-sm text-error"></p><button type="submit" class="mt-5 w-full rounded-xl bg-secondary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-secondary-container">Kilidi yenile</button></form>
+</dialog>
+
+<dialog id="dialog-letter-compose" class="auth-info-dialog">
+  <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Günde bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektup yalnızca alıcısının cihazında çözülebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count">0 / 600</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu şifrele ve gönder</button></form>
 </dialog>
 
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
@@ -981,12 +1012,17 @@
       <button id="btn-inbox-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
     </div>
     <div>
-      <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Karşılıklı onay</span>
-      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Blend Inbox</h1>
-      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Film zevkleri yalnızca alıcı kabul ettikten sonra karşılaştırılır.</p>
+      <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Sosyal alan</span>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Gelen kutusu</h1>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Blend isteklerin ve yalnızca sana açılabilen sinefil mektupların burada.</p>
+    </div>
+    <div class="grid grid-cols-2 gap-2 rounded-xl border border-outline-variant/25 bg-surface-container/50 p-1">
+      <button data-inbox-tab="blends" type="button" class="inbox-tab rounded-lg px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant transition-colors" aria-selected="true">Blendler</button>
+      <button data-inbox-tab="letters" type="button" class="inbox-tab rounded-lg px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant transition-colors" aria-selected="false">Mektuplar <span id="inbox-letters-badge" class="hidden ml-1 rounded-full bg-secondary-container px-1.5 py-0.5 text-[10px] text-on-secondary-container"></span></button>
     </div>
     <div id="inbox-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
     <div id="inbox-notice" class="hidden glass-panel rounded-lg px-4 py-3 text-primary-container font-body-md text-body-md"></div>
+    <div id="inbox-blends-panel" class="flex flex-col gap-gutter">
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gelen istekler</h2>
       <div id="inbox-incoming" class="flex flex-col gap-3"></div>
@@ -1003,6 +1039,24 @@
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Engellenen kullanıcılar</h2>
       <div id="inbox-blocked" class="flex flex-col gap-3"></div>
     </section>
+    </div>
+    <div id="inbox-letters-panel" class="hidden flex flex-col gap-gutter">
+      <section class="rounded-2xl border border-tertiary-container/25 bg-tertiary-container/10 p-5">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div class="flex items-center gap-2"><h2 class="font-headline-md text-headline-md text-on-surface">Sinefil Mektupları</h2><button id="btn-letter-help" type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-tertiary-container/40 text-[13px] font-bold text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
+            <p id="letters-status" class="mt-1 text-sm leading-relaxed text-on-surface-variant">Mektuplar varsayılan olarak kapalıdır.</p>
+          </div>
+          <button id="btn-letter-receiving" type="button" aria-pressed="false" class="shrink-0 rounded-xl border border-tertiary-container/40 px-4 py-2.5 font-label-sm text-label-sm text-tertiary-container">Mektuplara kapalı</button>
+        </div>
+      </section>
+      <p id="letters-error" class="hidden rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
+      <p id="letters-notice" class="hidden rounded-xl border border-primary-container/25 bg-primary-container/10 px-4 py-3 text-sm text-primary-container"></p>
+      <section>
+        <div class="mb-3 flex items-center justify-between gap-3"><h2 class="font-headline-md text-headline-md text-on-surface">Mektupların</h2><button id="btn-letters-unlock" type="button" class="rounded-lg border border-outline-variant/30 px-3 py-2 text-xs text-on-surface-variant">Kilidi aç</button></div>
+        <div id="letters-list" class="flex flex-col gap-3"></div>
+      </section>
+    </div>
   </div>
 </div>
 
@@ -1068,6 +1122,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260902.23"></script>
+<script type="module" src="/static/js/app.js?v=20260902.24"></script>
 </body>
 </html>

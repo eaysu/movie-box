@@ -384,6 +384,7 @@ def test_pending_blend_count_returns_numbered_inbox_badge_value():
     fake_service = SimpleNamespace(
         current_account=lambda _token: account,
         count_pending_blend_requests=lambda _account: 12,
+        count_unread_letters=lambda _account: 3,
     )
     with (
         patch("app.main.get_settings", return_value=_settings()),
@@ -396,7 +397,7 @@ def test_pending_blend_count_returns_numbered_inbox_badge_value():
         )
 
     assert response.status_code == 200
-    assert response.json() == {"count": 12}
+    assert response.json() == {"count": 15, "blend_count": 12, "letter_count": 3}
 
 
 def test_rejecting_blend_does_not_run_comparison_engine():

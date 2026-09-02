@@ -258,6 +258,24 @@ def test_sinefil_area_keeps_visibility_opt_in_and_lazy_personality_reads():
     assert "def sinefil_personality" in auth_py
 
 
+def test_sinefil_letters_are_client_encrypted_and_keep_inbox_private():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    crypto_js = (ROOT / "static" / "js" / "letters-crypto.js").read_text()
+    schema = (ROOT / "supabase" / "schema.sql").read_text()
+
+    assert 'id="inbox-letters-panel"' in html
+    assert 'id="dialog-letter-help"' in html
+    assert 'id="dialog-letter-key-setup"' in html
+    assert 'data-sinefil-letter=' in app_js
+    assert "apiJSON('/api/letters')" in app_js
+    assert "ECDH" in crypto_js
+    assert "AES-GCM" in crypto_js
+    assert "user_letter_keys" in schema
+    assert "cinephile_letters" in schema
+    assert "send_cinephile_letter" in schema
+
+
 def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     render = app_js.split("function renderBlendWatchlist", 1)[1].split(
@@ -279,9 +297,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260902.16"
+    css_version = "v=20260902.17"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260902.23" in html
+    assert "/static/js/app.js?v=20260902.24" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

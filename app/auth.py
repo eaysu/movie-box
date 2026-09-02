@@ -69,6 +69,7 @@ class Account:
     onboarding_completed_at: str | None = None
     letterboxd_stats: dict = field(default_factory=dict)
     discoverable: bool = False
+    letter_receiving_enabled: bool = False
 
 
 @dataclass
@@ -184,6 +185,8 @@ class AuthService:
             "blend_results": "id,request_id",
             "user_blocks": "blocker_user_id,blocked_user_id",
             "user_reports": "id,status",
+            "user_letter_keys": "user_id,public_key,key_version",
+            "cinephile_letters": "id,sender_user_id,recipient_user_id,read_at",
         }
         for table, columns in required.items():
             service.table(table).select(columns).limit(0).execute()
@@ -237,6 +240,7 @@ class AuthService:
             onboarding_completed_at=row.get("onboarding_completed_at"),
             letterboxd_stats=row.get("letterboxd_stats") or {},
             discoverable=bool(row.get("discoverable", False)),
+            letter_receiving_enabled=bool(row.get("letter_receiving_enabled", False)),
         )
 
     @staticmethod
@@ -249,7 +253,8 @@ class AuthService:
                 client.table("users")
                 .select(
                     "id,auth_user_id,username,display_name,avatar_url,"
-                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
+                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
+                    "discoverable,letter_receiving_enabled"
                 )
                 .eq("username", username)
                 .limit(1)
@@ -574,7 +579,8 @@ class AuthService:
                 service.table("users")
                 .select(
                     "id,auth_user_id,username,display_name,avatar_url,"
-                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
+                    "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
+                    "discoverable,letter_receiving_enabled"
                 )
                 .eq("auth_user_id", auth_user_id)
                 .eq("account_status", "active")
@@ -690,9 +696,10 @@ class AuthService:
         # bozma; kullanıcı yalnızca varsayılan olarak gizli kalır.
         try:
             visibility = self._first(
-                service.table("users").select("discoverable").eq("id", account.id).limit(1).execute()
+                service.table("users").select("discoverable,letter_receiving_enabled").eq("id", account.id).limit(1).execute()
             ) or {}
             account_data["discoverable"] = bool(visibility.get("discoverable", False))
+            account_data["letter_receiving_enabled"] = bool(visibility.get("letter_receiving_enabled", False))
         except Exception:
             pass
         return {
@@ -710,6 +717,119 @@ class AuthService:
             }
         ).eq("id", account.id).execute()
         return bool(visible)
+
+    # ── Sinefil Mektupları ─────────────────────────────────────────────
+    # The service only stores opaque browser-encrypted packets.  In particular,
+    # it never receives a letter lock password, a decrypted private key, message
+    # body, or film attachment.
+    def get_letter_key_material(self, account: Account) -> dict | None:
+        row = self._first(
+            self._service_client().table("user_letter_keys")
+            .select("public_key,encrypted_private_key,recovery_private_key,key_version,created_at,updated_at")
+            .eq("user_id", account.id).limit(1).execute()
+        )
+        return row or None
+
+    def save_letter_key_material(self, account: Account, payload: dict) -> dict:
+        public_key = str(payload.get("public_key") or "")
+        encrypted = payload.get("encrypted_private_key")
+        recovery = payload.get("recovery_private_key")
+        try:
+            envelopes_size = len(json.dumps({"encrypted": encrypted, "recovery": recovery}, separators=(",", ":")))
+        except (TypeError, ValueError):
+            envelopes_size = 0
+        if not (40 <= len(public_key) <= 512) or not isinstance(encrypted, dict) or not isinstance(recovery, dict) or not 50 <= envelopes_size <= 40000:
+            raise BlendServiceError("invalid_letter_key")
+        now = datetime.now(timezone.utc).isoformat()
+        row = self._service_client().table("user_letter_keys").upsert(
+            {
+                "user_id": account.id,
+                "public_key": public_key,
+                "encrypted_private_key": encrypted,
+                "recovery_private_key": recovery,
+                "key_version": 1,
+                "updated_at": now,
+            }, on_conflict="user_id"
+        ).execute()
+        return self._first(row) or {"public_key": public_key, "key_version": 1}
+
+    def set_letter_receiving(self, account: Account, enabled: bool) -> bool:
+        if enabled and not self.get_letter_key_material(account):
+            raise BlendServiceError("letter_key_required")
+        self._service_client().table("users").update(
+            {"letter_receiving_enabled": bool(enabled), "updated_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", account.id).execute()
+        return bool(enabled)
+
+    def get_letter_recipient(self, account: Account, username: str) -> dict:
+        service = self._service_client()
+        recipient = self._first(
+            service.table("users").select(
+                "id,username,display_name,avatar_url,letter_receiving_enabled,account_status"
+            ).eq("username", username).limit(1).execute()
+        )
+        if not recipient or recipient.get("account_status") != "active" or not recipient.get("letter_receiving_enabled"):
+            raise BlendServiceError("letter_recipient_unavailable")
+        blocks = service.table("user_blocks").select("blocker_user_id").or_(
+            f"and(blocker_user_id.eq.{account.id},blocked_user_id.eq.{recipient['id']}),"
+            f"and(blocker_user_id.eq.{recipient['id']},blocked_user_id.eq.{account.id})"
+        ).limit(1).execute().data or []
+        if blocks:
+            raise BlendServiceError("letter_recipient_unavailable")
+        key = self._first(service.table("user_letter_keys").select("public_key,key_version")
+            .eq("user_id", recipient["id"]).limit(1).execute())
+        if not key:
+            raise BlendServiceError("letter_recipient_unavailable")
+        return {"username": recipient["username"], "display_name": recipient.get("display_name") or recipient["username"],
+                "avatar_url": recipient.get("avatar_url") or "", "public_key": key["public_key"],
+                "key_version": int(key.get("key_version") or 1)}
+
+    def send_letter(self, account: Account, recipient_username: str, envelope: dict) -> str:
+        required = ("ciphertext", "iv", "salt", "sender_public_key", "recipient_public_key")
+        if any(not isinstance(envelope.get(item), str) or not envelope[item] for item in required):
+            raise BlendServiceError("invalid_letter")
+        if len(envelope["ciphertext"]) > 12000 or any(len(envelope[item]) > 1024 for item in required[1:]):
+            raise BlendServiceError("invalid_letter")
+        try:
+            result = self._service_client().rpc("send_cinephile_letter", {
+                "p_sender_user_id": account.id,
+                "p_recipient_username": recipient_username,
+                "p_envelope": envelope,
+            }).execute()
+            return str(self._rpc_value(result))
+        except Exception as exc:
+            message = str(exc)
+            known = ("letter_recipient_unavailable", "letter_send_cooldown", "letter_blocked", "invalid_letter_envelope")
+            raise BlendServiceError(next((item for item in known if item in message), "letter_send_failed")) from exc
+
+    def list_letters(self, account: Account) -> list[dict]:
+        service = self._service_client()
+        rows = service.table("cinephile_letters").select(
+            "id,sender_user_id,recipient_user_id,sender_public_key,recipient_public_key,"
+            "sender_key_version,recipient_key_version,ciphertext,iv,salt,created_at,read_at"
+        ).or_(f"sender_user_id.eq.{account.id},recipient_user_id.eq.{account.id}").order("created_at", desc=True).limit(100).execute().data or []
+        peers = self._accounts_by_id(service, {
+            int(row["recipient_user_id"] if int(row["sender_user_id"]) == account.id else row["sender_user_id"])
+            for row in rows
+        })
+        return [{
+            "id": row["id"], "direction": "sent" if int(row["sender_user_id"]) == account.id else "received",
+            "peer": peers.get(int(row["recipient_user_id"] if int(row["sender_user_id"]) == account.id else row["sender_user_id"])),
+            "sender_public_key": row["sender_public_key"], "recipient_public_key": row["recipient_public_key"],
+            "sender_key_version": int(row.get("sender_key_version") or 1), "recipient_key_version": int(row.get("recipient_key_version") or 1),
+            "ciphertext": row["ciphertext"], "iv": row["iv"], "salt": row["salt"], "created_at": row["created_at"], "read_at": row.get("read_at"),
+        } for row in rows]
+
+    def mark_letter_read(self, account: Account, letter_id: str) -> bool:
+        result = self._service_client().table("cinephile_letters").update(
+            {"read_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", letter_id).eq("recipient_user_id", account.id).is_("read_at", "null").execute()
+        return bool(result.data)
+
+    def count_unread_letters(self, account: Account) -> int:
+        rows = self._service_client().table("cinephile_letters").select("id").eq(
+            "recipient_user_id", account.id).is_("read_at", "null").execute().data or []
+        return len(rows)
 
     @staticmethod
     def _safe_slug_set(values) -> set[str]:
@@ -746,7 +866,7 @@ class AuthService:
 
         candidates_query = (
             service.table("users")
-            .select("id,username,display_name,avatar_url,top_films")
+            .select("id,username,display_name,avatar_url,top_films,letter_receiving_enabled")
             .eq("account_status", "active")
             .eq("profile_sync_status", "ready")
             .eq("discoverable", True)
@@ -849,6 +969,7 @@ class AuthService:
                     if has_favorite_match
                     else ("Benzer yönetmenlere dönüyorsunuz" if directors else "Zevk haritalarınız yakın")
                 ),
+                "letters_open": bool(candidate.get("letter_receiving_enabled", False)),
             })
         return sorted(cards, key=lambda card: (-int(card["has_favorite_match"]), -card["match_score"], card["username"]))
 

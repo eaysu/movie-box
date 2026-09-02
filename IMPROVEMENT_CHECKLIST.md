@@ -14,6 +14,28 @@ etiketiyle işaretlenmiştir; bu maddeler ürün sahibi onayı olmadan uygulanma
 - Önce kendi doğrudan scraper'ımız iyileştirilir. Açık kaynak Letterboxd
   kütüphaneleri ancak ölçülmüş bir güvenilirlik avantajı sunarsa değerlendirilir.
 
+## P0 — Sinefil Mektupları (uçtan uca şifreli) — 2026-09-02
+
+- [x] Mektup alma tercihini ayrı, varsayılan kapalı bir görünürlük ayarı olarak
+  ekle; yalnız açık profiller Sinefil Sineması’nda mektup aksiyonu görsün.
+- [x] Tarayıcıda ECDH P-256 + HKDF + AES-256-GCM ile şifrele; sunucuda yalnız
+  şifreli zarf, IV, salt ve public-key snapshot’ı tut. Gövde, film eki, kilit
+  parolası ve kurtarma kodu hiçbir zaman API’ye gönderilmez.
+- [x] Mektup kasası için uygulama parolasından ayrı bir kilit parolası ve tek
+  seferlik kurtarma kodu oluştur; her ikisinin kaybında eski mektupların
+  açılamayacağını kullanıcıya açıkça belirt.
+- [x] Günde kullanıcı başına yalnızca bir alıcıya bir mektup sınırı uygula;
+  SQL transaction lock ile çift sekme/çift tıklama yarışını engelle.
+- [x] Blend gelen kutusuna Mektuplar sekmesini ekle; okunmamış mektupları aynı
+  bildirim rozetine kat ve açıldığında zorunlu okundu durumunu işle.
+- [x] İzlenen bir filmi şifreli mektuba isteğe bağlı ek olarak iliştir; ek de
+  mektup gövdesiyle birlikte istemcide şifrelenir.
+- [x] Engelleme mevcut/pending mektupları iki taraftan kaldırır; bildirim akışı
+  kullanıcıyı raporlar ancak mektup içeriğini otomatik olarak paylaşmaz.
+- [ ] **MANUEL UYGULAMA:** Güncel `supabase/schema.sql` dosyasını Supabase SQL
+  Editor’da çalıştır; `user_letter_keys`, `cinephile_letters` ve RPC’leri
+  oluşturmadan Render deploy etme.
+
 ## P0 — Aktivasyon, Blend v4 ve öğrenen katalog — 2026-09-01
 
 - [x] İlk `/profile/sync` isteğindeki tekrarlı 250-film ön taramasını kaldır;
