@@ -39,6 +39,8 @@ export function resetPasswordVisibility() {
 export function setAuthMode(mode) {
   resetPasswordVisibility();
   const login = mode === 'login';
+  const title = $('auth-title');
+  if (title) title.textContent = login ? 'Movieboxd’a giriş yap' : 'Movieboxd’da hesap oluştur';
   $('login-form').classList.toggle('hidden', !login);
   $('register-form').classList.toggle('hidden', login);
   $('register-form').classList.toggle('flex', !login);

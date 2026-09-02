@@ -15,7 +15,7 @@ import {
   setAuthMessage,
   setAuthMode,
   setPasswordVisibility,
-} from './auth.js?v=20260902.15';
+} from './auth.js?v=20260902.16';
 import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js?v=20260902.15';
 import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
 import { createRecommendationCards } from './recommendations.js?v=20260902.15';
@@ -2220,6 +2220,9 @@ async function boot() {
       return;
     } catch (_) {}
   }
+  // İlk kez gelen ziyaretçiyi kayıt olmaya yönlendir; giriş yapan hesaplar
+  // zaten yukarıdaki session dalında doğrudan uygulamaya alınır.
+  setAuthMode('register');
   showView('auth');
   loadPublicStats();
 }

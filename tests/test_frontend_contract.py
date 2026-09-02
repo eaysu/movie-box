@@ -217,6 +217,7 @@ def test_health_and_session_boot_requests_start_in_parallel():
     assert "await Promise.all([" in boot
     assert "loadHealth()," in boot
     assert "apiJSON('/api/auth/me').catch(() => null)" in boot
+    assert "setAuthMode('register');" in boot
 
 
 def test_public_registration_count_is_rendered_without_exposing_user_records():
@@ -225,6 +226,9 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
 
     assert html.count('data-public-user-count class=') == 2
     assert 'data-public-user-count-value' in html
+    assert 'Letterboxd parolanı burada kullanma' in html
+    assert 'id="auth-title"' in html
+    assert "title.textContent = login ? 'Movieboxd’a giriş yap' : 'Movieboxd’da hesap oluştur'" in (ROOT / "static" / "js" / "auth.js").read_text()
     auth = html.split('id="view-auth"', 1)[1].split('id="view-idle"', 1)[0]
     assert auth.index('data-public-user-count') < auth.index('<main')
     assert "apiJSON('/api/public/stats')" in app_js
@@ -254,8 +258,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
 
     dependency_version = "v=20260902.15"
     assert f"/static/app.css?{dependency_version}" in html
-    assert "/static/js/app.js?v=20260902.20" in html
-    assert app_js.count(f"?{dependency_version}") == 7
+    assert "/static/js/app.js?v=20260902.21" in html
+    assert app_js.count(f"?{dependency_version}") == 6
+    assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
     assert f"./dom.js?{dependency_version}" in recommendations_js
