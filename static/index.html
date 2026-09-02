@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260902.15"/>
+<link rel="stylesheet" href="/static/app.css?v=20260902.16"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -256,39 +256,43 @@
       <div class="absolute -top-36 -right-28 w-[26rem] h-[26rem] rounded-full bg-primary-container/12 blur-[130px] pointer-events-none"></div>
       <div class="absolute -bottom-44 -left-28 w-[26rem] h-[26rem] rounded-full bg-tertiary-container/8 blur-[130px] pointer-events-none"></div>
 
-      <div class="relative grid lg:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr] gap-10 xl:gap-16 p-6 md:p-10 xl:p-12">
+      <div class="relative grid lg:grid-cols-[286px_minmax(0,1fr)] xl:grid-cols-[312px_minmax(0,1fr)] gap-8 xl:gap-12 p-5 md:p-8 xl:p-10">
         <!-- identity -->
-        <div class="flex flex-col items-center lg:items-start">
-          <div class="relative">
-            <div class="absolute -inset-6 rounded-full bg-primary-container/20 blur-2xl pointer-events-none"></div>
-            <div class="relative rounded-full p-[3px] bg-gradient-to-br from-primary-container via-tertiary-container/70 to-secondary-container/60 shadow-[0_24px_70px_-18px_rgba(0,224,84,.4)]">
-              <div class="rounded-full p-1.5 bg-surface">
-                <div id="profile-avatar-fallback" class="w-48 h-48 md:w-56 md:h-56 xl:w-[264px] xl:h-[264px] rounded-full bg-surface-container flex items-center justify-center text-primary-container font-display-lg text-[56px] xl:text-[78px] leading-none"></div>
-                <img id="profile-avatar" class="hidden w-48 h-48 md:w-56 md:h-56 xl:w-[264px] xl:h-[264px] rounded-full object-cover" alt=""/>
+        <aside class="self-start rounded-[24px] border border-outline-variant/20 bg-surface-container-low/70 p-4 md:p-5 shadow-[0_18px_56px_-30px_rgba(0,0,0,.9)]">
+          <div class="flex items-center gap-4">
+            <div class="relative shrink-0">
+              <div class="absolute -inset-4 rounded-full bg-primary-container/20 blur-xl pointer-events-none"></div>
+              <div class="relative rounded-full p-[3px] bg-gradient-to-br from-primary-container via-tertiary-container/70 to-secondary-container/60 shadow-[0_16px_42px_-14px_rgba(0,224,84,.48)]">
+                <div class="rounded-full p-1 bg-surface">
+                  <div id="profile-avatar-fallback" class="w-[92px] h-[92px] sm:w-[108px] sm:h-[108px] xl:w-[118px] xl:h-[118px] rounded-full bg-surface-container flex items-center justify-center text-primary-container font-display-lg text-[36px] xl:text-[42px] leading-none"></div>
+                  <img id="profile-avatar" class="hidden w-[92px] h-[92px] sm:w-[108px] sm:h-[108px] xl:w-[118px] xl:h-[118px] rounded-full object-cover" alt=""/>
+                </div>
+              </div>
+              <span class="absolute bottom-1 right-1 w-4 h-4 rounded-full bg-primary-container border-[3px] border-surface shadow-[0_0_16px_rgba(0,224,84,.8)]" title="Profil aktif"></span>
+            </div>
+
+            <div class="min-w-0 text-left">
+              <h1 id="profile-display-name" class="font-headline-lg text-[28px] xl:text-[32px] leading-[1.05] tracking-[-.04em] text-on-surface break-words"></h1>
+              <p id="profile-username" class="mt-1.5 font-label-md text-label-md text-on-surface-variant"></p>
+              <div class="mt-3 flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings:'FILL' 1">verified</span>
+                <span class="font-label-sm text-[10px] uppercase tracking-wide text-on-surface-variant">Letterboxd bağlı</span>
               </div>
             </div>
-            <span class="absolute bottom-4 right-5 w-5 h-5 rounded-full bg-primary-container border-4 border-surface shadow-[0_0_18px_rgba(0,224,84,.8)]" title="Profil aktif"></span>
           </div>
 
-          <div class="mt-7 w-full text-center lg:text-left">
-            <h1 id="profile-display-name" class="font-headline-lg text-[30px] xl:text-[38px] leading-[1.05] tracking-[-.04em] text-on-surface break-words"></h1>
-            <p id="profile-username" class="mt-2 font-label-md text-label-md text-on-surface-variant"></p>
+          <div class="mt-4 border-t border-outline-variant/15 pt-3">
+            <div id="profile-last-sync" class="flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant/60"></div>
+          </div>
 
-            <div class="mt-5 flex flex-col gap-2.5">
-              <div class="flex items-center gap-2.5 justify-center lg:justify-start">
-                <span class="material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings:'FILL' 1">verified</span>
-                <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">Letterboxd profili bağlı</span>
-              </div>
-              <div id="profile-last-sync" class="flex items-center gap-2.5 justify-center lg:justify-start font-label-sm text-label-sm text-on-surface-variant/60"></div>
-            </div>
-
-            <div class="mt-4 flex items-center gap-2 justify-center lg:justify-start">
-              <button id="profile-inbox" type="button" aria-label="Gelen kutusu" class="relative inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container/50 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
+          <div class="mt-4 grid gap-2">
+            <div class="flex items-center gap-2">
+              <button id="profile-inbox" type="button" aria-label="Gelen kutusu" class="relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/50 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">inbox</span>Gelen kutusu
                 <span id="profile-inbox-badge" aria-live="polite" class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-secondary-container text-on-secondary-container text-[9px] font-bold items-center justify-center"></span>
               </button>
               <div class="relative">
-                <button id="profile-settings-btn" type="button" class="w-9 h-9 rounded-full border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors flex items-center justify-center" aria-label="Ayarlar" aria-expanded="false">
+                <button id="profile-settings-btn" type="button" class="w-10 h-10 rounded-xl border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors flex items-center justify-center" aria-label="Ayarlar" aria-expanded="false">
                   <span class="material-symbols-outlined text-[18px]">settings</span>
                 </button>
                 <div id="profile-settings-menu" class="hidden absolute left-0 lg:left-auto lg:right-0 top-11 z-30 w-56 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1 text-left">
@@ -299,27 +303,25 @@
               </div>
             </div>
 
-            <div class="mt-2 flex items-center gap-2 justify-center lg:justify-start">
-              <button id="profile-blends" type="button" class="relative inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container/50 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
+            <button id="profile-blends" type="button" class="relative inline-flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/50 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">grain</span>Blendlerim
                 <span id="profile-blends-badge" class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-primary-container text-on-primary-container text-[9px] font-bold items-center justify-center"></span>
-              </button>
-            </div>
+            </button>
 
-            <div class="mt-2 flex items-center gap-2 justify-center lg:justify-start">
-              <button id="profile-sinefil-area" type="button" class="inline-flex items-center gap-2 rounded-full bg-tertiary-container px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container hover:opacity-90 transition-opacity">
+            <div class="flex items-center gap-2">
+              <button id="profile-sinefil-area" type="button" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-tertiary-container px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container hover:opacity-90 transition-opacity">
                 <span class="material-symbols-outlined text-[16px]">diversity_3</span>Sinefil Alanı
               </button>
-              <button id="profile-discovery-toggle" type="button" aria-pressed="false" class="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container/70 px-3 py-2 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container transition-colors" title="Sinefil Alanı görünürlüğü">
+              <button id="profile-discovery-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container transition-colors" title="Sinefil Alanı görünürlüğü">
                 <span id="profile-discovery-icon" class="material-symbols-outlined text-[15px]">visibility_off</span><span id="profile-discovery-label">Gizli</span>
               </button>
             </div>
 
-            <button id="profile-invite-friend" type="button" class="mt-4 inline-flex items-center gap-2 rounded-full border border-primary-container/30 bg-primary-container/10 px-4 py-2 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
+            <button id="profile-invite-friend" type="button" class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
               <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1">group_add</span>Bir arkadaşına öner
             </button>
           </div>
-        </div>
+        </aside>
 
         <!-- taste analysis -->
         <div class="min-w-0 lg:border-l lg:border-outline-variant/15 lg:pl-10 xl:pl-16">
