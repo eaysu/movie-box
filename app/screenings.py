@@ -387,6 +387,9 @@ _GENRE_TR = {
 }
 
 
+PAYLOAD_VERSION = 2
+
+
 def _film_card(row: dict, extra: dict | None = None) -> dict:
     card = {
         "title": row.get("title") or row.get("title_raw") or "",
@@ -394,23 +397,43 @@ def _film_card(row: dict, extra: dict | None = None) -> dict:
         "tmdb_id": row.get("tmdb_id"),
         "slug": row.get("film_slug") or "",
         "poster_url": row.get("poster_url") or "",
-        "venue": row.get("venue_name") or "",
-        "venue_url": row.get("url") or "",
-        "starts_at": row.get("starts_at"),
+        # Every venue showing this film, so the card can offer all of them.
+        "venues": [{
+            "name": row.get("venue_name") or "",
+            "slug": row.get("venue_slug") or "",
+            "city": row.get("venue_city") or "",
+            "url": row.get("url") or "",
+            "starts_at": row.get("starts_at"),
+        }] if row.get("venue_name") else [],
     }
     card.update(extra or {})
     return card
 
 
-def build_digest(screenings: list[dict], watched: list[dict], watchlist, taste) -> dict:
-    """Shape one member's week from rows already in the database.
+_GENRE_TR = {
+    "Action": "Aksiyon", "Adventure": "Macera", "Animation": "Animasyon",
+    "Comedy": "Komedi", "Crime": "Suç", "Documentary": "Belgesel", "Drama": "Dram",
+    "Family": "Aile", "Fantasy": "Fantastik", "History": "Tarih", "Horror": "Korku",
+    "Music": "Müzik", "Mystery": "Gizem", "Romance": "Romantik",
+    "Science Fiction": "Bilim Kurgu", "Thriller": "Gerilim", "War": "Savaş",
+    "Western": "Western",
+}
 
-    Sections are ordered by how directly they can be acted on: something you
-    already wanted to see, then something you loved that is back, then a new
-    release that fits. An empty section is omitted, never padded.
+# Lower sorts first: what the member already chose, then what they loved, then
+# what fits their taste, then the rest of the programme.
+PRIORITY_WATCHLIST = 0
+PRIORITY_BACK = 1
+PRIORITY_TASTE = 2
+PRIORITY_REST = 3
+
+
+def build_bulletin(screenings: list[dict], watched: list[dict], watchlist, taste) -> dict:
+    """The whole current programme for one member, most relevant first.
+
+    Every film playing is included — the card is a listing, not a shortlist —
+    but the ones the member already put on their watchlist, or rated highly and
+    can now see again, are lifted to the top and carry the note that says why.
     """
-    # A watchlist entry may arrive as a slug string or as a full film row; a
-    # screening may only know its tmdb_id, so both keys are indexed.
     wanted_slugs: set[str] = set()
     wanted_tmdb: set[int] = set()
     for item in watchlist or []:
@@ -424,6 +447,7 @@ def build_digest(screenings: list[dict], watched: list[dict], watchlist, taste) 
         if item.get("tmdb_id"):
             with contextlib.suppress(TypeError, ValueError):
                 wanted_tmdb.add(int(item["tmdb_id"]))
+
     watched_by_tmdb: dict[int, dict] = {}
     watched_by_title: dict[str, dict] = {}
     for row in watched or []:
@@ -433,73 +457,80 @@ def build_digest(screenings: list[dict], watched: list[dict], watchlist, taste) 
         if title:
             watched_by_title[title] = row
 
-    def _seen(row: dict) -> dict | None:
-        tmdb_id = row.get("tmdb_id")
-        if tmdb_id and int(tmdb_id) in watched_by_tmdb:
-            return watched_by_tmdb[int(tmdb_id)]
-        return watched_by_title.get(normalize_title(row.get("title_raw")))
-
-    on_watchlist: list[dict] = []
-    back_on_screen: list[dict] = []
-    fits_taste: list[dict] = []
     genres = {str(genre).lower() for genre in (taste or {}).get("top_genres", []) if genre}
     directors = {str(name).lower() for name in (taste or {}).get("top_directors", []) if name}
 
+    merged: dict[str, dict] = {}
+    venue_counts: dict[str, dict] = {}
+
     for row in screenings or []:
-        seen = _seen(row)
-        slug = row.get("film_slug") or ""
-        if seen:
-            rating = seen.get("user_rating")
-            if seen.get("rating_observed") and rating and float(rating) >= 4:
-                back_on_screen.append(_film_card(row, {
-                    "slug": slug or seen.get("film_slug") or "",
-                    "note": f"Bu filme {float(rating):.1f} vermiştin",
-                    "user_rating": float(rating),
-                }))
-            continue
+        venue_slug = row.get("venue_slug") or ""
+        if venue_slug:
+            entry = venue_counts.setdefault(venue_slug, {
+                "slug": venue_slug,
+                "name": row.get("venue_name") or venue_slug,
+                "city": row.get("venue_city") or "",
+                "count": 0,
+            })
+            entry["count"] += 1
+
         tmdb_id = row.get("tmdb_id")
+        slug = row.get("film_slug") or ""
+        seen = None
+        if tmdb_id and int(tmdb_id) in watched_by_tmdb:
+            seen = watched_by_tmdb[int(tmdb_id)]
+        else:
+            seen = watched_by_title.get(normalize_title(row.get("title_raw")))
+
         on_list = (slug and slug in wanted_slugs) or (
             tmdb_id is not None and int(tmdb_id) in wanted_tmdb
         )
-        if on_list:
-            on_watchlist.append(_film_card(row, {"note": "İzleme listende"}))
-            continue
+        rating = seen.get("user_rating") if seen else None
+        loved = bool(
+            seen and seen.get("rating_observed") and rating and float(rating) >= 4
+        )
         director = str(row.get("director") or "").lower()
         row_genres = {str(genre).lower() for genre in (row.get("genres") or [])}
-        if director and director in directors:
-            fits_taste.append(_film_card(row, {"note": f"{row.get('director')} filmi"}))
+
+        if on_list:
+            priority, note = PRIORITY_WATCHLIST, "İzleme listende"
+        elif loved:
+            priority = PRIORITY_BACK
+            note = f"Bu filme {float(rating):.1f} vermiştin"
+        elif seen:
+            # Already watched without a high rating: keep it in the listing but
+            # never promote it, and say so rather than pretending it is new.
+            priority, note = PRIORITY_REST, "İzlemiştin"
+        elif director and director in directors:
+            priority, note = PRIORITY_TASTE, f"{row.get('director')} filmi"
         elif row_genres & genres:
             match = sorted(row_genres & genres)[0].title()
-            fits_taste.append(_film_card(row, {
-                "note": f"{_GENRE_TR.get(match, match)} tarafında",
-            }))
+            priority, note = PRIORITY_TASTE, f"{_GENRE_TR.get(match, match)} tarafında"
+        else:
+            priority, note = PRIORITY_REST, ""
 
-    def _dedupe(cards: list[dict]) -> list[dict]:
-        """One film is one card, however many venues are showing it."""
-        merged: dict[str, dict] = {}
-        for card in cards:
-            key = str(card.get("tmdb_id") or card.get("slug") or normalize_title(card["title"]))
-            existing = merged.get(key)
-            if not existing:
-                merged[key] = card
-                continue
-            venues = [existing.get("venue"), card.get("venue")]
-            existing["venue"] = " · ".join(
-                dict.fromkeys(venue for venue in venues if venue)
-            )
-        return list(merged.values())
+        key = str(tmdb_id or slug or normalize_title(row.get("title_raw")))
+        existing = merged.get(key)
+        if existing:
+            # One film at several venues stays one card, with every venue on it.
+            known = {venue["slug"] for venue in existing["venues"]}
+            for venue in _film_card(row)["venues"]:
+                if venue["slug"] not in known:
+                    existing["venues"].append(venue)
+            if priority < existing["priority"]:
+                existing["priority"], existing["note"] = priority, note
+            continue
+        merged[key] = _film_card(row, {"priority": priority, "note": note})
 
-    sections = [
-        ("watchlist", "İzleme listende ve perdede", _dedupe(on_watchlist)),
-        ("back", "Tekrar perdede", _dedupe(back_on_screen)),
-        ("taste", "Zevkine uyan yeni vizyon", _dedupe(fits_taste)),
-    ]
+    films = sorted(
+        merged.values(),
+        key=lambda film: (film["priority"], (film.get("title") or "").casefold()),
+    )
     return {
+        "version": PAYLOAD_VERSION,
         "week_start": week_start().isoformat(),
-        "sections": [
-            {"key": key, "title": title, "films": films[:SECTION_LIMIT]}
-            for key, title, films in sections
-            if films
-        ],
-        "total": sum(len(films[:SECTION_LIMIT]) for _key, _title, films in sections),
+        "films": films,
+        "venues": sorted(venue_counts.values(), key=lambda item: -item["count"]),
+        "highlighted": sum(1 for film in films if film["priority"] < PRIORITY_REST),
+        "total": len(films),
     }

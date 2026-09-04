@@ -2027,35 +2027,29 @@ def _kick_bulletin_ingest(settings, service) -> None:
 
 
 @app.get("/api/bulletin")
-async def bulletin(request: Request, city: str = "") -> dict:
-    """This week's cinema agenda for the signed-in member."""
+async def bulletin(request: Request) -> dict:
+    """The whole current cinema programme, ordered for this member."""
     settings = get_settings()
     account = await _require_account(request)
     if not settings.bulletin_enabled:
-        return {"enabled": False, "sections": [], "cities": []}
+        return {"enabled": False, "films": [], "venues": []}
 
     service = _auth_service()
-    selected = city.strip()
-    cities = settings.bulletin_city_list
-    if selected and selected not in cities:
-        selected = ""
     week = screenings.week_start().isoformat()
 
-    cached = await asyncio.to_thread(
-        service.get_bulletin_digest, account.id, week, selected
-    )
-    if cached:
+    cached = await asyncio.to_thread(service.get_bulletin_digest, account.id, week, "")
+    # A payload written by an older shape is stale, not usable.
+    if cached and cached.get("version") == screenings.PAYLOAD_VERSION:
         _kick_bulletin_ingest(settings, service)
-        return {"enabled": True, "city": selected, "cities": cities, **cached}
+        return {"enabled": True, **cached}
 
-    rows = await asyncio.to_thread(service.list_screenings, city=selected)
+    rows = await asyncio.to_thread(service.list_screenings)
     if not rows:
         _kick_bulletin_ingest(settings, service)
         return {
             "enabled": True,
-            "city": selected,
-            "cities": cities,
-            "sections": [],
+            "films": [],
+            "venues": [],
             "total": 0,
             "preparing": True,
         }
@@ -2063,31 +2057,31 @@ async def bulletin(request: Request, city: str = "") -> dict:
     watched = await asyncio.to_thread(service.get_rated_watched_films, account.id)
     supabase_client, _ = _make_cache(settings)
     pcache = _make_persistent_cache(settings, supabase_client)
-    watchlist_slugs: list[str] = []
+    watchlist: list = []
     if pcache is not None:
         with contextlib.suppress(Exception):
             entry = await asyncio.to_thread(
                 pcache.get_with_freshness, "films_watchlist", account.username, ttl=None
             )
-            watchlist_slugs = [
-                row.get("slug") for row in ((entry[0] if entry else []) or []) if row.get("slug")
-            ]
+            watchlist = (entry[0] if entry else []) or []
     stored = await asyncio.to_thread(service.get_profile, account)
-    digest = screenings.build_digest(
-        rows, watched, watchlist_slugs, (stored or {}).get("taste") or {}
+    payload = screenings.build_bulletin(
+        rows, watched, watchlist, (stored or {}).get("taste") or {}
     )
-    # An empty digest is not worth a week of cache: the programme is still
-    # being ingested, or a title has not resolved yet, and both heal on their
-    # own. Only a card with something in it gets frozen for the week.
-    if digest.get("total"):
+    # An empty listing means the ingest is still running; that is not worth a
+    # week of cache, and it heals on its own.
+    if payload.get("total"):
         await asyncio.to_thread(
-            service.save_bulletin_digest, account.id, week, selected, digest
+            service.save_bulletin_digest, account.id, week, "", payload
         )
     await _record_activity_event(
-        service, account, "bulletin_viewed", {"total": digest.get("total", 0)}
+        service,
+        account,
+        "bulletin_viewed",
+        {"total": payload.get("total", 0), "highlighted": payload.get("highlighted", 0)},
     )
     _kick_bulletin_ingest(settings, service)
-    return {"enabled": True, "city": selected, "cities": cities, **digest}
+    return {"enabled": True, **payload}
 
 
 @app.get("/api/profile/stats")

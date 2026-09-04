@@ -909,37 +909,61 @@ function renderPersistedProfile(data) {
 
 // ── Sinema gündemi — profil boyandıktan sonra, tek istekle ────────────────
 let _bulletinLoaded = false;
+let _bulletinData = null;
+
+function bulletinVenueMenu(film) {
+  const venues = (film.venues || []).filter(v => v && v.name);
+  if (!venues.length) return '';
+  const label = (venue) => {
+    const when = venue.starts_at
+      ? ` · ${escapeHTML(new Date(venue.starts_at).toLocaleString('tr-TR', {
+        weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      }))}`
+      : '';
+    return `${escapeHTML(venue.name)}${when}`;
+  };
+  // One cinema is a plain link; several become a menu so every programme is
+  // reachable instead of only the first.
+  if (venues.length === 1) {
+    const venue = venues[0];
+    return venue.url
+      ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="shrink-0 self-start rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
+      : `<span class="shrink-0 self-start rounded-lg border border-outline-variant/20 px-3 py-1.5 text-xs uppercase tracking-wide text-on-surface-variant/50">${escapeHTML(venue.name)}</span>`;
+  }
+  return `<details class="bulletin-venue-menu shrink-0 self-start relative">
+    <summary class="list-none cursor-pointer rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues.length} sinema</summary>
+    <div class="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-2xl">
+      ${venues.map(venue => venue.url
+        ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="block px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-variant/60">${label(venue)}</a>`
+        : `<span class="block px-3 py-2 text-left text-sm text-on-surface-variant/60">${label(venue)}</span>`).join('')}
+    </div>
+  </details>`;
+}
 
 function bulletinFilmCard(film) {
   const title = escapeHTML(film.title || 'Film');
   const poster = safeImageURL(film.poster_url);
   const year = film.year ? escapeHTML(String(film.year)) : '';
   const note = film.note ? escapeHTML(film.note) : '';
-  const venue = film.venue ? escapeHTML(film.venue) : '';
-  const when = film.starts_at
-    ? escapeHTML(new Date(film.starts_at).toLocaleString('tr-TR', {
-      weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-    }))
-    : '';
+  const venueNames = (film.venues || []).map(v => v.name).filter(Boolean);
   const art = poster
-    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-14 shrink-0 aspect-[2/3] rounded-lg object-cover bg-surface-container"/>`
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-14 shrink-0 aspect-[2/3] rounded-lg object-cover bg-surface-container" loading="lazy"/>`
     : `<div class="w-14 shrink-0 aspect-[2/3] rounded-lg bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[20px]">movie</span></div>`;
   const href = letterboxdFilmURL(film.slug);
   const heading = href
     ? `<a href="${href}" target="_blank" rel="noopener" class="font-headline-md text-[16px] text-on-surface hover:text-tertiary-container transition-colors">${title}</a>`
     : `<strong class="font-headline-md text-[16px] text-on-surface">${title}</strong>`;
-  // Bilet linki mekâna gider; biz araya girmiyoruz.
-  const ticket = film.venue_url
-    ? `<a href="${escapeHTML(film.venue_url)}" target="_blank" rel="noopener" class="shrink-0 self-center rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
-    : '';
-  return `<article class="flex items-start gap-3 rounded-2xl border border-outline-variant/20 bg-surface-container/40 p-3">
+  const highlight = film.priority < 3
+    ? 'border-tertiary-container/35 bg-tertiary-container/[.07]'
+    : 'border-outline-variant/20 bg-surface-container/40';
+  return `<article class="flex items-start gap-3 rounded-2xl border ${highlight} p-3">
     ${art}
     <div class="min-w-0 flex-1">
       ${heading}
-      <p class="mt-0.5 text-xs text-on-surface-variant/60">${[year, venue, when].filter(Boolean).join(' · ')}</p>
+      <p class="mt-0.5 text-xs text-on-surface-variant/60">${escapeHTML([year, venueNames.join(', ')].filter(Boolean).join(' · '))}</p>
       ${note ? `<p class="mt-1.5 text-sm text-tertiary-container">${note}</p>` : ''}
     </div>
-    ${ticket}
+    ${bulletinVenueMenu(film)}
   </article>`;
 }
 
@@ -947,37 +971,49 @@ function renderBulletin(data) {
   const section = $('profile-bulletin');
   if (!data.enabled) { section.classList.add('hidden'); return; }
   section.classList.remove('hidden');
+  _bulletinData = data;
 
-  const select = $('bulletin-city');
-  if (select.options.length <= 1 && Array.isArray(data.cities)) {
-    select.innerHTML = ['<option value="">Türkiye geneli</option>']
-      .concat(data.cities.map(city => `<option value="${escapeHTML(city)}">${escapeHTML(city)}</option>`))
+  const select = $('bulletin-venue');
+  const venues = data.venues || [];
+  if (select.options.length <= 1 && venues.length) {
+    select.innerHTML = ['<option value="">Tüm sinemalar</option>']
+      .concat(venues.map(venue =>
+        `<option value="${escapeHTML(venue.slug)}">${escapeHTML(venue.name)} (${venue.count})</option>`))
       .join('');
   }
-  select.value = data.city || '';
+  paintBulletin();
+}
 
-  const sections = data.sections || [];
-  if (!sections.length) {
+function paintBulletin() {
+  const data = _bulletinData;
+  if (!data) return;
+  const chosen = $('bulletin-venue').value || '';
+  const films = (data.films || []).filter(film =>
+    !chosen || (film.venues || []).some(venue => venue.slug === chosen));
+
+  if (!films.length) {
     $('bulletin-body').innerHTML = `<p class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">${
       data.preparing
         ? 'Bu haftanın programı hazırlanıyor; birazdan tekrar bak.'
-        : 'Bu hafta sana uyan bir gösterim bulamadık.'
+        : 'Bu filtreye uyan gösterim yok.'
     }</p>`;
     return;
   }
-  $('bulletin-body').innerHTML = sections.map(group => `
-    <div class="mb-6 last:mb-0">
-      <h3 class="mb-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant/70">${escapeHTML(group.title)}</h3>
-      <div class="grid gap-3 md:grid-cols-3">${(group.films || []).map(bulletinFilmCard).join('')}</div>
-    </div>`).join('');
+  const highlighted = films.filter(film => film.priority < 3).length;
+  $('bulletin-body').innerHTML = `
+    <p class="mb-3 text-xs text-on-surface-variant/60">${films.length} film${
+      highlighted ? ` · ${highlighted} tanesi seninle ilgili, üstte` : ''
+    }</p>
+    <div class="max-h-[70vh] overflow-y-auto pr-1 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      ${films.map(bulletinFilmCard).join('')}
+    </div>`;
 }
 
-async function loadBulletin(city) {
+async function loadBulletin() {
   if (!_account) return;
   _bulletinLoaded = true;
   try {
-    const target = city === undefined ? ($('bulletin-city').value || '') : city;
-    renderBulletin(await apiJSON(`/api/bulletin?city=${encodeURIComponent(target)}`));
+    renderBulletin(await apiJSON('/api/bulletin'));
   } catch (_) {
     $('profile-bulletin').classList.add('hidden');
   }
@@ -3818,7 +3854,13 @@ $('sinefil-grid').addEventListener('click', event => {
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });
-$('bulletin-city').addEventListener('change', () => loadBulletin());
+$('bulletin-venue').addEventListener('change', paintBulletin);
+document.addEventListener('click', event => {
+  const open = document.querySelectorAll('.bulletin-venue-menu[open]');
+  if (!open.length) return;
+  const current = event.target.closest('.bulletin-venue-menu');
+  open.forEach(menu => { if (menu !== current) menu.removeAttribute('open'); });
+});
 $('profile-recent-share').addEventListener('click', event => {
   buildAndOpenShareCard(
     event.currentTarget,

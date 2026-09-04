@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from app.screenings import (
     LOCAL_TZ,
     parse_programme,
-    build_digest,
+    build_bulletin,
     ingest_release_layer,
     normalize_title,
     resolve_screening_title,
@@ -106,97 +106,89 @@ class TitleResolutionTests(unittest.TestCase):
         self.assertIsNone(result.get("tmdb_id"))
 
 
-class DigestTests(unittest.TestCase):
+class BulletinTests(unittest.TestCase):
     def _screenings(self):
         return [
-            {"title_raw": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
-             "venue_name": "Türkiye vizyonu", "genres": [], "director": ""},
-            {"title_raw": "Yaban Çilekleri", "tmdb_id": 2, "film_slug": "wild-strawberries",
-             "venue_name": "Kadıköy Sineması", "starts_at": "2026-09-05T21:30:00+03:00",
-             "genres": [], "director": ""},
-            {"title_raw": "Yeni Vizyon", "tmdb_id": 3, "film_slug": "yeni-vizyon",
-             "venue_name": "Türkiye vizyonu", "genres": ["Drama"], "director": ""},
+            {"title_raw": "Stalker", "title": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
+             "venue_name": "Atlas", "venue_slug": "atlas", "genres": [], "director": ""},
+            {"title_raw": "Yaban Çilekleri", "title": "Wild Strawberries", "tmdb_id": 2,
+             "film_slug": "wild-strawberries", "venue_name": "Kadıköy", "venue_slug": "kadikoy",
+             "starts_at": "2026-09-05T21:30:00+03:00", "genres": [], "director": ""},
+            {"title_raw": "Yeni Vizyon", "title": "Yeni Vizyon", "tmdb_id": 3,
+             "film_slug": "yeni-vizyon", "venue_name": "Vizyon", "venue_slug": "tr-vizyon",
+             "genres": ["Drama"], "director": ""},
+            {"title_raw": "Alakasız Film", "title": "Alakasız Film", "tmdb_id": 4,
+             "film_slug": "alakasiz", "venue_name": "Vizyon", "venue_slug": "tr-vizyon",
+             "genres": ["Horror"], "director": ""},
         ]
 
-    def test_sections_are_ordered_and_labelled_by_actionability(self):
+    def test_every_film_is_listed_with_the_relevant_ones_first(self):
         watched = [{
-            "tmdb_id": 2, "film_slug": "wild-strawberries", "title": "Yaban Çilekleri",
-            "user_rating": 4.5, "rating_observed": True, "first_seen_at": "2021-04-02T10:00:00Z",
+            "tmdb_id": 2, "film_slug": "wild-strawberries", "title": "Wild Strawberries",
+            "user_rating": 4.5, "rating_observed": True,
         }]
 
-        digest = build_digest(
+        payload = build_bulletin(
             self._screenings(), watched, ["stalker"], {"top_genres": ["Drama"]},
         )
 
-        keys = [section["key"] for section in digest["sections"]]
-        self.assertEqual(keys, ["watchlist", "back", "taste"])
-        self.assertEqual(digest["sections"][0]["films"][0]["title"], "Stalker")
-        # first_seen_at is when the sync first saw the film, not when it was
-        # watched, so the note must not print it as a viewing year.
-        note = digest["sections"][1]["films"][0]["note"]
-        self.assertIn("4.5", note)
-        self.assertNotIn("2021", note)
-        self.assertEqual(digest["total"], 3)
+        # Nothing is dropped: the card is a listing, not a shortlist.
+        self.assertEqual(payload["total"], 4)
+        titles = [film["title"] for film in payload["films"]]
+        self.assertEqual(titles[:3], ["Stalker", "Wild Strawberries", "Yeni Vizyon"])
+        self.assertEqual(payload["films"][0]["note"], "İzleme listende")
+        self.assertIn("4.5", payload["films"][1]["note"])
+        self.assertEqual(payload["highlighted"], 3)
 
-    def test_low_rated_rewatches_are_not_advertised_as_back_on_screen(self):
-        watched = [{
-            "tmdb_id": 2, "film_slug": "wild-strawberries", "title": "Yaban Çilekleri",
-            "user_rating": 2.0, "rating_observed": True, "first_seen_at": "2021-04-02T10:00:00Z",
+    def test_a_film_at_several_venues_carries_all_of_them(self):
+        rows = self._screenings() + [{
+            "title_raw": "Stalker", "title": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
+            "venue_name": "Kadıköy", "venue_slug": "kadikoy", "genres": [], "director": "",
         }]
 
-        digest = build_digest(self._screenings(), watched, [], {})
+        payload = build_bulletin(rows, [], ["stalker"], {})
+        stalker = next(film for film in payload["films"] if film["title"] == "Stalker")
 
-        self.assertNotIn("back", [section["key"] for section in digest["sections"]])
+        self.assertEqual([venue["slug"] for venue in stalker["venues"]], ["atlas", "kadikoy"])
 
-    def test_empty_sections_collapse_instead_of_rendering_placeholders(self):
-        digest = build_digest(self._screenings(), [], [], {})
+    def test_venue_index_counts_what_each_cinema_shows(self):
+        payload = build_bulletin(self._screenings(), [], [], {})
 
-        for section in digest["sections"]:
-            self.assertTrue(section["films"])
+        counts = {venue["slug"]: venue["count"] for venue in payload["venues"]}
+        self.assertEqual(counts, {"atlas": 1, "kadikoy": 1, "tr-vizyon": 2})
 
     def test_watchlist_matches_on_tmdb_id_when_the_slug_is_missing(self):
-        """A screening resolved through TMDb has no Letterboxd slug, and every
-        watchlist is keyed by slug — matching on either is what makes the
-        section fire at all."""
-        rows = [{"title_raw": "Stalker", "tmdb_id": 1, "film_slug": None,
-                 "venue_name": "Atlas", "genres": [], "director": ""}]
+        rows = [{"title_raw": "Stalker", "title": "Stalker", "tmdb_id": 1, "film_slug": None,
+                 "venue_name": "Atlas", "venue_slug": "atlas", "genres": [], "director": ""}]
 
-        digest = build_digest(rows, [], [{"slug": "stalker", "tmdb_id": 1}], {})
+        payload = build_bulletin(rows, [], [{"slug": "stalker", "tmdb_id": 1}], {})
 
-        self.assertEqual(digest["sections"][0]["key"], "watchlist")
+        self.assertEqual(payload["films"][0]["note"], "İzleme listende")
 
-    def test_one_film_at_several_venues_is_one_card(self):
-        rows = [
-            {"title_raw": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
-             "venue_name": "Atlas", "genres": [], "director": ""},
-            {"title_raw": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
-             "venue_name": "Kadıköy", "genres": [], "director": ""},
-        ]
-
-        digest = build_digest(rows, [], ["stalker"], {})
-        films = digest["sections"][0]["films"]
-
-        self.assertEqual(len(films), 1)
-        self.assertEqual(films[0]["venue"], "Atlas · Kadıköy")
-
-    def test_taste_notes_use_turkish_genre_names(self):
-        rows = [{"title_raw": "Yeni Film", "tmdb_id": 9, "film_slug": "yeni-film",
-                 "venue_name": "Vizyon", "genres": ["Adventure"], "director": ""}]
-
-        digest = build_digest(rows, [], [], {"top_genres": ["Adventure"]})
-
-        self.assertIn("Macera", digest["sections"][0]["films"][0]["note"])
-
-    def test_watched_films_never_appear_as_new_releases(self):
+    def test_a_seen_film_is_kept_but_never_promoted(self):
         watched = [{
             "tmdb_id": 3, "film_slug": "yeni-vizyon", "title": "Yeni Vizyon",
-            "user_rating": None, "rating_observed": False, "first_seen_at": "2026-01-01T00:00:00Z",
+            "user_rating": 2.0, "rating_observed": True,
         }]
 
-        digest = build_digest(self._screenings(), watched, [], {"top_genres": ["Drama"]})
-        titles = [film["title"] for section in digest["sections"] for film in section["films"]]
+        payload = build_bulletin(self._screenings(), watched, [], {"top_genres": ["Drama"]})
+        seen = next(film for film in payload["films"] if film["title"] == "Yeni Vizyon")
 
-        self.assertNotIn("Yeni Vizyon", titles)
+        self.assertEqual(seen["note"], "İzlemiştin")
+        self.assertEqual(seen["priority"], 3)
+
+    def test_taste_notes_use_turkish_genre_names(self):
+        payload = build_bulletin(self._screenings(), [], [], {"top_genres": ["Drama"]})
+        fitted = next(film for film in payload["films"] if film["title"] == "Yeni Vizyon")
+
+        self.assertIn("Dram", fitted["note"])
+
+    def test_payload_is_versioned_so_an_old_cache_is_not_reused(self):
+        payload = build_bulletin(self._screenings(), [], [], {})
+        main = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+
+        self.assertIn("version", payload)
+        self.assertIn('cached.get("version") == screenings.PAYLOAD_VERSION', main)
 
 
 class ReleaseIngestTests(unittest.TestCase):
@@ -434,9 +426,9 @@ class DigestCacheTests(unittest.TestCase):
         main = (Path(__file__).parents[1] / "app" / "main.py").read_text()
         bulletin = main.split('@app.get("/api/bulletin")', 1)[1].split("@app.get", 1)[0]
 
-        self.assertIn('if digest.get("total"):', bulletin)
+        self.assertIn('if payload.get("total"):', bulletin)
         save_at = bulletin.index("save_bulletin_digest")
-        guard_at = bulletin.index('if digest.get("total"):')
+        guard_at = bulletin.index('if payload.get("total"):')
         self.assertLess(guard_at, save_at)
 
     def test_a_new_programme_invalidates_the_weeks_cards(self):

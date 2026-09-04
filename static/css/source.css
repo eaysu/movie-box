@@ -283,6 +283,9 @@
     object-fit: contain;
   }
 
+  .bulletin-venue-menu > summary::-webkit-details-marker { display: none; }
+  .bulletin-venue-menu > summary::marker { content: ""; }
+
   /* Gradient text utility */
   .text-gradient-green {
     background: linear-gradient(135deg, #43fe6d 0%, #00e054 60%, #40bcf4 100%);
