@@ -361,7 +361,7 @@ function _recoLoadingHTML(mode) {
   return `
     <div class="flex flex-col items-center gap-4 py-6 text-center">
       <div class="spinner" style="width:44px;height:44px"></div>
-      <p id="profile-reco-status" class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wide">${mode === 'random' ? 'Watchlist karıştırılıyor' : 'İzleme listen okunuyor'}</p>
+      <p id="profile-reco-status" class="font-label-md text-label-md text-on-surface-variant uppercase tracking-wide">${mode === 'random' ? 'Topluluk havuzu karıştırılıyor' : 'İzleme listen okunuyor'}</p>
     </div>`;
 }
 
@@ -441,7 +441,7 @@ function _saveTasteReco(pool, summary, discover) {
 function _clearTasteReco() { try { localStorage.removeItem(_TASTE_RECO_KEY); } catch (_) {} }
 
 function renderInlineTaste(data) {
-  const pool = (data.recommendations || []).slice(0, 3);
+  const pool = (data.recommendations || []).slice(0, 5);
   if (!pool.length) {
     $('profile-reco-body').innerHTML = `<div class="rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md">Sana uygun bir öneri çıkaramadık.</div>${_recoResetBtn()}`;
     return;
@@ -466,10 +466,16 @@ function _showTasteReco(index) {
       <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${i + 1} / ${o.pool.length}</span>
       <button type="button" data-taste-nav="1" ${i === o.pool.length - 1 ? 'disabled' : ''} class="w-10 h-10 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
     </div>
+    ${i === o.pool.length - 1 ? _toRandomBtn(o.pool.length) : ''}
     ${_recoResetBtn()}`;
 }
 
-// Rastgele: tek hak — günün filmi. Yeni öneri yok; sadece zevke geçiş.
+// Son öneriyi de beğenmediyse çıkmaz sokak olmasın: rastgeleye devam.
+function _toRandomBtn(total) {
+  return `<button type="button" id="profile-reco-torandom" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-secondary-container/30 bg-secondary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-secondary-container hover:bg-secondary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">casino</span>${total} filmi de beğenmedin mi? Rastgeleye geç</button>`;
+}
+
+// Rastgele: sınırsız. Havuz, topluluğun izlediği ama senin izlemediğin filmler.
 function renderInlineRandom(data) {
   const films = data.films || [];
   if (!films.length) {
@@ -477,10 +483,19 @@ function renderInlineRandom(data) {
     return;
   }
   $('profile-reco-body').innerHTML = `
-    ${_discoverNote(data.discover_fallback)}
-    <p class="mb-4 font-body-md text-body-md text-on-surface-variant">🎬 Günün filmi bu — ona bir şans ver. Sevmezsen zevkine göre öneriye geç.</p>
+    ${_randomPoolNote(data)}
+    <p class="mb-4 font-body-md text-body-md text-on-surface-variant">🎬 Beğenmezsen çevirmeye devam et — hak sınırı yok.</p>
     <div class="line-rise">${buildRandomCard(films[0])}</div>
-    <button type="button" id="profile-reco-totaste" class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">psychology</span>Zevkime göre öner</button>`;
+    <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <button type="button" id="profile-reco-reroll" class="flex items-center justify-center gap-2 rounded-xl border border-secondary-container/30 bg-secondary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-secondary-container hover:bg-secondary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">casino</span>Başka bir tane</button>
+      <button type="button" id="profile-reco-totaste" class="flex items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors"><span class="material-symbols-outlined text-[18px]">psychology</span>Zevkime göre öner</button>
+    </div>`;
+}
+
+function _randomPoolNote(data) {
+  return data.discover_fallback
+    ? `<div class="mb-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 px-4 py-3 font-body-md text-body-md text-tertiary-container">Topluluk havuzu henüz yeterli değil — bunu TMDb'den, izlemediğin filmler arasından seçtik.</div>`
+    : `<div class="mb-4 rounded-xl border border-outline-variant/25 bg-surface-variant/40 px-4 py-3 font-body-md text-body-md text-on-surface-variant">Diğer Movieboxd üyelerinin izlediği, senin izlemediğin filmler arasından.</div>`;
 }
 
 function runProfileWatch() {
@@ -3215,13 +3230,10 @@ function renderRandomResult() {
   const tryAgainBtn = $('btn-try-again');
   const infoEl = $('random-attempts-info');
 
-  if (remaining > 0) {
-    tryAgainBtn.disabled = false;
-    infoEl.textContent = `${remaining} farklı öneri hakkın daha var.`;
-  } else {
-    tryAgainBtn.disabled = true;
-    infoEl.textContent = 'Maksimum 3 öneri hakkına ulaştınız.';
-  }
+  tryAgainBtn.disabled = false;
+  infoEl.textContent = remaining > 0
+    ? `Bu turdan ${remaining} film daha var.`
+    : 'Bu tur bitti — beğenmediysen yeni bir tur çekelim.';
 
   showView('random-result');
 }
@@ -3288,7 +3300,7 @@ async function randomFlow() {
           _randomAttempt = 0;
           $('btn-recommend').disabled = false;
           if (_randomFilms.length === 0) {
-            done('Watchlist boş veya film bilgisi alınamadı.');
+            done('Şu an önerecek film bulamadık; biraz sonra tekrar dene.');
           } else {
             renderRandomResult();
           }
@@ -3845,6 +3857,16 @@ $('profile-reco-body').addEventListener('click', event => {
     startInlineReco('taste');
     return;
   }
+  if (event.target.closest('#profile-reco-torandom')) {
+    setProfileWatchMode('random');
+    startInlineReco('random');
+    return;
+  }
+  if (event.target.closest('#profile-reco-reroll')) {
+    setProfileWatchMode('random');
+    startInlineReco('random', { preserveViewport: true });
+    return;
+  }
 });
 
 // Profil ana ekranı — "Bu gece" aksiyonları
@@ -3916,7 +3938,10 @@ $('btn-try-again').addEventListener('click', () => {
   if (_randomAttempt < _randomFilms.length - 1) {
     _randomAttempt++;
     renderRandomResult();
+    return;
   }
+  // Batch exhausted — the pool is unlimited, so pull a fresh one.
+  randomFlow();
 });
 $('btn-switch-to-taste').addEventListener('click', () => {
   setMode('taste');

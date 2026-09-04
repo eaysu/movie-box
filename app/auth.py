@@ -1332,6 +1332,23 @@ class AuthService:
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
 
+    def community_random_films(self, user_id: int, limit: int = 24) -> list[dict]:
+        """A fresh random sample of films the membership watched and this user did not.
+
+        Independent of the caller's watchlist: the random mode is meant to reach
+        outside the list the user already curated for themselves.
+        """
+        try:
+            result = self._retry_storage_read(
+                lambda: self._service_client().rpc(
+                    "community_random_films",
+                    {"p_user_id": user_id, "p_limit": int(limit)},
+                ).execute()
+            )
+        except Exception:
+            return []
+        return [dict(row) for row in (result.data or [])]
+
     # ── Shared account-independent film catalog ─────────────────────────
     def save_film_posters(self, films: list[dict]) -> int:
         rows = [f for f in films if f.get("slug")]

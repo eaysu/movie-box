@@ -8,7 +8,10 @@ from app.enrich import EnrichedFilm
 from app.main import (
     _add_random_reasons,
     _check_profile_watchlist_freshness,
+    _community_random_pool,
+    _community_reason,
     _personality_refresh_needed,
+    _pick_random_films,
     _refresh_profile_watchlist,
 )
 from app.scraper import ScrapedFilm
@@ -44,10 +47,66 @@ class ProductBehaviorTests(unittest.TestCase):
             title="Surprise", slug="surprise", director="A Director"
         )
 
-        _add_random_reasons([film], discover_fallback=False)
+        _add_random_reasons([film], source="community")
 
-        self.assertIn("izleme listendeki", film.reason)
+        self.assertIn("listende olmayan", film.reason)
         self.assertIn("A Director", film.reason)
+
+    def test_community_pick_keeps_the_lead_it_arrived_with(self):
+        film = EnrichedFilm(title="Surprise", slug="surprise")
+        film.reason = _community_reason(4, 4.25)
+
+        _add_random_reasons([film], source="community")
+
+        self.assertIn("4 sinefil", film.reason)
+        self.assertIn("4.2", film.reason)
+
+    def test_discover_fallback_says_where_the_film_came_from(self):
+        film = EnrichedFilm(title="Surprise", slug="surprise")
+
+        _add_random_reasons([film], source="discover")
+
+        self.assertIn("TMDb", film.reason)
+
+    def test_random_pool_comes_from_other_members_not_the_watchlist(self):
+        rows = [
+            {
+                "film_slug": "stalker",
+                "title": "Stalker",
+                "release_year": 1979,
+                "tmdb_id": 1398,
+                "director": "Andrei Tarkovsky",
+                "genres": ["Science Fiction"],
+                "keywords": [],
+                "poster_url": "https://example.com/stalker.jpg",
+                "overview": "A guide leads two men into the Zone.",
+                "watcher_count": 3,
+                "avg_rating": 4.5,
+            },
+            # Rows without a usable title cannot be rendered as a card.
+            {"film_slug": "unknown", "title": "  ", "watcher_count": 1},
+        ]
+        service = SimpleNamespace(community_random_films=lambda user_id, limit: rows)
+        account = SimpleNamespace(id=7)
+
+        films = asyncio.run(_community_random_pool(service, account))
+
+        self.assertEqual([film.slug for film in films], ["stalker"])
+        self.assertIn("3 sinefil", films[0].reason)
+
+    def test_random_pool_is_empty_without_an_account(self):
+        self.assertEqual(asyncio.run(_community_random_pool(None, None)), [])
+
+    def test_random_picks_are_not_stable_across_calls(self):
+        pool = [EnrichedFilm(title=f"F{i}", slug=f"f{i}") for i in range(40)]
+
+        draws = {
+            tuple(film.slug for film in _pick_random_films(pool, 3))
+            for _ in range(12)
+        }
+
+        # A daily-seeded pick would collapse to one combination.
+        self.assertGreater(len(draws), 1)
 
     def test_explicit_profile_refresh_bypasses_the_watchlist_cache(self):
         account = Account(

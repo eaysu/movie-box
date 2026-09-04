@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     auth_session_max_age: int = 60 * 60 * 24 * 7
 
     # --- Recommender tuning ---
-    num_recommendations: int = 3
+    num_recommendations: int = 5
     recommendation_history_limit: int = 100
     favorite_director_boost: float = 0.08
 

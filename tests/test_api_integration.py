@@ -249,7 +249,7 @@ class SseIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(cache.get("recommendations:other_user", "hash"))
             self.assertIsNotNone(cache.get("tmdb", "shared-film"))
 
-    def test_rate_limit_budget_is_shared_between_modes(self):
+    def test_random_has_its_own_budget_while_heavy_modes_share_one(self):
         film = EnrichedFilm(title="Film", slug="film", poster_url="https://example.com/p.jpg")
         cache = _MemoryCache(watchlist=[film.to_dict()])
 
@@ -272,13 +272,20 @@ class SseIntegrationTests(unittest.TestCase):
             TestClient(main.app) as client,
         ):
             first = client.post("/api/recommend", json={"username": "film_fan"}, headers=headers)
-            second = client.post("/api/random", json={"username": "film_fan"}, headers=headers)
+            # Random is meant to be spun repeatedly, so it must not eat the
+            # shared analysis budget.
+            spins = [
+                client.post("/api/random", json={"username": "film_fan"}, headers=headers)
+                for _ in range(3)
+            ]
+            second = client.post("/api/recommend", json={"username": "film_fan"}, headers=headers)
             third = client.post(
                 "/api/blend",
                 json={"username1": "film_fan", "username2": "other_user"},
                 headers=headers,
             )
 
+        self.assertEqual([spin.status_code for spin in spins], [200, 200, 200])
         self.assertEqual((first.status_code, second.status_code), (200, 200))
         self.assertEqual(third.status_code, 429)
         self.assertEqual(third.headers["Retry-After"], "15")

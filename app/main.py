@@ -134,6 +134,14 @@ _delete_rate_limiter = SlidingWindowRateLimiter(
     burst=1,
     burst_seconds=15,
 )
+# Random picks are meant to be spun until something clicks, and they cost one
+# indexed query instead of a scrape, so the ceiling only exists to stop scripts.
+_random_rate_limiter = SlidingWindowRateLimiter(
+    limit=180,
+    window_seconds=10 * 60,
+    burst=12,
+    burst_seconds=15,
+)
 
 # Public social-proof stats are intentionally tiny and cached.  The hero is
 # reachable without a session, so querying the users table on every page load
@@ -204,6 +212,16 @@ async def _enforce_heavy_rate_limit(request: Request) -> None:
         raise HTTPException(
             status_code=429,
             detail="Çok fazla analiz isteği gönderildi. Lütfen biraz sonra tekrar dene.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+async def _enforce_random_rate_limit(request: Request) -> None:
+    allowed, retry_after = await _random_rate_limiter.check(_client_ip(request))
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Çok hızlı çeviriyorsun; birkaç saniye sonra tekrar dene.",
             headers={"Retry-After": str(retry_after)},
         )
 
@@ -1839,24 +1857,75 @@ async def _discover_fallback_films(
     return picks
 
 
-def _daily_pick(username: str, pool: list, n: int) -> list:
-    """Stable 'film of the day' selection — same pick all day for a user."""
+RANDOM_POOL_SAMPLE = 40   # rows requested from the community pool per call
+RANDOM_PICK_COUNT = 3
+
+
+def _community_reason(watchers: int, rating) -> str:
+    """Honest lead for a pick that came from what other members have watched."""
+    try:
+        average = float(rating) if rating is not None else 0.0
+    except (TypeError, ValueError):
+        average = 0.0
+    if watchers >= 2 and average > 0:
+        return (
+            f"Movieboxd'da {watchers} sinefil izlemiş, ortalama "
+            f"{average:.1f} vermişler; senin listende yok."
+        )
+    if watchers >= 2:
+        return f"Movieboxd'da {watchers} sinefilin izlediği, senin listende olmayan bir film."
+    return "Başka bir Movieboxd üyesinin izlediği, senin listende olmayan bir film."
+
+
+def _pick_random_films(pool: list, n: int) -> list:
+    """A fresh sample on every call — the random mode has no daily quota."""
     if not pool:
         return []
-    day = time.strftime("%Y-%m-%d", time.gmtime())
-    rng = _random.Random(f"{day}:{username}")
-    return rng.sample(pool, min(n, len(pool)))
+    with_poster = [film for film in pool if getattr(film, "poster_url", "")]
+    source = with_poster if len(with_poster) >= n else pool
+    return _random.sample(source, min(n, len(source)))
 
 
-def _add_random_reasons(films: list, *, discover_fallback: bool) -> list:
-    """Attach a short, honest explanation to each daily random pick."""
+async def _community_random_pool(service, account, limit=RANDOM_POOL_SAMPLE) -> list:
+    """Films the membership watched and this account has not, watchlist-independent."""
+    if service is None or account is None:
+        return []
+    rows = await asyncio.to_thread(service.community_random_films, account.id, limit)
+    films = []
+    for row in rows or []:
+        slug = row.get("film_slug") or ""
+        title = (row.get("title") or "").strip()
+        if not slug or not title:
+            continue
+        film = EnrichedFilm(
+            title=title,
+            year=row.get("release_year"),
+            slug=slug,
+            tmdb_id=row.get("tmdb_id"),
+            overview=row.get("overview") or "",
+            genres=row.get("genres") or [],
+            director=row.get("director") or "",
+            keywords=row.get("keywords") or [],
+            poster_url=row.get("poster_url") or None,
+            matched=bool(row.get("tmdb_id")),
+        )
+        film.reason = _community_reason(
+            int(row.get("watcher_count") or 0), row.get("avg_rating")
+        )
+        films.append(film)
+    return films
+
+
+def _add_random_reasons(films: list, *, source: str) -> list:
+    """Fill in the explanation for picks that did not come with one."""
     for film in films:
         director = getattr(film, "director", "") or ""
         genres = getattr(film, "genres", None) or []
-        if discover_fallback:
-            lead = "İzleme listenin dışından, bugünün sürpriz filmi olarak bunu seçtik."
-        else:
-            lead = "Bugünün sürprizini izleme listendeki filmler arasından seçtik."
+        lead = getattr(film, "reason", "") or (
+            "Topluluk havuzu yetmedi; bunu TMDb'den, henüz izlemediklerin arasından seçtik."
+            if source == "discover"
+            else "Senin listende olmayan filmler arasından çıktı."
+        )
         if director:
             detail = f" {director} imzalı olması da seçime küçük bir karakter katıyor."
         elif genres:
@@ -1867,22 +1936,18 @@ def _add_random_reasons(films: list, *, discover_fallback: bool) -> list:
     return films
 
 
-async def _random_discover_pick(settings, service, account, cache, username, n=3):
-    """A few unseen TMDb films for the 'random' mode when the watchlist is empty."""
+async def _random_discover_pool(settings, service, account, cache, limit=RANDOM_POOL_SAMPLE):
+    """Unseen TMDb films for the random mode when there is no community history yet.
+
+    Returns the candidate pool rather than a final pick: the caller samples from
+    it and enriches only the few films it actually shows.
+    """
     if not settings.has_tmdb:
         return []
     enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
-    picks = await _discover_fallback_films(
-        enricher, service, account, [], genre_names=None, limit=30
+    return await _discover_fallback_films(
+        enricher, service, account, [], genre_names=None, limit=limit
     )
-    if not picks:
-        return []
-    with_poster = [f for f in picks if f.poster_url]
-    pool = with_poster if len(with_poster) >= n else picks
-    chosen = _daily_pick(username, pool, n)
-    with contextlib.suppress(Exception):
-        await enricher.ensure_details(chosen)
-    return chosen
 
 
 async def _diary_recent_rows(account: Account, service, settings, limit: int) -> list[dict]:
@@ -3868,205 +3933,75 @@ async def recommend(req: RecommendRequest, request: Request):
 
 @app.post("/api/random")
 async def random_pick(req: RandomRequest, request: Request):
-    """SSE stream: watchlist'ten 3 rastgele film seç ve zenginleştir."""
+    """SSE stream: topluluğun izlediği, kullanıcının izlemediği filmlerden seç.
+
+    Watchlist'ten bağımsızdır ve günlük bir kota taşımaz: her istek yeni bir
+    örnek çeker, böylece kullanıcı beğenene kadar çevirebilir. Letterboxd'a hiç
+    istek gitmediği için tekrarlanan çağrılar ucuzdur.
+    """
     account = await _enforce_account_username(request, req.username)
-    await _enforce_heavy_rate_limit(request)
+    await _enforce_random_rate_limit(request)
 
     async def generate():
         settings = get_settings()
         service = _auth_service() if account is not None else None
         supabase_client, cache = _make_cache(settings)
-        pcache = _make_persistent_cache(settings, supabase_client)
-
-        watchlist_kwargs = dict(
-            delay=settings.scrape_delay,
-            max_pages=settings.scrape_max_pages,
-            film_limit=settings.watchlist_film_limit,
-            max_retries=settings.scrape_max_retries,
-        )
-
-        # 0. Kalıcı cache'te zenginleştirilmiş watchlist varsa → scrape'siz seç
-        entry = await asyncio.to_thread(
-            pcache.get_with_freshness,
-            "films_watchlist",
-            req.username,
-            ttl=TTL_USER_FILMS,
-        ) if pcache else None
-        if entry is not None:
-            cached, fresh = entry
-            if not fresh:
-                enricher = (
-                    Enricher(settings.tmdb_api_key, cache, asset_store=_auth_service())
-                    if settings.has_tmdb else None
-                )
-                full_entry = await asyncio.to_thread(
-                    pcache.get_with_freshness,
-                    "films_full_refresh",
-                    f"watchlist:{req.username}",
-                    ttl=TTL_FULL_SCRAPE,
-                )
-                await _get_or_create_film_flight(
-                    req.username,
-                    "watchlist",
-                    enricher=enricher,
-                    pcache=pcache,
-                    scrape_kwargs=watchlist_kwargs,
-                    cached_rows=cached,
-                    allow_head_check=bool(full_entry and full_entry[1]),
-                )
-            enriched = _enriched_from_cache(cached)
-            watchlist_count = len(enriched)
-            with_poster = [f for f in enriched if f.poster_url]
-            pool = with_poster if len(with_poster) >= 3 else enriched
-            discover_fallback = False
-            if not pool:
-                chosen = await _random_discover_pick(settings, service, account, cache, req.username)
-                discover_fallback = True
-                if not chosen:
-                    await _record_activity_event(
-                        service,
-                        account,
-                        "random_failed",
-                        {"error_code": "empty_watchlist", "stage": "fallback"},
-                    )
-                    yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
-                    return
-            else:
-                chosen = _daily_pick(req.username, pool, 3)
-            _add_random_reasons(chosen, discover_fallback=discover_fallback)
-            log.warning("cache HIT  watchlist/%s (random pick)", req.username)
-            await _record_activity_event(
-                service,
-                account,
-                "random_completed",
-                {
-                    "success": True,
-                    "cache_hit": True,
-                    "watchlist_count": watchlist_count,
-                    "result_count": len(chosen),
-                    "discover_fallback": discover_fallback,
-                },
-            )
-            yield _sse({
-                "type": "result",
-                "username": req.username,
-                "watchlist_count": watchlist_count,
-                "discover_fallback": discover_fallback,
-                "films": [f.to_dict() for f in chosen],
-            })
-            return
-
-        # 1. Cache yok → scrape (heartbeat'li). Ucuz yol: sadece seçilen 3 film enrich.
-        yield _sse({"type": "step", "step": "scraping"})
-        hr: dict = {}
-        async for ping in _await_with_heartbeat(
-            scrape_watchlist(
-                req.username,
-                **watchlist_kwargs,
-            ),
-            hr,
-        ):
-            yield ping
-        if "error" in hr:
-            exc = hr["error"]
-            if isinstance(exc, ScrapeError):
-                await _record_activity_event(
-                    service,
-                    account,
-                    "random_failed",
-                    {"error_code": exc.code, "stage": "scraping"},
-                )
-                yield _scrape_error_event(exc)
-                return
-            raise exc
-        scraped_watchlist, _complete = hr["result"]
-
-        watchlist_count = len(scraped_watchlist)
-        if not scraped_watchlist:
-            chosen = await _random_discover_pick(settings, service, account, cache, req.username)
-            if not chosen:
-                await _record_activity_event(
-                    service,
-                    account,
-                    "random_failed",
-                    {"error_code": "empty_watchlist", "stage": "fallback"},
-                )
-                yield _sse({"type": "error", "detail": "Watchlist boş; alternatif film de bulunamadı."})
-                return
-            _add_random_reasons(chosen, discover_fallback=True)
-            await _record_activity_event(
-                service,
-                account,
-                "random_completed",
-                {
-                    "success": True,
-                    "cache_hit": False,
-                    "watchlist_count": 0,
-                    "result_count": len(chosen),
-                    "discover_fallback": True,
-                },
-            )
-            yield _sse({
-                "type": "result",
-                "username": req.username,
-                "watchlist_count": 0,
-                "discover_fallback": True,
-                "films": [f.to_dict() for f in chosen],
-            })
-            return
-
-        # Posteri olan filmler varsa onlardan seç — postersize film göstermemek için.
-        with_poster = [f for f in scraped_watchlist if f.poster_url]
-        pool = with_poster if len(with_poster) >= 3 else scraped_watchlist
-        count = min(3, len(pool))
-        chosen = _daily_pick(req.username, pool, count)
 
         yield _sse({"type": "step", "step": "enriching"})
-        if settings.has_tmdb:
-            enricher = Enricher(
-                settings.tmdb_api_key, cache, asset_store=_auth_service()
+        pool = await _community_random_pool(service, account)
+        source = "community"
+        if not pool:
+            # No community history yet (or no account): fall back to TMDb Discover.
+            pool = await _random_discover_pool(settings, service, account, cache)
+            source = "discover"
+        if not pool:
+            await _record_activity_event(
+                service,
+                account,
+                "random_failed",
+                {"error_code": "empty_pool", "stage": "pool"},
             )
-            films = await enricher.enrich(chosen)
-            final_misses = [
-                source
-                for source, film in zip(chosen, films)
-                if not film.poster_url and source.poster_resolver_url
-            ]
-            if final_misses:
-                await resolve_missing_posters(final_misses)
-                repaired = []
-                for source, film in zip(chosen, films):
-                    if not film.poster_url and source.poster_url:
-                        film.poster_url = source.poster_url
-                        repaired.append(film)
-                await enricher.save_film_assets(repaired)
-        else:
-            await resolve_missing_posters(chosen)
-            films = [
-                EnrichedFilm(title=f.title, year=f.year, slug=f.slug, poster_url=f.poster_url)
-                for f in chosen
-            ]
+            yield _sse({
+                "type": "error",
+                "detail": "Şu an önerecek film bulamadık; biraz sonra tekrar dene.",
+            })
+            return
 
-        _add_random_reasons(films, discover_fallback=False)
+        chosen = _pick_random_films(pool, RANDOM_PICK_COUNT)
+        missing_details = [
+            film for film in chosen if not film.poster_url or not film.overview
+        ]
+        if missing_details and settings.has_tmdb:
+            enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            with contextlib.suppress(Exception):
+                await enricher.ensure_details(missing_details)
+        still_missing = [
+            film for film in chosen if not film.poster_url and film.slug
+        ]
+        if still_missing:
+            with contextlib.suppress(Exception):
+                await resolve_missing_posters(still_missing)
 
+        _add_random_reasons(chosen, source=source)
         await _record_activity_event(
             service,
             account,
             "random_completed",
             {
                 "success": True,
-                "cache_hit": False,
-                "watchlist_count": watchlist_count,
-                "result_count": len(films),
-                "discover_fallback": False,
+                "pool_source": source,
+                "pool_count": len(pool),
+                "result_count": len(chosen),
+                "discover_fallback": source == "discover",
             },
         )
-
         yield _sse({
             "type": "result",
             "username": req.username,
-            "watchlist_count": watchlist_count,
-            "films": [f.to_dict() for f in films],
+            "pool_source": source,
+            "pool_count": len(pool),
+            "discover_fallback": source == "discover",
+            "films": [f.to_dict() for f in chosen],
         })
 
     return StreamingResponse(
