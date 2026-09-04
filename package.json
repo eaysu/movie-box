@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.cjs -i ./static/css/source.css -o ./static/app.css --minify",
-    "check:js": "node --check static/js/app.js && node --check static/js/api.js && node --check static/js/auth.js && node --check static/js/blend.js && node --check static/js/dom.js && node --check static/js/profile.js && node --check static/js/recommendations.js && node --check static/js/share-cards.js"
+    "check:js": "node --check static/js/app.js && node --check static/js/api.js && node --check static/js/auth.js && node --check static/js/blend.js && node --check static/js/dom.js && node --check static/js/letters-crypto.js && node --check static/js/profile.js && node --check static/js/recommendations.js && node --check static/js/share-cards.js"
   },
   "devDependencies": {
     "tailwindcss": "3.4.17"

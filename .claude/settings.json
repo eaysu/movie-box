@@ -98,7 +98,14 @@
       "Bash(time curl -s -m 90 -o /tmp/drip.out \"https://httpbin.org/drip?duration=60&numbytes=60&delay=0\")",
       "Bash(python3 -m py_compile app/main.py)",
       "Bash(python3 -m py_compile app/config.py app/main.py)",
-      "Bash(time curl -N -s -m 180 -X POST https://movie-boxd.onrender.com/api/recommend -H 'Content-Type: application/json' -d '{\"username\":\"enesaysu\"}' -o /tmp/rec_full.json)"
+      "Bash(time curl -N -s -m 180 -X POST https://movie-boxd.onrender.com/api/recommend -H 'Content-Type: application/json' -d '{\"username\":\"enesaysu\"}' -o /tmp/rec_full.json)",
+      "Bash(python -m pytest tests/test_admin_activity.py -q)",
+      "Bash(python -m pytest tests/test_admin_activity.py::test_report_exposes_letter_volume_and_visibility_without_content -q)",
+      "Bash(grep -E \"^E .{0,120}\")",
+      "Bash(python -c \"import app.main\")",
+      "Bash(python -m pytest tests/test_api_integration.py::SseIntegrationTests::test_rate_limit_budget_is_shared_between_modes tests/test_product_behavior.py::ProductBehaviorTests::test_random_pick_has_a_short_reason -q)",
+      "Bash(node -e ' *)",
+      "Bash(git commit -q -m ' *)"
     ]
   }
 }
