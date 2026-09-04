@@ -316,8 +316,9 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "a2ef85512e1b095c669a241dcccfc3346b05a8fef6c7b17d8fd51454cd83b2a6",
-        "static/app.css": "5a219b197f6e68020ceffe29ca87d759eff0198276ebf5e9534d5150a9956838",
+        "static/js/app.js": "6e2670ff49d2363e96bba39df38c3ba57d3e3a5adc5e3195ec098f12852bd70b",
+        "static/app.css": "51e19ea0aa3bc5aa18f74da4438e4f1fe7955458137a2b6790f6c6e72bab440c",
+        "static/js/share-cards.js": "879f99de4de0a60380de8c01acab49b5337290df77b00ad5b6c40e28a0a1cac2",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -348,10 +349,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260904.23"
+    css_version = "v=20260904.24"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260904.34" in html
-    assert app_js.count(f"?{dependency_version}") == 6
+    assert "/static/js/app.js?v=20260904.35" in html
+    assert app_js.count(f"?{dependency_version}") == 5
+    assert "./share-cards.js?v=20260904.35" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -365,7 +367,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260902.15')" in imports
+    assert "import('./share-cards.js?v=20260904.35')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 

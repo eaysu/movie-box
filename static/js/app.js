@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260902.15');
+    _shareCardsModule = import('./share-cards.js?v=20260904.35');
   }
   return _shareCardsModule;
 }
@@ -870,9 +870,6 @@ function renderPersistedProfile(data) {
       const year = film.release_year ? escapeHTML(String(film.release_year)) : '';
       const poster = safeImageURL(film.poster_url);
       const badge = `<span class="absolute top-2.5 left-2.5 w-7 h-7 rounded-full bg-black/65 backdrop-blur flex items-center justify-center text-xs font-bold text-primary-container border border-white/10">${index + 1}</span>`;
-      const heart = index === 0
-        ? `<span class="absolute top-2.5 right-2.5 material-symbols-outlined text-primary-container text-[18px]" style="font-variation-settings:'FILL' 1">favorite</span>`
-        : '';
       const emptyCard = `<div class="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
              <span class="material-symbols-outlined text-on-surface-variant/25 text-[44px]">movie</span>
              <strong class="mt-3 font-label-md text-label-md text-on-surface-variant line-clamp-3">${title}</strong>
@@ -888,7 +885,7 @@ function renderPersistedProfile(data) {
              <img src="${poster}" alt="${title}" onerror="posterErr(this)" class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]" loading="lazy"/>
              <div hidden>${emptyCard}</div>
              <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
-             ${badge}${heart}
+             ${badge}
              <div class="absolute inset-x-0 bottom-0 p-3.5">
                <strong class="block font-headline-md text-[14px] md:text-[15px] text-white leading-tight line-clamp-2">${title}</strong>
                ${year ? `<span class="mt-0.5 block font-label-sm text-label-sm text-white/55">${year}</span>` : ''}
@@ -3743,6 +3740,12 @@ $('sinefil-grid').addEventListener('click', event => {
 });
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
+});
+$('profile-recent-share').addEventListener('click', event => {
+  buildAndOpenShareCard(
+    event.currentTarget,
+    shareCards => shareCards.renderRecentFilmsShareCard(_recentFilms, _persistedProfile),
+  );
 });
 $('btn-share-common').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderBlendShareCard(_currentBlendResult, 'watched'));

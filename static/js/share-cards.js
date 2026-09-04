@@ -436,6 +436,76 @@ export async function renderPersonalityShareCard(profile) {
   };
 }
 
+// Günce kartı: ızgara yerine okunabilir bir liste — sıra, afiş, başlık, puan.
+export async function renderRecentFilmsShareCard(films, profile) {
+  const visible = (films || []).filter(Boolean).slice(0, 10);
+  if (!visible.length) throw new Error('Son izlenen film listesi henüz hazır değil.');
+  if (document.fonts?.ready) await document.fonts.ready;
+  const accent = '#6ccdff';
+  const canvas = makeCanvas();
+  const ctx = canvas.getContext('2d');
+  drawBackground(ctx, accent);
+  drawBrand(ctx);
+  const username = clean(profile?.account?.username || profile?.username || 'kullanıcı');
+
+  font(ctx, 18, 700);
+  drawLines(ctx, ['GÜNCE · SON İZLENENLER'], 72, 152, 22, accent);
+  font(ctx, 50, 700);
+  drawLines(ctx, [`Son ${visible.length} film`], 72, 188, 60, '#e0e2e6');
+  font(ctx, 24, 600);
+  drawLines(ctx, [`@${username}`], 72, 254, 30, 'rgba(186,203,182,.7)');
+
+  const images = await Promise.all(visible.map(film => loadShareImage(film)));
+  const rowHeight = 96;
+  const gap = 8;
+  const posterWidth = 56;
+  const posterHeight = 84;
+  const top = 320;
+
+  visible.forEach((film, index) => {
+    const y = top + index * (rowHeight + gap);
+    fillRounded(ctx, 72, y, 936, rowHeight, 22, 'rgba(29,32,35,.88)');
+
+    font(ctx, 26, 700);
+    ctx.fillStyle = `${accent}cc`;
+    ctx.textAlign = 'right';
+    ctx.fillText(String(index + 1), 128, y + rowHeight / 2 + 9);
+    ctx.textAlign = 'left';
+
+    drawPoster(ctx, images[index], film, 148, y + (rowHeight - posterHeight) / 2, posterWidth, posterHeight, accent);
+
+    const rating = Number(film.user_rating);
+    const hasRating = Number.isFinite(rating) && rating > 0;
+    const textLeft = 148 + posterWidth + 24;
+    const textWidth = hasRating ? 620 : 720;
+    font(ctx, 30, 700);
+    drawLines(ctx, [fitText(ctx, film.title || 'Film', textWidth)], textLeft, y + 30, 34, '#e0e2e6');
+
+    const meta = [film.year || film.release_year, clean(film.director)].filter(Boolean).join(' · ');
+    if (meta) {
+      font(ctx, 21, 500);
+      drawLines(ctx, [fitText(ctx, meta, textWidth)], textLeft, y + 62, 24, 'rgba(186,203,182,.6)');
+    }
+
+    if (hasRating) {
+      font(ctx, 28, 700);
+      ctx.fillStyle = accent;
+      ctx.textAlign = 'right';
+      ctx.fillText(`★ ${rating.toFixed(1)}`, 968, y + rowHeight / 2 + 10);
+      ctx.textAlign = 'left';
+    }
+  });
+
+  drawFooter(ctx, `@${username} · Letterboxd güncesi`);
+
+  return {
+    blob: await canvasBlob(canvas),
+    filename: `movieboxd-son-filmler-${username}.png`,
+    title: 'Son izlediğim filmler',
+    text: `@${username} · son izlediğim ${visible.length} film`,
+  };
+}
+
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
