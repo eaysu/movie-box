@@ -13,47 +13,53 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 ### A0 · Foundations (no scraping yet)
 
-- [ ] Add `BULLETIN_ENABLED` and `BULLETIN_CITIES` settings to `app/config.py`, defaulting to disabled so the feature ships dark.
-- [ ] Create `app/screenings.py` as the module boundary: ingest, title matching, and per-user digest building live here; `app/main.py` only exposes endpoints.
-- [ ] Add schema objects to `supabase/schema.sql` (idempotent, RLS on, `service_role` only, browser roles revoked — follow the existing table pattern):
-  - [ ] `venues(id, slug UNIQUE, name, city, kind, source_url, config JSONB, active BOOL, last_ok_at, last_error, created_at, updated_at)`
-  - [ ] `screenings(id, venue_id FK, title_raw, year, tmdb_id, film_slug, starts_at, url, match_status, source_run_id, first_seen_at, updated_at)` with `UNIQUE (venue_id, title_raw, starts_at)`
-  - [ ] Indexes: `(starts_at)` for the week window, `(tmdb_id) WHERE tmdb_id IS NOT NULL` for user matching, `(match_status) WHERE match_status <> 'matched'` for the resolve queue
-  - [ ] `upsert_screenings(p_rows JSONB)` RPC mirroring `upsert_film_posters` semantics: never let an empty incoming value overwrite a resolved `tmdb_id`/`film_slug`
-  - [ ] `bulletin_digests(user_id FK CASCADE, week_start DATE, payload JSONB, created_at, PRIMARY KEY (user_id, week_start))` so a week's card is generated once and is idempotent
+- [x] Add `BULLETIN_ENABLED` and `BULLETIN_CITIES` settings to `app/config.py`, defaulting to disabled so the feature ships dark.
+- [x] Create `app/screenings.py` as the module boundary: ingest, title matching, and per-user digest building live here; `app/main.py` only exposes endpoints.
+- [x] Add schema objects to `supabase/schema.sql` (idempotent, RLS on, `service_role` only, browser roles revoked — follow the existing table pattern):
+  - [x] `venues(id, slug UNIQUE, name, city, kind, source_url, config JSONB, active BOOL, last_ok_at, last_error, created_at, updated_at)`
+  - [x] `screenings(id, venue_id FK, title_raw, year, tmdb_id, film_slug, starts_at, url, match_status, source_run_id, first_seen_at, updated_at)` with `UNIQUE (venue_id, title_raw, starts_at)`
+  - [x] Indexes: `(starts_at)` for the week window, `(tmdb_id) WHERE tmdb_id IS NOT NULL` for user matching, `(match_status) WHERE match_status <> 'matched'` for the resolve queue
+  - [x] `upsert_screenings(p_rows JSONB)` RPC mirroring `upsert_film_posters` semantics: never let an empty incoming value overwrite a resolved `tmdb_id`/`film_slug`
+  - [x] `bulletin_digests(user_id FK CASCADE, week_start DATE, payload JSONB, created_at, PRIMARY KEY (user_id, week_start))` so a week's card is generated once and is idempotent
 - [ ] **MANUAL:** apply the updated `supabase/schema.sql` in the Supabase SQL Editor.
 
 **Acceptance:** schema applies cleanly twice in a row; `/api/readiness` still reports ready.
 
 ### A1 · Release layer (TMDb `now_playing`, unbreakable baseline)
 
-- [ ] Add `fetch_now_playing(region="TR")` to `app/enrich.py`, cached through the existing layered cache with a 12-hour TTL.
-- [ ] Write results into `screenings` with a synthetic venue (`slug='tr-vizyon'`, `kind='release'`, no showtimes) so the digest builder has one uniform source.
-- [ ] Reuse the shared catalog: resolve posters/metadata from `film_posters` first, call TMDb only for unresolved ids.
-- [ ] Unit tests with a recorded TMDb payload: ingest is idempotent, re-running the same day writes no duplicates.
+- [x] Add `fetch_now_playing(region="TR")` to `app/enrich.py`, cached through the existing layered cache with a 12-hour TTL.
+- [x] Write results into `screenings` with a synthetic venue (`slug='tr-vizyon'`, `kind='release'`, no showtimes) so the digest builder has one uniform source.
+- [x] Reuse the shared catalog: resolve posters/metadata from `film_posters` first, call TMDb only for unresolved ids.
+- [x] Unit tests with a recorded TMDb payload: ingest is idempotent, re-running the same day writes no duplicates.
 
 **Acceptance:** with only this layer enabled, a digest can already be produced for any user.
 
 ### A2 · Title matching (TR distribution titles)
 
-- [ ] Implement `resolve_screening_title(title_raw, year)`:
-  - [ ] exact match against `film_posters.title` / `user_watched_films.title`
-  - [ ] TMDb search with `language=tr-TR` plus the year
-  - [ ] fall back to `alternative_titles` for the TR title of an original-language film (e.g. *Autumn Sonata* → *Sonbahar Sonatı*)
-  - [ ] normalize before comparing: casefold with Turkish `İ/ı` handling, strip punctuation and the trailing year
-- [ ] Persist the outcome as `match_status` in `('matched', 'ambiguous', 'unresolved')`; never guess silently.
-- [ ] Add `scripts/resolve_screenings.py`: list unresolved rows and accept a manual `title_raw → tmdb_id` mapping (local, service-role, same shape as `scripts/admin_users.py`).
-- [ ] Golden tests over a fixture list of real TR distribution titles, including at least one Turkish-character case and one re-release.
+- [x] Implement `resolve_screening_title(title_raw, year)`:
+  - [x] exact match against `film_posters.title` / `user_watched_films.title`
+  - [x] TMDb search with `language=tr-TR` plus the year
+  - [x] fall back to `alternative_titles` for the TR title of an original-language film (e.g. *Autumn Sonata* → *Sonbahar Sonatı*)
+  - [x] normalize before comparing: casefold with Turkish `İ/ı` handling, strip punctuation and the trailing year
+- [x] Persist the outcome as `match_status` in `('matched', 'ambiguous', 'unresolved')`; never guess silently.
+- [x] Add `scripts/resolve_screenings.py`: list unresolved rows and accept a manual `title_raw → tmdb_id` mapping (local, service-role, same shape as `scripts/admin_users.py`).
+- [x] Golden tests over a fixture list of real TR distribution titles, including at least one Turkish-character case and one re-release.
 
 **Acceptance:** ≥90% of the release layer resolves automatically; the rest is visible in the queue rather than wrong.
 
 ### A3 · Repertory venues (the differentiating layer)
 
-- [ ] Write venue parsers as **data, not code**: each venue's CSS selectors and date format live in `venues.config`, so a broken site is a config change.
+> **Durum (4 Eylül 2026):** framework hazır — `venues` tablosu, config'te yaşayan
+> selector'lar, `claim_venue_ingest` lease'i, mekân başına `last_ok_at`/`last_error`
+> ve `ingest_repertory_venue`. Mekân listesi bilerek boş: her sitenin HTML'ini ve
+> `robots.txt`'sini tek tek incelemeden selector yazmak tahmin olurdu. Sonraki
+> turda mekânlar birer config satırı olarak eklenecek, kod değişmeyecek.
+
+- [x] Write venue parsers as **data, not code**: each venue's CSS selectors and date format live in `venues.config`, so a broken site is a config change.
 - [ ] Start with 5–6 venues (Başka Sinema program pages, Kadıköy Sineması, Beyoğlu/Atlas 1948, Pera & İKSV, current festival programmes).
 - [ ] Route every request through the existing adaptive Letterboxd-style budget: polite delay, retry with backoff, circuit breaker on 403/429. Cap at 1–3 requests per venue per day.
 - [ ] Check `robots.txt` and terms per venue before enabling it; record the decision in `venues.config` so it is auditable.
-- [ ] Per-venue health: write `last_ok_at` / `last_error` on every run. **A failed venue must never fail the bulletin** — the digest ships with the venues that succeeded.
+- [x] Per-venue health: write `last_ok_at` / `last_error` on every run. **A failed venue must never fail the bulletin** — the digest ships with the venues that succeeded.
 - [ ] Add `scripts/check_venues.py` canary in the shape of `scripts/check_scraper.py`, and a scheduled GitHub workflow next to `scraper-canary.yml`.
 - [ ] Attribution in the payload: venue name, source link and "buy tickets" pointing at the venue, never at us.
 
@@ -61,24 +67,24 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 ### A4 · Digest builder
 
-- [ ] `build_user_digest(user_id, week_start, city)` returns three ordered sections:
-  - [ ] **On your watchlist and in cinemas** — strongest signal, direct action
-  - [ ] **Back on screen** — from `user_watched_films` where `rating_observed AND user_rating >= 4`, carrying the original rating and year ("you gave it 4.5 in 2021")
-  - [ ] **New releases that fit your taste** — scored with the existing taste vector, excluding watchlist and watched films
-- [ ] Cap each section (3 items) and the whole card; empty sections collapse rather than render placeholders.
-- [ ] Persist to `bulletin_digests` keyed by `(user_id, week_start)`; regeneration is idempotent.
-- [ ] Generate Friday mornings (programmes publish midweek) via a scheduled job; per-user generation is lazy on first view if the job has not run.
+- [x] `build_user_digest(user_id, week_start, city)` returns three ordered sections:
+  - [x] **On your watchlist and in cinemas** — strongest signal, direct action
+  - [x] **Back on screen** — from `user_watched_films` where `rating_observed AND user_rating >= 4`, carrying the original rating and year ("you gave it 4.5 in 2021")
+  - [x] **New releases that fit your taste** — scored with the existing taste vector, excluding watchlist and watched films
+- [x] Cap each section (3 items) and the whole card; empty sections collapse rather than render placeholders.
+- [x] Persist to `bulletin_digests` keyed by `(user_id, week_start)`; regeneration is idempotent.
+- [x] Generate lazily: the first member to open the bulletin nudges a background ingest under a DB lease. **Deviation from the plan:** Render runs one web service and no worker, so a scheduled job would need a second service; the lease makes the lazy trigger safe across processes and the caller never waits.
 
 **Acceptance:** a user with an empty watchlist still gets a useful card from sections 2 and 3.
 
 ### A5 · Delivery surface
 
-- [ ] `GET /api/bulletin?city=` — authenticated, CSRF-checked, cheap read of the stored digest.
-- [ ] "Bu hafta" tab in the profile with a weekly badge; reuse the existing inbox-badge polling budget rather than adding a new poll loop.
-- [ ] City selector persisted on the user row (`bulletin_city`), defaulting to unset = nationwide release layer only.
-- [ ] Optional opt-in web push; **no email is collected or sent** — that constraint is a product principle, not an oversight.
-- [ ] Share card: a "Bu hafta perdede" variant in `static/js/share-cards.js` reusing the 1080×1350 renderer.
-- [ ] Record `bulletin_viewed` in `user_activity_events` (bounded metadata only).
+- [x] `GET /api/bulletin?city=` — authenticated, CSRF-checked, cheap read of the stored digest.
+- [x] **Deviation:** a card between "Ne izlesen?" and "Favori dört film" instead of a tab, at the product owner's request; it loads after the profile paints, so nothing new blocks the first render.
+- [x] City selector persisted on the user row (`bulletin_city`), defaulting to unset = nationwide release layer only.
+- [ ] Optional opt-in web push (not started); **no email is collected or sent** — that constraint is a product principle, not an oversight.
+- [ ] Share card (not started): a "Bu hafta perdede" variant in `static/js/share-cards.js` reusing the 1080×1350 renderer.
+- [x] Record `bulletin_viewed` in `user_activity_events` (bounded metadata only).
 
 **Acceptance:** the tab renders from one request; no new blocking call on profile load.
 
@@ -92,9 +98,9 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 ### A7 · Rollout
 
-- [ ] Ship dark, enable for the owner account first, then a small cohort.
+- [x] Ship dark, enable for the owner account first, then a small cohort.
 - [ ] Watch: ingest duration, venue success rate, auto-match rate, digest open rate, repeat-visit rate week over week.
-- [ ] Kill switches: `BULLETIN_ENABLED` globally and `venues.active` per venue.
+- [x] Kill switches: `BULLETIN_ENABLED` globally and `venues.active` per venue.
 
 ---
 

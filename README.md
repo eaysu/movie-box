@@ -90,6 +90,7 @@ Open http://localhost:8000
 |----------|---------|
 | `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
 | `POST /api/random` | Three unlimited random picks from films other members watched and this user has not |
+| `GET /api/bulletin?city=` | This week's cinema agenda for the signed-in member |
 
 **Sinefil Sineması & letters**
 
@@ -140,6 +141,36 @@ Mektup yollamak için kullanıcının kendi mektup kutusunun da açık olması g
 (`letter_sender_closed`); kapalıysa arayüz kutuyu açmayı öneren bir modal
 gösterir. Gerekçesi: kapalı bir hesaptan gönderilen mektup, alıcının cevap
 veremediği tek yönlü bir kanal olur.
+
+## Sinema gündemi
+
+`GET /api/bulletin` returns a weekly card with three sections: films on the
+member's watchlist that are playing, films they rated 4+ that are back on
+screen, and new releases matching their taste. Sections with no films collapse.
+
+Programme rows live in `screenings`, written by two layers. The release layer is
+TMDb `now_playing` for `BULLETIN_REGION` (contractual, cannot break). The
+repertory layer parses venue programmes using selectors stored in
+`venues.config`, so a site redesign is a row edit rather than a deploy; a venue
+that fails records `last_error` and the bulletin still ships with the rest.
+
+There is no worker service, so ingest is nudged by the first member to open the
+bulletin and runs in the background under a per-venue DB lease
+(`claim_venue_ingest`), at most once per `BULLETIN_INGEST_INTERVAL_HOURS`. The
+digest itself is stored per `(user, week, city)` and served from there.
+
+Turkish distribution titles are matched to films through `tmdb_id`, searching
+`tr-TR` first and falling back to English; anything that cannot be resolved
+confidently stays `unresolved` or `ambiguous` rather than being guessed:
+
+```bash
+python -m scripts.resolve_screenings            # the unmatched queue
+python -m scripts.resolve_screenings --venues   # per-venue health
+python -m scripts.resolve_screenings --map "Sonbahar Sonatı=4174"
+```
+
+The feature ships dark: set `BULLETIN_ENABLED=true` to turn it on, and
+`venues.active` disables a single venue.
 
 ## Local admin activity report
 

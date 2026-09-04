@@ -903,7 +903,84 @@ function renderPersistedProfile(data) {
 
   if (!deferAuxiliary && !_topFilmsLoaded) loadTopFilms();
   if (!deferAuxiliary && !_recentLoaded) loadRecentFilms();
+  if (!deferAuxiliary && !_bulletinLoaded) loadBulletin();
   applySyncJob(data.sync_job);
+}
+
+// ── Sinema gündemi — profil boyandıktan sonra, tek istekle ────────────────
+let _bulletinLoaded = false;
+
+function bulletinFilmCard(film) {
+  const title = escapeHTML(film.title || 'Film');
+  const poster = safeImageURL(film.poster_url);
+  const year = film.year ? escapeHTML(String(film.year)) : '';
+  const note = film.note ? escapeHTML(film.note) : '';
+  const venue = film.venue ? escapeHTML(film.venue) : '';
+  const when = film.starts_at
+    ? escapeHTML(new Date(film.starts_at).toLocaleString('tr-TR', {
+      weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    }))
+    : '';
+  const art = poster
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-14 shrink-0 aspect-[2/3] rounded-lg object-cover bg-surface-container"/>`
+    : `<div class="w-14 shrink-0 aspect-[2/3] rounded-lg bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[20px]">movie</span></div>`;
+  const href = letterboxdFilmURL(film.slug);
+  const heading = href
+    ? `<a href="${href}" target="_blank" rel="noopener" class="font-headline-md text-[16px] text-on-surface hover:text-tertiary-container transition-colors">${title}</a>`
+    : `<strong class="font-headline-md text-[16px] text-on-surface">${title}</strong>`;
+  // Bilet linki mekâna gider; biz araya girmiyoruz.
+  const ticket = film.venue_url
+    ? `<a href="${escapeHTML(film.venue_url)}" target="_blank" rel="noopener" class="shrink-0 self-center rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
+    : '';
+  return `<article class="flex items-start gap-3 rounded-2xl border border-outline-variant/20 bg-surface-container/40 p-3">
+    ${art}
+    <div class="min-w-0 flex-1">
+      ${heading}
+      <p class="mt-0.5 text-xs text-on-surface-variant/60">${[year, venue, when].filter(Boolean).join(' · ')}</p>
+      ${note ? `<p class="mt-1.5 text-sm text-tertiary-container">${note}</p>` : ''}
+    </div>
+    ${ticket}
+  </article>`;
+}
+
+function renderBulletin(data) {
+  const section = $('profile-bulletin');
+  if (!data.enabled) { section.classList.add('hidden'); return; }
+  section.classList.remove('hidden');
+
+  const select = $('bulletin-city');
+  if (select.options.length <= 1 && Array.isArray(data.cities)) {
+    select.innerHTML = ['<option value="">Türkiye geneli</option>']
+      .concat(data.cities.map(city => `<option value="${escapeHTML(city)}">${escapeHTML(city)}</option>`))
+      .join('');
+  }
+  select.value = data.city || '';
+
+  const sections = data.sections || [];
+  if (!sections.length) {
+    $('bulletin-body').innerHTML = `<p class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">${
+      data.preparing
+        ? 'Bu haftanın programı hazırlanıyor; birazdan tekrar bak.'
+        : 'Bu hafta sana uyan bir gösterim bulamadık.'
+    }</p>`;
+    return;
+  }
+  $('bulletin-body').innerHTML = sections.map(group => `
+    <div class="mb-6 last:mb-0">
+      <h3 class="mb-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant/70">${escapeHTML(group.title)}</h3>
+      <div class="grid gap-3 md:grid-cols-3">${(group.films || []).map(bulletinFilmCard).join('')}</div>
+    </div>`).join('');
+}
+
+async function loadBulletin(city) {
+  if (!_account) return;
+  _bulletinLoaded = true;
+  try {
+    const target = city === undefined ? ($('bulletin-city').value || '') : city;
+    renderBulletin(await apiJSON(`/api/bulletin?city=${encodeURIComponent(target)}`));
+  } catch (_) {
+    $('profile-bulletin').classList.add('hidden');
+  }
 }
 
 // ── Profil carouselleri — görünür ve kullanıcı boşta iken 10 sn'de ilerler ─
@@ -3741,6 +3818,7 @@ $('sinefil-grid').addEventListener('click', event => {
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });
+$('bulletin-city').addEventListener('change', () => loadBulletin());
 $('profile-recent-share').addEventListener('click', event => {
   buildAndOpenShareCard(
     event.currentTarget,

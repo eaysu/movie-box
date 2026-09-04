@@ -198,6 +198,97 @@ class Enricher:
             self._genre_map = {g["id"]: g["name"] for g in data.get("genres", [])}
             await asyncio.to_thread(self.cache.set, "tmdb", "genre_map", self._genre_map)
 
+    async def fetch_now_playing(
+        self, *, region: str = "TR", pages: int = 2, language: str = "tr-TR"
+    ) -> list[dict]:
+        """Films currently in cinemas in `region`, as raw rows for the bulletin.
+
+        Deliberately not EnrichedFilm: the screening ingest wants the local
+        distribution title next to the original one, so it can match a poster we
+        already hold and still show the name printed on the ticket.
+        """
+        client = await _get_tmdb_client()
+        cache_key = f"now_playing:{region}:{language}:{pages}"
+        cached = await asyncio.to_thread(self.cache.get, "tmdb", cache_key)
+        if cached:
+            return list(cached)
+
+        rows: list[dict] = []
+        seen: set[int] = set()
+        for page in range(1, max(1, pages) + 1):
+            try:
+                data = await self._get(
+                    client,
+                    "/movie/now_playing",
+                    region=region,
+                    language=language,
+                    page=page,
+                )
+            except Exception:
+                break
+            results = data.get("results") or []
+            if not results:
+                break
+            for item in results:
+                tmdb_id = item.get("id")
+                title = (item.get("title") or "").strip()
+                if not tmdb_id or not title or tmdb_id in seen:
+                    continue
+                seen.add(int(tmdb_id))
+                release = item.get("release_date") or ""
+                poster = item.get("poster_path") or ""
+                rows.append({
+                    "tmdb_id": int(tmdb_id),
+                    "title": title,
+                    "original_title": (item.get("original_title") or "").strip(),
+                    "year": int(release[:4]) if release[:4].isdigit() else None,
+                    "poster_url": f"{TMDB_IMAGE_BASE}{poster}" if poster else "",
+                    "overview": (item.get("overview") or "").strip(),
+                    "vote_average": float(item.get("vote_average") or 0.0),
+                })
+            if page >= int(data.get("total_pages") or 1):
+                break
+
+        if rows:
+            # Half a day: cinema programmes change daily, not hourly.
+            await asyncio.to_thread(self.cache.set, "tmdb", cache_key, rows)
+        return rows
+
+    async def search_movie_candidates(
+        self, title: str, *, year: int | None = None, language: str = "tr-TR"
+    ) -> list[dict]:
+        """Search candidates for a cinema programme line, local title first.
+
+        Turkish distribution titles differ from the original ones, so the
+        bulletin searches ``tr-TR`` before falling back to English, and keeps
+        both titles on each candidate for the caller to compare.
+        """
+        query = (title or "").strip()
+        if not query:
+            return []
+        client = await _get_tmdb_client()
+        params = {"query": query, "language": language, "include_adult": "false"}
+        if year:
+            params["year"] = year
+        try:
+            data = await self._get(client, "/search/movie", **params)
+        except Exception:
+            return []
+        out = []
+        for item in (data.get("results") or [])[:8]:
+            if not item.get("id"):
+                continue
+            release = item.get("release_date") or ""
+            poster = item.get("poster_path") or ""
+            out.append({
+                "tmdb_id": int(item["id"]),
+                "title": (item.get("title") or "").strip(),
+                "original_title": (item.get("original_title") or "").strip(),
+                "year": int(release[:4]) if release[:4].isdigit() else None,
+                "poster_url": f"{TMDB_IMAGE_BASE}{poster}" if poster else "",
+            })
+        return out
+
     async def discover_pool(
         self, *, genre_names: Optional[list[str]] = None, limit: int = 50
     ) -> list["EnrichedFilm"]:

@@ -346,6 +346,186 @@ REVOKE ALL ON FUNCTION public.community_random_films(BIGINT, INTEGER)
 GRANT EXECUTE ON FUNCTION public.community_random_films(BIGINT, INTEGER)
   TO service_role;
 
+-- ── Sinema gündemi (bülten) ────────────────────────────────────────────────
+-- Venues are data, not code: a venue's parser lives in `config` (selectors and
+-- date format) so a site redesign is a row edit. `kind='release'` is the
+-- synthetic nationwide layer fed by TMDb, which has no showtimes.
+CREATE TABLE IF NOT EXISTS public.venues (
+  id            BIGSERIAL PRIMARY KEY,
+  slug          TEXT UNIQUE NOT NULL,
+  name          TEXT NOT NULL,
+  city          TEXT NOT NULL DEFAULT '',
+  kind          TEXT NOT NULL DEFAULT 'repertory'
+                CHECK (kind IN ('release', 'repertory', 'festival')),
+  source_url    TEXT NOT NULL DEFAULT '',
+  config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  active        BOOLEAN NOT NULL DEFAULT TRUE,
+  last_ok_at    TIMESTAMPTZ,
+  last_error    TEXT NOT NULL DEFAULT '',
+  lease_token   UUID,
+  lease_expires_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.venues (slug, name, city, kind, source_url)
+VALUES ('tr-vizyon', 'Türkiye vizyonu', '', 'release', 'https://www.themoviedb.org/movie/now-playing')
+ON CONFLICT (slug) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.screenings (
+  id             BIGSERIAL PRIMARY KEY,
+  venue_id       BIGINT NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,
+  title_raw      TEXT NOT NULL,
+  year           INTEGER,
+  tmdb_id        INTEGER,
+  film_slug      TEXT,
+  poster_url     TEXT,
+  starts_at      TIMESTAMPTZ,
+  url            TEXT NOT NULL DEFAULT '',
+  match_status   TEXT NOT NULL DEFAULT 'unresolved'
+                 CHECK (match_status IN ('matched', 'ambiguous', 'unresolved')),
+  source_run_id  UUID,
+  first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- One row per (venue, title, showtime). A release-layer row has no showtime, so
+-- the uniqueness key coalesces it to epoch instead of letting NULLs duplicate.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_screenings_identity
+  ON public.screenings (venue_id, title_raw, COALESCE(starts_at, 'epoch'::timestamptz));
+CREATE INDEX IF NOT EXISTS idx_screenings_window
+  ON public.screenings (starts_at);
+CREATE INDEX IF NOT EXISTS idx_screenings_tmdb
+  ON public.screenings (tmdb_id) WHERE tmdb_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_screenings_unmatched
+  ON public.screenings (match_status, updated_at DESC) WHERE match_status <> 'matched';
+
+CREATE TABLE IF NOT EXISTS public.bulletin_digests (
+  user_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  week_start  DATE NOT NULL,
+  city        TEXT NOT NULL DEFAULT '',
+  payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, week_start, city)
+);
+
+-- Only one process ingests a venue at a time; a stale lease may be reclaimed.
+CREATE OR REPLACE FUNCTION public.claim_venue_ingest(
+  p_slug TEXT,
+  p_lease_token UUID,
+  p_lease_seconds INTEGER,
+  p_min_age_seconds INTEGER DEFAULT 43200
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_claimed BIGINT;
+BEGIN
+  UPDATE public.venues
+  SET lease_token = p_lease_token,
+      lease_expires_at = now() + make_interval(secs => GREATEST(60, p_lease_seconds)),
+      updated_at = now()
+  WHERE slug = p_slug
+    AND active
+    AND (last_ok_at IS NULL
+         OR last_ok_at <= now() - make_interval(secs => GREATEST(60, p_min_age_seconds)))
+    AND (lease_token = p_lease_token
+         OR lease_expires_at IS NULL
+         OR lease_expires_at <= now())
+  RETURNING id INTO v_claimed;
+  RETURN v_claimed IS NOT NULL;
+END;
+$$;
+
+-- Batch upsert for one ingest run. A pass that could not resolve a title must
+-- never blank an id an earlier pass (or a human) already resolved.
+CREATE OR REPLACE FUNCTION public.upsert_screenings(
+  p_venue_slug TEXT,
+  p_rows JSONB,
+  p_run_id UUID
+) RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_venue_id BIGINT;
+  v_count INTEGER;
+BEGIN
+  SELECT id INTO v_venue_id FROM public.venues WHERE slug = p_venue_slug;
+  IF v_venue_id IS NULL THEN RAISE EXCEPTION 'venue_not_found'; END IF;
+
+  INSERT INTO public.screenings (
+    venue_id, title_raw, year, tmdb_id, film_slug, poster_url, starts_at, url,
+    match_status, source_run_id, updated_at
+  )
+  SELECT
+    v_venue_id,
+    trim(item->>'title_raw'),
+    NULLIF(item->>'year', '')::INTEGER,
+    NULLIF(item->>'tmdb_id', '')::INTEGER,
+    NULLIF(item->>'film_slug', ''),
+    NULLIF(item->>'poster_url', ''),
+    NULLIF(item->>'starts_at', '')::TIMESTAMPTZ,
+    COALESCE(item->>'url', ''),
+    COALESCE(NULLIF(item->>'match_status', ''), 'unresolved'),
+    p_run_id,
+    now()
+  FROM jsonb_array_elements(COALESCE(p_rows, '[]'::jsonb)) AS item
+  WHERE COALESCE(trim(item->>'title_raw'), '') <> ''
+  ON CONFLICT (venue_id, title_raw, COALESCE(starts_at, 'epoch'::timestamptz)) DO UPDATE SET
+    year = COALESCE(EXCLUDED.year, public.screenings.year),
+    tmdb_id = COALESCE(EXCLUDED.tmdb_id, public.screenings.tmdb_id),
+    film_slug = COALESCE(EXCLUDED.film_slug, public.screenings.film_slug),
+    poster_url = COALESCE(EXCLUDED.poster_url, public.screenings.poster_url),
+    url = CASE WHEN EXCLUDED.url <> '' THEN EXCLUDED.url ELSE public.screenings.url END,
+    match_status = CASE
+      WHEN EXCLUDED.match_status = 'matched' THEN 'matched'
+      WHEN public.screenings.match_status = 'matched' THEN 'matched'
+      ELSE EXCLUDED.match_status
+    END,
+    source_run_id = p_run_id,
+    updated_at = now();
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  -- Rows the venue no longer lists are dropped, so a bulletin never advertises
+  -- a screening that has left the programme.
+  DELETE FROM public.screenings
+  WHERE venue_id = v_venue_id
+    AND source_run_id IS DISTINCT FROM p_run_id;
+
+  UPDATE public.venues
+  SET last_ok_at = now(), last_error = '', updated_at = now()
+  WHERE id = v_venue_id;
+  RETURN v_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.record_venue_failure(
+  p_venue_slug TEXT,
+  p_error TEXT
+) RETURNS VOID
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  UPDATE public.venues
+  SET last_error = left(COALESCE(p_error, ''), 500), updated_at = now()
+  WHERE slug = p_venue_slug;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_venue_ingest(TEXT, UUID, INTEGER, INTEGER)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.upsert_screenings(TEXT, JSONB, UUID)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_venue_failure(TEXT, TEXT)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_venue_ingest(TEXT, UUID, INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.upsert_screenings(TEXT, JSONB, UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_venue_failure(TEXT, TEXT) TO service_role;
+
 -- Checkpointed background crawl for the one-time full history sweep. One row per
 -- user; a run advances cursor_page under a per-run time budget and can be resumed
 -- (in-process on the next visit) if the instance restarts mid-crawl.
@@ -1350,6 +1530,9 @@ ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cinephile_letters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.screenings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bulletin_digests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_audit_log ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "service_all_users" ON public.users;
@@ -1369,6 +1552,11 @@ REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_blocks FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_reports FROM anon, authenticated;
 REVOKE ALL ON TABLE public.cinephile_letters FROM anon, authenticated;
+REVOKE ALL ON TABLE public.venues FROM anon, authenticated;
+REVOKE ALL ON TABLE public.screenings FROM anon, authenticated;
+REVOKE ALL ON TABLE public.bulletin_digests FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.venues_id_seq FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.screenings_id_seq FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_audit_log FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.users_id_seq FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.auth_audit_log_id_seq FROM anon, authenticated;
@@ -1387,6 +1575,11 @@ GRANT ALL ON TABLE public.blend_results TO service_role;
 GRANT ALL ON TABLE public.user_blocks TO service_role;
 GRANT ALL ON TABLE public.user_reports TO service_role;
 GRANT ALL ON TABLE public.cinephile_letters TO service_role;
+GRANT ALL ON TABLE public.venues TO service_role;
+GRANT ALL ON TABLE public.screenings TO service_role;
+GRANT ALL ON TABLE public.bulletin_digests TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.venues_id_seq TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.screenings_id_seq TO service_role;
 GRANT ALL ON TABLE public.auth_audit_log TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.users_id_seq TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.auth_audit_log_id_seq TO service_role;

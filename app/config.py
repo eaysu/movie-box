@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     recommendation_history_limit: int = 100
     favorite_director_boost: float = 0.08
 
+    # --- Sinema gündemi (bülten) ---
+    # Ships dark: the release layer and the venue framework are inert until this
+    # is turned on for an account cohort.
+    bulletin_enabled: bool = False
+    bulletin_region: str = "TR"
+    # Kart üzerindeki şehir seçicisi; boş seçim ülke geneli vizyon demektir.
+    bulletin_cities: str = "İstanbul,Ankara,İzmir"
+    # A venue is re-fetched at most this often, whoever triggers it.
+    bulletin_ingest_interval_hours: int = 12
+
     # --- Scraper ---
     # Letterboxd sayfaları doğrudan, curl-cffi ile okunur. Ücretli veya harici
     # scraping proxy/API servisi kullanılmaz.
@@ -71,6 +81,10 @@ class Settings(BaseSettings):
     @property
     def has_supabase(self) -> bool:
         return bool(self.supabase_url.strip() and self.supabase_key.strip())
+
+    @property
+    def bulletin_city_list(self) -> list[str]:
+        return [city.strip() for city in self.bulletin_cities.split(",") if city.strip()]
 
     @property
     def has_auth(self) -> bool:

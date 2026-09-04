@@ -65,6 +65,7 @@ from .scraper import (
     scrape_watchlist,
     scrape_watched,
 )
+from . import screenings
 from .taste_profile import (
     TASTE_PROFILE_VERSION,
     build_taste_profile,
@@ -1988,6 +1989,93 @@ async def profile_recent_films(
             )
     await _fill_overviews(service, rows, max(0, min(preview, 10)))
     return {"films": rows}
+
+
+_bulletin_ingest_task: asyncio.Task | None = None
+
+
+def _kick_bulletin_ingest(settings, service) -> None:
+    """Refresh the programme in the background, at most one run per process.
+
+    There is no worker dyno, so the first member to open the bulletin nudges the
+    ingest. The DB lease makes that safe across processes, and the caller never
+    waits: the card renders from whatever rows already exist.
+    """
+    global _bulletin_ingest_task
+    if not settings.has_tmdb:
+        return
+    if _bulletin_ingest_task is not None and not _bulletin_ingest_task.done():
+        return
+
+    async def _run():
+        try:
+            supabase_client, cache = _make_cache(settings)
+            enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
+            await screenings.ingest_release_layer(service, settings, enricher=enricher)
+        except Exception as exc:  # noqa: BLE001 - never surface to the caller
+            log.warning("bulletin ingest failed: %s", exc)
+
+    _bulletin_ingest_task = asyncio.create_task(_run())
+
+
+@app.get("/api/bulletin")
+async def bulletin(request: Request, city: str = "") -> dict:
+    """This week's cinema agenda for the signed-in member."""
+    settings = get_settings()
+    account = await _require_account(request)
+    if not settings.bulletin_enabled:
+        return {"enabled": False, "sections": [], "cities": []}
+
+    service = _auth_service()
+    selected = city.strip()
+    cities = settings.bulletin_city_list
+    if selected and selected not in cities:
+        selected = ""
+    week = screenings.week_start().isoformat()
+
+    cached = await asyncio.to_thread(
+        service.get_bulletin_digest, account.id, week, selected
+    )
+    if cached:
+        _kick_bulletin_ingest(settings, service)
+        return {"enabled": True, "city": selected, "cities": cities, **cached}
+
+    rows = await asyncio.to_thread(service.list_screenings, city=selected)
+    if not rows:
+        _kick_bulletin_ingest(settings, service)
+        return {
+            "enabled": True,
+            "city": selected,
+            "cities": cities,
+            "sections": [],
+            "total": 0,
+            "preparing": True,
+        }
+
+    watched = await asyncio.to_thread(service.get_rated_watched_films, account.id)
+    supabase_client, _ = _make_cache(settings)
+    pcache = _make_persistent_cache(settings, supabase_client)
+    watchlist_slugs: list[str] = []
+    if pcache is not None:
+        with contextlib.suppress(Exception):
+            entry = await asyncio.to_thread(
+                pcache.get_with_freshness, "films_watchlist", account.username, ttl=None
+            )
+            watchlist_slugs = [
+                row.get("slug") for row in ((entry[0] if entry else []) or []) if row.get("slug")
+            ]
+    stored = await asyncio.to_thread(service.get_profile, account)
+    digest = screenings.build_digest(
+        rows, watched, watchlist_slugs, (stored or {}).get("taste") or {}
+    )
+    await asyncio.to_thread(
+        service.save_bulletin_digest, account.id, week, selected, digest
+    )
+    await _record_activity_event(
+        service, account, "bulletin_viewed", {"total": digest.get("total", 0)}
+    )
+    _kick_bulletin_ingest(settings, service)
+    return {"enabled": True, "city": selected, "cities": cities, **digest}
 
 
 @app.get("/api/profile/stats")

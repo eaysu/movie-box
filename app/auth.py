@@ -7,6 +7,7 @@ the user-facing product remains username-only.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -1332,6 +1333,110 @@ class AuthService:
 
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
+
+    # ── Sinema gündemi ──────────────────────────────────────────────────
+    def claim_venue_ingest(
+        self, slug: str, token: str, lease_seconds: int, min_age_seconds: int
+    ) -> bool:
+        try:
+            result = self._service_client().rpc("claim_venue_ingest", {
+                "p_slug": slug,
+                "p_lease_token": token,
+                "p_lease_seconds": int(lease_seconds),
+                "p_min_age_seconds": int(min_age_seconds),
+            }).execute()
+            return bool(self._rpc_value(result))
+        except Exception:
+            return False
+
+    def upsert_screenings(self, slug: str, rows: list[dict], run_id: str) -> int:
+        try:
+            result = self._service_client().rpc("upsert_screenings", {
+                "p_venue_slug": slug,
+                "p_rows": rows,
+                "p_run_id": run_id,
+            }).execute()
+            return int(self._rpc_value(result) or 0)
+        except Exception:
+            return 0
+
+    def record_venue_failure(self, slug: str, error: str) -> None:
+        with contextlib.suppress(Exception):
+            self._service_client().rpc("record_venue_failure", {
+                "p_venue_slug": slug,
+                "p_error": error,
+            }).execute()
+
+    def list_active_venues(self, kind: str | None = None) -> list[dict]:
+        try:
+            query = self._service_client().table("venues").select(
+                "id,slug,name,city,kind,source_url,config,last_ok_at,last_error"
+            ).eq("active", True)
+            if kind:
+                query = query.eq("kind", kind)
+            return [dict(row) for row in (self._retry_storage_read(query.execute).data or [])]
+        except Exception:
+            return []
+
+    def list_screenings(self, *, city: str = "", limit: int = 400) -> list[dict]:
+        """Current programme rows, joined to their venue for attribution."""
+        try:
+            rows = self._retry_storage_read(
+                lambda: self._service_client().table("screenings").select(
+                    "title_raw,year,tmdb_id,film_slug,poster_url,starts_at,url,match_status,"
+                    "venues!inner(slug,name,city,kind,active)"
+                ).eq("match_status", "matched").limit(limit).execute()
+            ).data or []
+        except Exception:
+            return []
+        out = []
+        for row in rows:
+            venue = row.get("venues") or {}
+            if not venue.get("active", True):
+                continue
+            if city and venue.get("kind") != "release" and venue.get("city") != city:
+                continue
+            out.append({
+                **{key: value for key, value in row.items() if key != "venues"},
+                "venue_slug": venue.get("slug") or "",
+                "venue_name": venue.get("name") or "",
+                "venue_city": venue.get("city") or "",
+                "venue_kind": venue.get("kind") or "",
+            })
+        return out
+
+    def get_bulletin_digest(self, user_id: int, week_start: str, city: str) -> dict | None:
+        try:
+            row = self._first(
+                self._service_client().table("bulletin_digests")
+                .select("payload,created_at")
+                .eq("user_id", user_id).eq("week_start", week_start).eq("city", city)
+                .limit(1).execute()
+            )
+        except Exception:
+            return None
+        return (row or {}).get("payload") or None
+
+    def save_bulletin_digest(self, user_id: int, week_start: str, city: str, payload: dict) -> None:
+        with contextlib.suppress(Exception):
+            self._service_client().table("bulletin_digests").upsert({
+                "user_id": user_id,
+                "week_start": week_start,
+                "city": city,
+                "payload": payload,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }, on_conflict="user_id,week_start,city").execute()
+
+    def get_rated_watched_films(self, user_id: int) -> list[dict]:
+        """Only the fields the bulletin needs, so this stays a cheap read."""
+        try:
+            return [dict(row) for row in (self._retry_storage_read(
+                lambda: self._service_client().table("user_watched_films").select(
+                    "film_slug,title,tmdb_id,user_rating,rating_observed,first_seen_at"
+                ).eq("user_id", user_id).eq("is_active", True).limit(5000).execute()
+            ).data or [])]
+        except Exception:
+            return []
 
     def community_random_films(self, user_id: int, limit: int = 24) -> list[dict]:
         """A fresh random sample of films the membership watched and this user did not.
