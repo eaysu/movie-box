@@ -310,6 +310,27 @@ def test_writing_a_letter_requires_your_own_letterbox_to_be_open():
     assert "letter_sender_closed" in (ROOT / "app" / "main.py").read_text()
 
 
+def test_cinema_bulletin_scrolls_horizontally_only():
+    """The card is a strip, not a scrolling page inside a page."""
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+    js = (ROOT / "static" / "js" / "app.js").read_text()
+    html = (ROOT / "static" / "index.html").read_text()
+
+    strip = css.split(".bulletin-strip {", 1)[1].split("}", 1)[0]
+    assert "overflow-x: auto" in strip
+    assert "overflow-y: hidden" in strip
+    assert "scroll-snap-type: x mandatory" in strip
+    # A vertically scrolling grid was what this replaced.
+    assert "max-h-[70vh] overflow-y-auto" not in js
+
+    # Priority films lead, the rest arrive on demand.
+    assert "bulletinMoreCard" in js
+    assert "_bulletinExpanded" in js
+    # Venue choice opens a dialog because a dropdown would be clipped by the strip.
+    assert 'id="dialog-bulletin-venues"' in html
+    assert "openBulletinVenues" in js
+
+
 def test_shell_asset_content_changes_force_a_version_bump():
     """Guard against shipping edits that browsers never fetch.
 
@@ -320,8 +341,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "d696d6b2cfee791bfb5f30caf01426d78a1bcb24b335b52af78ef5e52f447824",
-        "static/app.css": "b92b6bd022abb2eb95ef0476ac05980fa564375ba78afba1bf58a0d929e25849",
+        "static/js/app.js": "c6ebc02a68e26e8f93747720e948b6af9359dc903ea5c67eddebc859dd81448e",
+        "static/app.css": "089ec8a61b137724cea1b5306e52e85bf4be1744e8029cb17f1279b1e9e2ffa4",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -353,9 +374,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260904.26"
+    css_version = "v=20260904.27"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260904.38" in html
+    assert "/static/js/app.js?v=20260904.39" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js

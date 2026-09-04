@@ -286,6 +286,21 @@
   .bulletin-venue-menu > summary::-webkit-details-marker { display: none; }
   .bulletin-venue-menu > summary::marker { content: ""; }
 
+  /* Sinema gündemi — yalnızca yatay kaydırma; dikey taşma yok. */
+  .bulletin-strip {
+    display: flex;
+    gap: 0.875rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.25rem;
+  }
+  .bulletin-strip::-webkit-scrollbar { display: none; }
+  .bulletin-strip > * { scroll-snap-align: start; }
+
   /* Gradient text utility */
   .text-gradient-green {
     background: linear-gradient(135deg, #43fe6d 0%, #00e054 60%, #40bcf4 100%);

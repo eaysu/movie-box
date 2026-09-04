@@ -907,63 +907,47 @@ function renderPersistedProfile(data) {
   applySyncJob(data.sync_job);
 }
 
-// ── Sinema gündemi — profil boyandıktan sonra, tek istekle ────────────────
+// ── Sinema gündemi — yatay kart şeridi, profil boyandıktan sonra ─────────
 let _bulletinLoaded = false;
 let _bulletinData = null;
-
-function bulletinVenueMenu(film) {
-  const venues = (film.venues || []).filter(v => v && v.name);
-  if (!venues.length) return '';
-  const label = (venue) => {
-    const when = venue.starts_at
-      ? ` · ${escapeHTML(new Date(venue.starts_at).toLocaleString('tr-TR', {
-        weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-      }))}`
-      : '';
-    return `${escapeHTML(venue.name)}${when}`;
-  };
-  // One cinema is a plain link; several become a menu so every programme is
-  // reachable instead of only the first.
-  if (venues.length === 1) {
-    const venue = venues[0];
-    return venue.url
-      ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="shrink-0 self-start rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
-      : `<span class="shrink-0 self-start rounded-lg border border-outline-variant/20 px-3 py-1.5 text-xs uppercase tracking-wide text-on-surface-variant/50">${escapeHTML(venue.name)}</span>`;
-  }
-  return `<details class="bulletin-venue-menu shrink-0 self-start relative">
-    <summary class="list-none cursor-pointer rounded-lg border border-tertiary-container/30 px-3 py-1.5 text-xs uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues.length} sinema</summary>
-    <div class="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-2xl">
-      ${venues.map(venue => venue.url
-        ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="block px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-variant/60">${label(venue)}</a>`
-        : `<span class="block px-3 py-2 text-left text-sm text-on-surface-variant/60">${label(venue)}</span>`).join('')}
-    </div>
-  </details>`;
-}
+let _bulletinExpanded = false;
 
 function bulletinFilmCard(film) {
   const title = escapeHTML(film.title || 'Film');
   const poster = safeImageURL(film.poster_url);
   const year = film.year ? escapeHTML(String(film.year)) : '';
   const note = film.note ? escapeHTML(film.note) : '';
-  const venueNames = (film.venues || []).map(v => v.name).filter(Boolean);
-  const art = poster
-    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-14 shrink-0 aspect-[2/3] rounded-lg object-cover bg-surface-container" loading="lazy"/>`
-    : `<div class="w-14 shrink-0 aspect-[2/3] rounded-lg bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[20px]">movie</span></div>`;
+  const venues = (film.venues || []).filter(venue => venue && venue.name);
   const href = letterboxdFilmURL(film.slug);
-  const heading = href
-    ? `<a href="${href}" target="_blank" rel="noopener" class="font-headline-md text-[16px] text-on-surface hover:text-tertiary-container transition-colors">${title}</a>`
-    : `<strong class="font-headline-md text-[16px] text-on-surface">${title}</strong>`;
-  const highlight = film.priority < 3
-    ? 'border-tertiary-container/35 bg-tertiary-container/[.07]'
-    : 'border-outline-variant/20 bg-surface-container/40';
-  return `<article class="flex items-start gap-3 rounded-2xl border ${highlight} p-3">
-    ${art}
-    <div class="min-w-0 flex-1">
-      ${heading}
-      <p class="mt-0.5 text-xs text-on-surface-variant/60">${escapeHTML([year, venueNames.join(', ')].filter(Boolean).join(' · '))}</p>
-      ${note ? `<p class="mt-1.5 text-sm text-tertiary-container">${note}</p>` : ''}
-    </div>
-    ${bulletinVenueMenu(film)}
+  const art = poster
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" loading="lazy" class="w-full aspect-[2/3] rounded-xl object-cover bg-surface-container"/>`
+    : `<div class="w-full aspect-[2/3] rounded-xl bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[34px]">movie</span></div>`;
+  const cover = href
+    ? `<a href="${href}" target="_blank" rel="noopener" title="${title} — Letterboxd" class="block">${art}</a>`
+    : art;
+  // The strip clips overflow, so a dropdown would be cut off; the venue list
+  // opens in a dialog instead, which also works better on a phone.
+  const action = venues.length > 1
+    ? `<button type="button" data-bulletin-venues="${escapeHTML(String(film.tmdb_id || film.slug || film.title))}" class="mt-2 w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues.length} sinema</button>`
+    : (venues[0]?.url
+      ? `<a href="${escapeHTML(venues[0].url)}" target="_blank" rel="noopener" class="mt-2 block w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-center text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
+      : '');
+  const highlight = film.priority < 3 ? 'ring-1 ring-tertiary-container/40' : '';
+  return `<article class="shrink-0 w-[150px] sm:w-[168px] rounded-2xl ${highlight} p-2">
+    ${cover}
+    <strong class="mt-2 block font-headline-md text-[14px] leading-tight text-on-surface line-clamp-2">${title}</strong>
+    ${year ? `<span class="block text-[11px] text-on-surface-variant/50">${year}</span>` : ''}
+    ${note ? `<span class="mt-1 block text-[11px] leading-snug text-tertiary-container line-clamp-2">${note}</span>` : ''}
+    ${action}
+  </article>`;
+}
+
+function bulletinMoreCard(remaining) {
+  return `<article class="shrink-0 w-[150px] sm:w-[168px] p-2 flex">
+    <button type="button" id="bulletin-more" class="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-outline-variant/35 text-on-surface-variant hover:text-tertiary-container hover:border-tertiary-container/45 transition-colors">
+      <span class="material-symbols-outlined text-[26px]">more_horiz</span>
+      <span class="px-2 text-center text-[12px] leading-tight">Dahasını göster<br/><span class="text-on-surface-variant/50">+${remaining} film</span></span>
+    </button>
   </article>`;
 }
 
@@ -972,6 +956,7 @@ function renderBulletin(data) {
   if (!data.enabled) { section.classList.add('hidden'); return; }
   section.classList.remove('hidden');
   _bulletinData = data;
+  _bulletinExpanded = false;
 
   const select = $('bulletin-venue');
   const venues = data.venues || [];
@@ -992,6 +977,8 @@ function paintBulletin() {
     !chosen || (film.venues || []).some(venue => venue.slug === chosen));
 
   if (!films.length) {
+    $('bulletin-nav').classList.add('hidden');
+    $('bulletin-nav').classList.remove('flex');
     $('bulletin-body').innerHTML = `<p class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">${
       data.preparing
         ? 'Bu haftanın programı hazırlanıyor; birazdan tekrar bak.'
@@ -999,14 +986,46 @@ function paintBulletin() {
     }</p>`;
     return;
   }
-  const highlighted = films.filter(film => film.priority < 3).length;
+
+  // Priority films lead; the rest stay one tap away instead of making the
+  // strip endless on first paint.
+  const highlighted = films.filter(film => film.priority < 3);
+  const rest = films.filter(film => film.priority >= 3);
+  const lead = highlighted.length ? highlighted : rest.slice(0, 12);
+  const remainder = highlighted.length ? rest : rest.slice(12);
+  const shown = _bulletinExpanded ? films : lead;
+  const hidden = _bulletinExpanded ? 0 : remainder.length;
+
   $('bulletin-body').innerHTML = `
     <p class="mb-3 text-xs text-on-surface-variant/60">${films.length} film${
-      highlighted ? ` · ${highlighted} tanesi seninle ilgili, üstte` : ''
+      highlighted.length ? ` · ${highlighted.length} tanesi seninle ilgili, önde` : ''
     }</p>
-    <div class="max-h-[70vh] overflow-y-auto pr-1 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      ${films.map(bulletinFilmCard).join('')}
+    <div id="bulletin-strip" class="bulletin-strip">
+      ${shown.map(bulletinFilmCard).join('')}
+      ${hidden ? bulletinMoreCard(hidden) : ''}
     </div>`;
+  const nav = $('bulletin-nav');
+  nav.classList.toggle('hidden', shown.length <= 2);
+  nav.classList.toggle('flex', shown.length > 2);
+}
+
+function openBulletinVenues(key) {
+  const film = (_bulletinData?.films || []).find(
+    item => String(item.tmdb_id || item.slug || item.title) === key);
+  if (!film) return;
+  $('bulletin-venues-title').textContent = film.title || 'Film';
+  $('bulletin-venues-list').innerHTML = (film.venues || []).map(venue => {
+    const when = venue.starts_at
+      ? ` · ${escapeHTML(new Date(venue.starts_at).toLocaleString('tr-TR', {
+        weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      }))}`
+      : '';
+    const label = `${escapeHTML(venue.name)}${when}`;
+    return venue.url
+      ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/25 px-4 py-3 text-sm text-on-surface hover:border-tertiary-container/45 hover:text-tertiary-container transition-colors">${label}<span class="material-symbols-outlined text-[18px]">open_in_new</span></a>`
+      : `<span class="rounded-xl border border-outline-variant/20 px-4 py-3 text-sm text-on-surface-variant/60">${label}</span>`;
+  }).join('');
+  $('dialog-bulletin-venues').showModal();
 }
 
 async function loadBulletin() {
@@ -3854,12 +3873,24 @@ $('sinefil-grid').addEventListener('click', event => {
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });
-$('bulletin-venue').addEventListener('change', paintBulletin);
-document.addEventListener('click', event => {
-  const open = document.querySelectorAll('.bulletin-venue-menu[open]');
-  if (!open.length) return;
-  const current = event.target.closest('.bulletin-venue-menu');
-  open.forEach(menu => { if (menu !== current) menu.removeAttribute('open'); });
+$('bulletin-venue').addEventListener('change', () => { _bulletinExpanded = false; paintBulletin(); });
+$('profile-bulletin').addEventListener('click', event => {
+  if (event.target.closest('#bulletin-more')) {
+    _bulletinExpanded = true;
+    paintBulletin();
+    return;
+  }
+  const venueButton = event.target.closest('[data-bulletin-venues]');
+  if (venueButton) {
+    openBulletinVenues(venueButton.dataset.bulletinVenues);
+    return;
+  }
+  const nav = event.target.closest('[data-bulletin-nav]');
+  if (nav) {
+    const strip = $('bulletin-strip');
+    // One screenful at a time, so the arrows track what is actually visible.
+    if (strip) strip.scrollBy({ left: Number(nav.dataset.bulletinNav) * strip.clientWidth * 0.85, behavior: 'smooth' });
+  }
 });
 $('profile-recent-share').addEventListener('click', event => {
   buildAndOpenShareCard(
