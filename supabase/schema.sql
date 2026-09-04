@@ -140,6 +140,9 @@ CREATE INDEX IF NOT EXISTS idx_user_watched_films_rank
   ON public.user_watched_films (user_id, watched_rank);
 CREATE INDEX IF NOT EXISTS idx_user_watched_films_director
   ON public.user_watched_films (user_id, director);
+-- The random pick aggregates the whole membership by film, not by user.
+CREATE INDEX IF NOT EXISTS idx_user_watched_films_slug_active
+  ON public.user_watched_films (film_slug) WHERE is_active;
 
 -- Shared, account-independent film catalog. Filled by every scrape/enrichment
 -- path across all users. Public film metadata deliberately survives account
@@ -272,6 +275,76 @@ $$;
 
 REVOKE ALL ON FUNCTION public.upsert_film_posters(JSONB) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_film_posters(JSONB) TO service_role;
+
+-- Random pick pool: films the wider membership has watched and this account has
+-- not. Deliberately independent of the caller's watchlist, so "rastgele" can
+-- surface films the user never listed. Each call returns a fresh random sample;
+-- the caller picks the final few from it.
+CREATE OR REPLACE FUNCTION public.community_random_films(
+  p_user_id BIGINT,
+  p_limit INTEGER DEFAULT 24
+) RETURNS TABLE (
+  film_slug TEXT,
+  title TEXT,
+  release_year INTEGER,
+  tmdb_id INTEGER,
+  director TEXT,
+  genres JSONB,
+  keywords JSONB,
+  poster_url TEXT,
+  overview TEXT,
+  watcher_count BIGINT,
+  avg_rating REAL
+)
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = public
+AS $$
+WITH mine AS (
+  SELECT w.film_slug
+  FROM public.user_watched_films w
+  WHERE w.user_id = p_user_id AND w.is_active
+),
+community AS (
+  SELECT
+    w.film_slug AS slug,
+    COUNT(DISTINCT w.user_id) AS watchers,
+    AVG(w.user_rating) FILTER (
+      WHERE w.rating_observed AND w.user_rating IS NOT NULL
+    ) AS rating,
+    MAX(w.title) AS title,
+    MAX(w.release_year) AS release_year,
+    MAX(w.tmdb_id) AS tmdb_id
+  FROM public.user_watched_films w
+  WHERE w.is_active
+    AND w.user_id <> p_user_id
+    AND NOT EXISTS (SELECT 1 FROM mine WHERE mine.film_slug = w.film_slug)
+  GROUP BY w.film_slug
+)
+SELECT
+  c.slug,
+  COALESCE(NULLIF(fp.title, ''), c.title, ''),
+  COALESCE(fp.release_year, c.release_year),
+  COALESCE(fp.tmdb_id, c.tmdb_id),
+  COALESCE(fp.director, ''),
+  COALESCE(fp.genres, '[]'::jsonb),
+  COALESCE(fp.keywords, '[]'::jsonb),
+  fp.poster_url,
+  COALESCE(fp.overview, ''),
+  c.watchers,
+  c.rating::REAL
+FROM community c
+LEFT JOIN public.film_posters fp ON fp.film_slug = c.slug
+-- Films the membership actively disliked stay out; unrated ones remain eligible.
+WHERE COALESCE(c.rating, 5) >= 3.0
+ORDER BY random()
+LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 24), 200));
+$$;
+
+REVOKE ALL ON FUNCTION public.community_random_films(BIGINT, INTEGER)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.community_random_films(BIGINT, INTEGER)
+  TO service_role;
 
 -- Checkpointed background crawl for the one-time full history sweep. One row per
 -- user; a run advances cursor_page under a per-run time budget and can be resumed
@@ -476,6 +549,12 @@ RETURNS TABLE (
   blend_requests_sent BIGINT,
   blend_requests_received BIGINT,
   completed_blends BIGINT,
+  discoverable BOOLEAN,
+  letter_receiving_enabled BOOLEAN,
+  letters_sent BIGINT,
+  letters_received BIGINT,
+  letters_unread BIGINT,
+  last_letter_at TIMESTAMPTZ,
   profile_sync_requests BIGINT,
   watchlist_checks BIGINT,
   recommendation_attempts BIGINT,
@@ -519,6 +598,27 @@ blend_completed AS (
     JOIN public.blend_results result ON result.request_id = br.id
   ) b
   GROUP BY b.user_id
+),
+letters AS (
+  -- Volume only. Letter bodies and film gifts are end-to-end encrypted, so the
+  -- server cannot read them even if this report wanted to; recipients are also
+  -- deliberately not exposed here.
+  SELECT
+    l.user_id,
+    COUNT(*) FILTER (WHERE l.direction = 'sent') AS letters_sent,
+    COUNT(*) FILTER (WHERE l.direction = 'received') AS letters_received,
+    COUNT(*) FILTER (WHERE l.direction = 'received' AND l.unread) AS letters_unread,
+    MAX(l.created_at) FILTER (WHERE l.direction = 'sent') AS last_letter_at
+  FROM (
+    SELECT cl.sender_user_id AS user_id, 'sent' AS direction, cl.created_at,
+           FALSE AS unread
+    FROM public.cinephile_letters cl
+    UNION ALL
+    SELECT cl.recipient_user_id AS user_id, 'received' AS direction, cl.created_at,
+           cl.read_at IS NULL AS unread
+    FROM public.cinephile_letters cl
+  ) l
+  GROUP BY l.user_id
 ),
 events AS (
   SELECT
@@ -567,6 +667,12 @@ SELECT
   COALESCE(blend_activity.blend_requests_sent, 0)::BIGINT,
   COALESCE(blend_activity.blend_requests_received, 0)::BIGINT,
   COALESCE(blend_completed.completed_blends, 0)::BIGINT,
+  COALESCE(u.discoverable, FALSE),
+  COALESCE(u.letter_receiving_enabled, FALSE),
+  COALESCE(letters.letters_sent, 0)::BIGINT,
+  COALESCE(letters.letters_received, 0)::BIGINT,
+  COALESCE(letters.letters_unread, 0)::BIGINT,
+  letters.last_letter_at,
   COALESCE(events.profile_sync_requests, 0)::BIGINT,
   COALESCE(events.watchlist_checks, 0)::BIGINT,
   COALESCE(events.recommendation_attempts, 0)::BIGINT,
@@ -579,10 +685,15 @@ LEFT JOIN public.profile_sync_jobs job ON job.user_id = u.id
 LEFT JOIN watched ON watched.user_id = u.id
 LEFT JOIN blend_activity ON blend_activity.user_id = u.id
 LEFT JOIN blend_completed ON blend_completed.user_id = u.id
+LEFT JOIN letters ON letters.user_id = u.id
 LEFT JOIN events ON events.user_id = u.id
 LEFT JOIN watchlist_cache ON watchlist_cache.username = u.username
 WHERE p_include_non_active OR u.account_status = 'active'
-ORDER BY u.created_at DESC;
+-- Most recently active account first. An account with no recorded event yet
+-- falls back to its last sync, then to its registration time, so a fresh
+-- registration never sinks below a long-dormant one.
+ORDER BY COALESCE(events.last_activity_at, u.profile_synced_at, u.created_at) DESC NULLS LAST,
+         u.created_at DESC;
 $$;
 
 REVOKE ALL ON FUNCTION public.admin_user_activity_report(BOOLEAN)

@@ -3,7 +3,9 @@
 
 The command is intentionally local-only and uses the Supabase service-role key
 from ``.env.local``/the environment. It never exposes passwords, auth tokens,
-raw event metadata or film rows.
+raw event metadata or film rows. Letters are reported as counts only: bodies and
+film gifts are end-to-end encrypted and unreadable to the server, and recipients
+are deliberately left out of the report.
 
 Usage::
 
@@ -20,7 +22,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+try:  # Python 3.9+ with tzdata available
+    from zoneinfo import ZoneInfo
+
+    REPORT_TZ = ZoneInfo("Europe/Istanbul")
+except Exception:  # pragma: no cover - fixed +03:00 is correct for Türkiye
+    REPORT_TZ = timezone(timedelta(hours=3))
 
 from app.config import get_settings
 
@@ -46,45 +55,100 @@ def _fetch_report(*, include_non_active: bool) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def _parse_time(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def _short_date(value) -> str:
+    """Supabase stores UTC; the report is read locally, so print Istanbul time."""
     if not value:
         return "-"
-    text = str(value)
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime(
-            "%Y-%m-%d %H:%M"
-        )
-    except ValueError:
-        return text[:16]
+    parsed = _parse_time(value)
+    if parsed is None:
+        return str(value)[:16]
+    return parsed.astimezone(REPORT_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def _activity_key(row: dict) -> datetime:
+    """Newest signal of life first: activity, then last sync, then registration."""
+    for field in ("last_activity_at", "profile_synced_at", "created_at"):
+        parsed = _parse_time(row.get(field))
+        if parsed is not None:
+            return parsed
+    return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _sort_by_activity(rows: list[dict]) -> list[dict]:
+    return sorted(rows, key=_activity_key, reverse=True)
+
+
+def _short_day(value) -> str:
+    """Date-only rendering, used where the hour would only cost table width."""
+    return _short_date(value)[:10]
+
+
+def _flag(value, on: str, off: str) -> str:
+    if value is None:
+        return "-"
+    return on if bool(value) else off
+
+
+def _has_letter_data(rows: list[dict]) -> bool:
+    """False when the deployed report function predates the letter columns."""
+    return any("letters_sent" in row for row in rows)
 
 
 def _print_table(rows: list[dict]) -> None:
     if not rows:
         print("Kayıtlı kullanıcı bulunamadı.")
         return
-    columns = [
-        ("username", "KULLANICI"),
-        ("account_status", "DURUM"),
-        ("created_at", "KAYIT"),
-        ("scan", "TARAMA"),
-        ("watched_count", "İZLENEN"),
-        ("watchlist_count", "WATCHLIST"),
-        ("blend_summary", "BLEND GÖNDER/AL/TAMAM"),
-        ("recommendations", "ÖNERİ"),
-        ("random_attempts", "RASTGELE"),
-        ("profile_sync_requests", "SENK."),
-        ("login_count", "GİRİŞ"),
-        ("last_activity_at", "SON AKTİVİTE"),
+    headers = [
+        "#",
+        "KULLANICI",
+        "DURUM",
+        "SİNEFİL",
+        "M.KUTU",
+        "MEKTUP",
+        "SON MEKTUP",
+        "KAYIT",
+        "TARAMA",
+        "İZLENEN",
+        "WATCHLIST",
+        "BLEND",
+        "ÖNERİ",
+        "RASTGELE",
+        "SENK.",
+        "GİRİŞ",
+        "SON AKTİVİTE",
     ]
     rendered: list[list[str]] = []
-    for row in rows:
+    for index, row in enumerate(rows, start=1):
         total = int(row.get("scan_total") or 0)
         processed = int(row.get("scan_processed") or 0)
         attempts = int(row.get("recommendation_attempts") or 0)
         successes = int(row.get("recommendation_successes") or 0)
+        if "letters_sent" in row:
+            letters = (
+                f"{int(row.get('letters_sent') or 0)}/"
+                f"{int(row.get('letters_received') or 0)}/"
+                f"{int(row.get('letters_unread') or 0)}"
+            )
+        else:
+            letters = "-"
         rendered.append([
+            str(index),
             str(row.get("username") or "-"),
             str(row.get("account_status") or "-"),
+            _flag(row.get("discoverable"), "online", "offline"),
+            _flag(row.get("letter_receiving_enabled"), "açık", "kapalı"),
+            letters,
+            _short_day(row.get("last_letter_at")),
             _short_date(row.get("created_at")),
             f"{processed}/{total}" if total else str(processed),
             str(row.get("watched_count") or 0),
@@ -100,15 +164,52 @@ def _print_table(rows: list[dict]) -> None:
             str(row.get("login_count") or 0),
             _short_date(row.get("last_activity_at")),
         ])
-    widths = [max(len(header), *(len(row[i]) for row in rendered)) for i, (_key, header) in enumerate(columns)]
-    print("  ".join(header.ljust(widths[i]) for i, (_key, header) in enumerate(columns)))
+    widths = [
+        max(len(header), *(len(row[i]) for row in rendered))
+        for i, header in enumerate(headers)
+    ]
+    print("  ".join(header.ljust(widths[i]) for i, header in enumerate(headers)))
     print("  ".join("-" * width for width in widths))
     for row in rendered:
         print("  ".join(value.ljust(widths[i]) for i, value in enumerate(row)))
+    _print_summary(rows)
+
+
+def _print_summary(rows: list[dict]) -> None:
     print(
-        "\nÖNERİ sütunu: başarılı/toplam deneme. "
-        "BLEND sütunu: gönderilen/alınan/tamamlanan. "
+        "\nSıralama: en son aktif olandan en eskiye. "
+        "SİNEFİL: Sinefil Sineması görünürlüğü. "
+        "M.KUTU: mektup alma tercihi. "
+        "MEKTUP: gönderilen/alınan/okunmamış. "
+        "BLEND: gönderilen/alınan/tamamlanan. "
+        "ÖNERİ: başarılı/toplam deneme. "
         "TARAMA: işlenen/toplam film."
+    )
+    online = sum(1 for row in rows if row.get("discoverable"))
+    receiving = sum(1 for row in rows if row.get("letter_receiving_enabled"))
+    print(
+        f"Toplam {len(rows)} kullanıcı · Sinefil Sineması'nda {online} online, "
+        f"{len(rows) - online} offline · mektup kutusu açık {receiving} kişi"
+    )
+    if not _has_letter_data(rows):
+        print(
+            "Mektup ve görünürlük sütunları boş: güncel supabase/schema.sql "
+            "dosyasını SQL Editor'da çalıştır."
+        )
+        return
+    senders = [row for row in rows if int(row.get("letters_sent") or 0) > 0]
+    total_letters = sum(int(row.get("letters_sent") or 0) for row in rows)
+    unread = sum(int(row.get("letters_unread") or 0) for row in rows)
+    if not senders:
+        print("Mektup: henüz kimse mektup yollamadı.")
+        return
+    top = sorted(senders, key=lambda row: int(row.get("letters_sent") or 0), reverse=True)
+    detail = ", ".join(
+        f"{row.get('username')} ({int(row.get('letters_sent') or 0)})" for row in top[:5]
+    )
+    print(
+        f"Mektup: {len(senders)} kullanıcı toplam {total_letters} mektup yolladı · "
+        f"{unread} mektup henüz okunmadı · en çok yollayanlar: {detail}"
     )
 
 
@@ -135,6 +236,9 @@ def main() -> int:
     requested = {_normalise(value) for value in args.username if _normalise(value)}
     if requested:
         rows = [row for row in rows if _normalise(str(row.get("username", ""))) in requested]
+    # The report function already orders by activity; sorting here keeps the
+    # order correct against an older deployed function too.
+    rows = _sort_by_activity(rows)
     if args.as_json:
         print(json.dumps(rows, ensure_ascii=False, indent=2, default=str))
     else:
