@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 
@@ -305,6 +306,27 @@ def test_writing_a_letter_requires_your_own_letterbox_to_be_open():
     assert "letter_sender_closed" in (ROOT / "app" / "main.py").read_text()
 
 
+def test_shell_asset_content_changes_force_a_version_bump():
+    """Guard against shipping edits that browsers never fetch.
+
+    Versioned assets are served ``immutable`` for a year, so a change to app.js
+    or app.css that keeps the old ``?v=`` is invisible to every returning
+    visitor. Pinning the digests here makes that a failing test instead of a
+    silent no-op: when this fails, bump the version in index.html (and the
+    expectation above), then paste the new digest.
+    """
+    expected = {
+        "static/js/app.js": "a2ef85512e1b095c669a241dcccfc3346b05a8fef6c7b17d8fd51454cd83b2a6",
+        "static/app.css": "5a219b197f6e68020ceffe29ca87d759eff0198276ebf5e9534d5150a9956838",
+    }
+    for path, digest in expected.items():
+        actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
+        assert actual == digest, (
+            f"{path} changed but its ?v= may not have. Bump the version in "
+            f"static/index.html, then set the digest here to {actual}."
+        )
+
+
 def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     render = app_js.split("function renderBlendWatchlist", 1)[1].split(
@@ -326,9 +348,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260903.22"
+    css_version = "v=20260904.23"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260903.33" in html
+    assert "/static/js/app.js?v=20260904.34" in html
     assert app_js.count(f"?{dependency_version}") == 6
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

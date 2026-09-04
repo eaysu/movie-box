@@ -411,6 +411,9 @@ function _discoverNote(on) {
 
 // ── Zevk profili önerisi — gün boyu sabit, 3 film arası gezilebilir ──────
 const _TASTE_RECO_KEY = 'mb_taste_reco';
+// Bumped whenever the stored shape or the pool size changes, so yesterday's
+// three-film pool is not replayed all of today from localStorage.
+const _TASTE_RECO_VERSION = 2;
 function _todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -418,7 +421,8 @@ function _todayKey() {
 function _loadTasteReco() {
   try {
     const o = JSON.parse(localStorage.getItem(_TASTE_RECO_KEY) || 'null');
-    if (!o || o.day !== _todayKey() || !Array.isArray(o.pool) || !o.pool.length) return null;
+    if (!o || o.v !== _TASTE_RECO_VERSION) return null;
+    if (o.day !== _todayKey() || !Array.isArray(o.pool) || !o.pool.length) return null;
     if (_account && o.username && o.username !== _account.username) return null;
     return o;
   } catch (_) { return null; }
@@ -426,6 +430,7 @@ function _loadTasteReco() {
 function _saveTasteReco(pool, summary, discover) {
   try {
     localStorage.setItem(_TASTE_RECO_KEY, JSON.stringify({
+      v: _TASTE_RECO_VERSION,
       day: _todayKey(),
       username: (_account && _account.username) || '',
       pool, summary, discover: !!discover, at: 0,
