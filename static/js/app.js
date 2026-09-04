@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260904.35');
+    _shareCardsModule = import('./share-cards.js?v=20260904.36');
   }
   return _shareCardsModule;
 }

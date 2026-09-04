@@ -89,26 +89,27 @@ function fitWrappedBlock(ctx, value, maxWidth, maxHeight, options = {}) {
   };
 }
 
-function drawBackground(ctx, accent = '#00e054') {
+function drawBackground(ctx, accent = '#00e054', width = WIDTH, height = HEIGHT) {
   ctx.fillStyle = '#0b0f11';
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  const glow = ctx.createRadialGradient(860, 180, 20, 860, 180, 650);
+  ctx.fillRect(0, 0, width, height);
+  const glowX = width - 220;
+  const glow = ctx.createRadialGradient(glowX, 180, 20, glowX, 180, 650);
   glow.addColorStop(0, `${accent}33`);
   glow.addColorStop(0.55, `${accent}0c`);
   glow.addColorStop(1, 'rgba(11,15,17,0)');
   ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillRect(0, 0, width, height);
   ctx.strokeStyle = 'rgba(255,255,255,.035)';
   ctx.lineWidth = 1;
-  for (let x = 0; x <= WIDTH; x += 54) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT); ctx.stroke();
+  for (let x = 0; x <= width; x += 54) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
   }
-  for (let y = 0; y <= HEIGHT; y += 54) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke();
+  for (let y = 0; y <= height; y += 54) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
   }
 }
 
-function drawBrand(ctx) {
+function drawBrand(ctx, width = WIDTH) {
   const dots = ['#ff8000', '#00e054', '#40bcf4'];
   dots.forEach((color, i) => {
     ctx.beginPath(); ctx.arc(74 + i * 22, 78, 7, 0, Math.PI * 2);
@@ -122,19 +123,22 @@ function drawBrand(ctx) {
   font(ctx, 20, 600);
   ctx.fillStyle = 'rgba(224,226,230,.45)';
   ctx.textAlign = 'right';
-  ctx.fillText('SİNEFİL PROFİL KARTI', 1006, 78);
+  ctx.fillText('SİNEFİL PROFİL KARTI', width - 74, 78);
 }
 
-function drawFooter(ctx, label) {
+function drawFooter(ctx, label, width = WIDTH, height = HEIGHT) {
   ctx.strokeStyle = 'rgba(255,255,255,.1)';
-  ctx.beginPath(); ctx.moveTo(72, 1252); ctx.lineTo(1008, 1252); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(72, height - 98);
+  ctx.lineTo(width - 72, height - 98);
+  ctx.stroke();
   font(ctx, 22, 600);
   ctx.fillStyle = 'rgba(224,226,230,.55)';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(label, 72, 1296);
+  ctx.fillText(label, 72, height - 54);
   ctx.textAlign = 'right';
-  ctx.fillText(SITE_LABEL, 1008, 1296);
+  ctx.fillText(SITE_LABEL, width - 72, height - 54);
 }
 
 function shareImageProxyURL(subject) {
@@ -280,10 +284,10 @@ async function drawCompactPosterGrid(ctx, films, y, accent) {
   });
 }
 
-function makeCanvas() {
+function makeCanvas(width = WIDTH, height = HEIGHT) {
   const canvas = document.createElement('canvas');
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = width;
+  canvas.height = height;
   return canvas;
 }
 
@@ -436,70 +440,96 @@ export async function renderPersonalityShareCard(profile) {
   };
 }
 
-// Günce kartı: ızgara yerine okunabilir bir liste — sıra, afiş, başlık, puan.
+// Günce kartı: 16:9 çerçevede 5 + 5 afiş. Dikey listede onuncu satır alt
+// bilgiyle çakışıyordu; iki sıralı ızgarada afişler hem büyük hem de çakışmaz.
+const WIDE_WIDTH = 1920;
+const WIDE_HEIGHT = 1080;
+
 export async function renderRecentFilmsShareCard(films, profile) {
   const visible = (films || []).filter(Boolean).slice(0, 10);
   if (!visible.length) throw new Error('Son izlenen film listesi henüz hazır değil.');
   if (document.fonts?.ready) await document.fonts.ready;
   const accent = '#6ccdff';
-  const canvas = makeCanvas();
+  const canvas = makeCanvas(WIDE_WIDTH, WIDE_HEIGHT);
   const ctx = canvas.getContext('2d');
-  drawBackground(ctx, accent);
-  drawBrand(ctx);
+  drawBackground(ctx, accent, WIDE_WIDTH, WIDE_HEIGHT);
+  drawBrand(ctx, WIDE_WIDTH);
   const username = clean(profile?.account?.username || profile?.username || 'kullanıcı');
 
   font(ctx, 18, 700);
-  drawLines(ctx, ['GÜNCE · SON İZLENENLER'], 72, 152, 22, accent);
-  font(ctx, 50, 700);
-  drawLines(ctx, [`Son ${visible.length} film`], 72, 188, 60, '#e0e2e6');
-  font(ctx, 24, 600);
-  drawLines(ctx, [`@${username}`], 72, 254, 30, 'rgba(186,203,182,.7)');
+  drawLines(ctx, ['GÜNCE · SON İZLENENLER'], 72, 118, 22, accent);
+  font(ctx, 46, 700);
+  drawLines(ctx, [`Son ${visible.length} film`], 72, 150, 56, '#e0e2e6');
+  font(ctx, 22, 600);
+  drawLines(ctx, [`@${username}`], 72, 206, 26, 'rgba(186,203,182,.7)');
 
   const images = await Promise.all(visible.map(film => loadShareImage(film)));
-  const rowHeight = 96;
-  const gap = 8;
-  const posterWidth = 56;
-  const posterHeight = 84;
-  const top = 320;
+  const columns = 5;
+  const posterWidth = 230;
+  const posterHeight = 345;
+  const gapX = 80;
+  const gapY = 26;
+  const rowWidth = columns * posterWidth + (columns - 1) * gapX;
+  const startX = (WIDE_WIDTH - rowWidth) / 2;
+  const startY = 250;
 
   visible.forEach((film, index) => {
-    const y = top + index * (rowHeight + gap);
-    fillRounded(ctx, 72, y, 936, rowHeight, 22, 'rgba(29,32,35,.88)');
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = startX + column * (posterWidth + gapX);
+    const y = startY + row * (posterHeight + gapY);
+    drawPoster(ctx, images[index], film, x, y, posterWidth, posterHeight, accent);
 
-    font(ctx, 26, 700);
-    ctx.fillStyle = `${accent}cc`;
-    ctx.textAlign = 'right';
-    ctx.fillText(String(index + 1), 128, y + rowHeight / 2 + 9);
+    // Sıra rozeti afişin sol üstünde, puan sağ üstünde: ikisi de afişin
+    // içinde durduğu için satırlar birbirine taşmıyor.
+    ctx.beginPath();
+    ctx.arc(x + 30, y + 30, 20, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(11,15,17,.78)';
+    ctx.fill();
+    font(ctx, 20, 700);
+    ctx.fillStyle = accent;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(index + 1), x + 30, y + 31);
     ctx.textAlign = 'left';
 
-    drawPoster(ctx, images[index], film, 148, y + (rowHeight - posterHeight) / 2, posterWidth, posterHeight, accent);
-
     const rating = Number(film.user_rating);
-    const hasRating = Number.isFinite(rating) && rating > 0;
-    const textLeft = 148 + posterWidth + 24;
-    const textWidth = hasRating ? 620 : 720;
-    font(ctx, 30, 700);
-    drawLines(ctx, [fitText(ctx, film.title || 'Film', textWidth)], textLeft, y + 30, 34, '#e0e2e6');
-
-    const meta = [film.year || film.release_year, clean(film.director)].filter(Boolean).join(' · ');
-    if (meta) {
-      font(ctx, 21, 500);
-      drawLines(ctx, [fitText(ctx, meta, textWidth)], textLeft, y + 62, 24, 'rgba(186,203,182,.6)');
+    if (Number.isFinite(rating) && rating > 0) {
+      const label = `★ ${rating.toFixed(1)}`;
+      font(ctx, 19, 700);
+      const pillWidth = ctx.measureText(label).width + 26;
+      fillRounded(ctx, x + posterWidth - pillWidth - 12, y + 12, pillWidth, 36, 18, 'rgba(11,15,17,.78)');
+      ctx.fillStyle = accent;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, x + posterWidth - pillWidth / 2 - 12, y + 31);
+      ctx.textAlign = 'left';
     }
 
-    if (hasRating) {
-      font(ctx, 28, 700);
-      ctx.fillStyle = accent;
-      ctx.textAlign = 'right';
-      ctx.fillText(`★ ${rating.toFixed(1)}`, 968, y + rowHeight / 2 + 10);
-      ctx.textAlign = 'left';
+    font(ctx, 21, 700);
+    const titleLines = wrapTextLines(ctx, film.title || 'Film', posterWidth - 28, 2);
+    const meta = [film.year || film.release_year, clean(film.director)].filter(Boolean).join(' · ');
+    const titleTop = y + posterHeight - 22 - titleLines.length * 25 - (meta ? 24 : 0);
+    drawLines(ctx, titleLines, x + 14, titleTop, 25, '#ffffff');
+    if (meta) {
+      font(ctx, 17, 500);
+      drawLines(
+        ctx,
+        [fitText(ctx, meta, posterWidth - 28)],
+        x + 14,
+        titleTop + titleLines.length * 25 + 2,
+        20,
+        'rgba(224,226,230,.62)',
+      );
     }
   });
 
-  drawFooter(ctx, `@${username} · Letterboxd güncesi`);
+  drawFooter(ctx, `@${username} · Letterboxd güncesi`, WIDE_WIDTH, WIDE_HEIGHT);
 
   return {
     blob: await canvasBlob(canvas),
+    width: WIDE_WIDTH,
+    height: WIDE_HEIGHT,
     filename: `movieboxd-son-filmler-${username}.png`,
     title: 'Son izlediğim filmler',
     text: `@${username} · son izlediğim ${visible.length} film`,
@@ -530,7 +560,7 @@ export function openShareCardPreview(card) {
   image.src = previewObjectURL;
   image.alt = card.title;
   title.textContent = card.title;
-  status.textContent = '1080 × 1350 PNG hazır';
+  status.textContent = `${card.width || WIDTH} × ${card.height || HEIGHT} PNG hazır`;
   const file = typeof File === 'function'
     ? new File([card.blob], card.filename, { type: 'image/png' })
     : null;

@@ -110,7 +110,9 @@
       "Bash(git diff *)",
       "Bash(git apply *)",
       "Bash(git commit *)",
-      "Bash(python -m pytest tests/test_frontend_contract.py::test_png_share_renderer_is_lazy_loaded_on_first_share_action -q)"
+      "Bash(python -m pytest tests/test_frontend_contract.py::test_png_share_renderer_is_lazy_loaded_on_first_share_action -q)",
+      "Bash(node --check static/js/share-cards.js)",
+      "Bash(python -m pytest tests/test_frontend_contract.py::test_three_png_share_modules_are_wired_to_native_share_and_download -q)"
     ]
   }
 }

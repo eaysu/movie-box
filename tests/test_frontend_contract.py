@@ -77,9 +77,13 @@ def test_three_png_share_modules_are_wired_to_native_share_and_download():
     assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watched')" in app_js
     assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watchlist')" in app_js
     assert "shareCards.renderPersonalityShareCard(_persistedProfile)" in app_js
-    assert "canvas.width = WIDTH" in share_js
+    assert "function makeCanvas(width = WIDTH, height = HEIGHT)" in share_js
     assert "const WIDTH = 1080" in share_js
     assert "const HEIGHT = 1350" in share_js
+    # The recent-films card is a 16:9 frame, so the shared helpers take a size.
+    assert "const WIDE_WIDTH = 1920" in share_js
+    assert "const WIDE_HEIGHT = 1080" in share_js
+    assert "drawFooter(ctx, label, width = WIDTH, height = HEIGHT)" in share_js
     assert "/api/share/image?${query}" in share_js
     assert "fitWrappedBlock" in share_js
     assert "data.avatar_url1" in share_js
@@ -316,9 +320,9 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "6e2670ff49d2363e96bba39df38c3ba57d3e3a5adc5e3195ec098f12852bd70b",
+        "static/js/app.js": "d2818cf3fcdbc0831219e4c1ff065a240741d25b7751a12a905f2dcb578708f8",
         "static/app.css": "51e19ea0aa3bc5aa18f74da4438e4f1fe7955458137a2b6790f6c6e72bab440c",
-        "static/js/share-cards.js": "879f99de4de0a60380de8c01acab49b5337290df77b00ad5b6c40e28a0a1cac2",
+        "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -351,9 +355,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260904.24"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260904.35" in html
+    assert "/static/js/app.js?v=20260904.36" in html
     assert app_js.count(f"?{dependency_version}") == 5
-    assert "./share-cards.js?v=20260904.35" in app_js
+    assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -367,7 +371,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260904.35')" in imports
+    assert "import('./share-cards.js?v=20260904.36')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 
