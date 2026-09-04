@@ -25,10 +25,9 @@ OpenAI key, the final step falls back to local similarity ordering.
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.12 (see `runtime.txt`).
 
 ```bash
-cd letterboxd-recommender
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
@@ -45,38 +44,84 @@ Open http://localhost:8000
 
 ## API
 
+**Service**
+
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/health` | Shows which integrations are configured |
-| `GET /api/public/stats` | Returns the cached total of active registered users for the public hero |
 | `GET /api/readiness` | Returns 200 only when auth config and required Supabase tables are usable |
+| `GET /api/public/stats` | Returns the cached total of active registered users for the public hero |
+| `GET /api/share/image` | Proxies an allow-listed remote image for share-card rendering |
+
+**Auth**
+
+| Endpoint | Purpose |
+|----------|---------|
 | `POST /api/auth/register/start` | Creates a pending account and bio challenge |
 | `POST /api/auth/register/verify` | Verifies Letterboxd ownership |
 | `POST /api/auth/login` | Opens an HttpOnly cookie session |
+| `GET /api/auth/me` | Returns the signed-in account |
+| `POST /api/auth/refresh` | Rotates the session cookie pair |
+| `POST /api/auth/logout` | Clears the session |
+| `POST /api/auth/password-reset/start` | Issues a bio challenge for recovery |
+| `POST /api/auth/password-reset/finish` | Sets a new password after verification |
+| `DELETE /api/data` | Deletes the signed-in account and username-scoped caches |
+
+**Profile**
+
+| Endpoint | Purpose |
+|----------|---------|
 | `GET /api/profile/me` | Returns the stored profile and taste snapshot |
-| `GET /api/profile/directors/{rank}/films` | Lazy-loads one ranked director's watched films |
+| `GET /api/profile/sync-status` | Lightweight progress poll during a crawl |
 | `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
+| `POST /api/profile/watchlist/check` | One-page freshness check; full crawl only on change |
+| `POST /api/profile/onboarding-complete` | Persists onboarding completion |
 | `POST /api/profile/discovery-settings` | Opts the signed-in user into/out of Sinefil Sineması |
+| `GET /api/profile/directors/{rank}/films` | Lazy-loads one ranked director's watched films |
+| `GET /api/profile/watched` | Searches the stored watched history |
+| `GET /api/profile/recent` | Lists recently logged films |
+| `GET /api/profile/stats` | Returns aggregate profile counters |
+| `GET /api/profile/film-overview` | Lazy-loads one film's overview text |
+| `GET/PUT /api/profile/top-films` | Reads/saves the user-curated top ten |
+
+**Recommendations**
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
+| `POST /api/random` | Three unlimited random picks from films other members watched and this user has not |
+
+**Sinefil Sineması & letters**
+
+| Endpoint | Purpose |
+|----------|---------|
 | `GET /api/sinefil-alani` | Lists opted-in, safe profile cards ranked by taste overlap |
 | `GET /api/sinefil-alani/{username}/personality` | Lazy-loads an opted-in profile's Fav 4 reading |
 | `GET/PUT /api/letters/key-material` | Reads/writes only the caller's device public encryption key |
 | `POST /api/letters/receiving` | Opens or closes voluntary letter receiving |
 | `GET/POST /api/letters` | Lists opaque inbox packets or sends one client-encrypted letter per 24h |
+| `GET /api/letters/unread-count` | Badge count for the inbox |
+| `GET /api/letters/send-status` | Remaining 24h send allowance |
+| `POST /api/letters/{id}/read` | Marks one letter read |
 | `GET /api/letters/recipients/{username}` | Gets an eligible recipient's public encryption key |
-| `POST /api/recommendations/feedback` | Saves watch/skip/block feedback for a recommendation |
-| `GET /api/recommendations/history` | Lists active recommendation preferences and event history |
-| `DELETE /api/recommendations/feedback/{slug}` | Undoes a saved recommendation preference |
+
+**Blend & safety**
+
+| Endpoint | Purpose |
+|----------|---------|
 | `GET /api/users/search?q=` | Finds active registered Movieboxd users |
 | `POST/DELETE /api/users/{username}/block` | Blocks/unblocks a user and cancels pending requests |
 | `POST /api/users/{username}/report` | Stores a rate-limited safety report |
 | `POST /api/blends/requests` | Sends a consent-based Blend request |
 | `GET /api/blends` | Lists inbox, sent requests and history |
+| `GET /api/blends/pending-count` | Inbox badge count |
+| `DELETE /api/blends/requests/{id}` | Requester cancels a pending request |
 | `POST /api/blends/requests/{id}/decision` | Recipient accepts or rejects |
 | `POST /api/blends/requests/{id}/result` | Retries an accepted result safely |
-| `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
-| `POST /api/random` | Three random picks from the user's watchlist |
+| `GET /api/blends/requests/{id}/result` | Lazy-loads a stored Blend result |
+| `POST /api/blends/{id}/refresh` | Recomputes an accepted Blend |
+| `DELETE /api/blends/{id}` | Removes a Blend from both histories |
 | `POST /api/blend` | Legacy anonymous Blend; disabled in account mode |
-| `DELETE /api/data` | Deletes the signed-in account and username-scoped caches |
 
 ### Sinefil Mektupları
 
@@ -97,11 +142,23 @@ python -m scripts.admin_users --username enesaysu --json
 python -m scripts.admin_users --include-non-active
 ```
 
+Rows are numbered and ordered by most recent activity (last recorded event,
+falling back to last sync, then registration). Each row carries, per account:
+Sinefil Sineması visibility
+(`online`/`offline`), the letter inbox preference, letter volume as
+sent/received/unread, the last send date, scan progress, watched and watchlist
+counts, Blend sent/received/completed, recommendation success rate, random
+picks, sync requests, logins and last activity. A summary line closes the table
+with how many accounts are visible and who has sent letters. Letters are
+counted only — bodies and film gifts are end-to-end encrypted and unreadable to
+the server, and recipients are deliberately not reported.
+
 Run the current `supabase/schema.sql` in Supabase SQL Editor before using the
-command. The `user_activity_events` table records bounded product events such
-as profile sync lifecycle, recommendation success/failure, random picks,
-onboarding completion and Blend lifecycle actions. Event writes are
-best-effort and never block the user-facing flow.
+command; an outdated report function makes the letter and visibility columns
+print as `-` with a hint. The `user_activity_events` table records bounded
+product events such as profile sync lifecycle, recommendation success/failure,
+random picks, onboarding completion and Blend lifecycle actions. Event writes
+are best-effort and never block the user-facing flow.
 
 The browser client handles the HttpOnly session and CSRF header. If account
 environment variables are absent, the legacy username-only endpoints remain
@@ -152,36 +209,62 @@ Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
   secondary boost; cached TMDb filmographies identify matching watchlist titles
   before shortlist pruning.
   LLM context includes explicit 3.5+ ratings (with their scores); unrated history
-  is used only when the profile has no rating data.
+  is used only when the profile has no rating data. Taste mode returns up to
+  `NUM_RECOMMENDATIONS` (default 5) films; the last card offers the random mode
+  as a way out instead of a dead end.
+- Random mode is watchlist-independent and unlimited. Its pool is what other
+  members have watched and this account has not (`community_random_films`,
+  low-rated titles excluded), falling back to TMDb Discover when the membership
+  has no usable history yet. It never scrapes Letterboxd, so it has its own
+  generous rate-limit bucket instead of the shared analysis budget.
 - Without Supabase, caches live in `data/cache.sqlite3` and are ephemeral on hosts
   without persistent disks.
 
 ## Project layout
 
 ```
-letterboxd-recommender/
+movie-box/
 ├── app/
 │   ├── config.py        settings / .env loading
 │   ├── auth.py          username-first Supabase Auth and ownership challenges
+│   ├── database.py      Supabase service client
 │   ├── cache.py         layered SQLite/Supabase key-value cache
-│   ├── scraper.py       layer 1 — watchlist scraping
+│   ├── rate_limit.py    per-IP budgets for auth, heavy and delete routes
+│   ├── scraper.py       layer 1 — profile/watchlist/diary scraping
 │   ├── enrich.py        layer 2 — TMDb enrichment
 │   ├── recommender.py   layer 3 — rating-aware similarity ranking
 │   ├── taste_profile.py persisted taste summary and confidence
-│   ├── llm.py           layer 4 — LLM reranking
+│   ├── profile_sync.py  checkpointed full/incremental history crawl
+│   ├── llm.py           layer 4 — LLM reranking and taste prose
 │   └── main.py          FastAPI app
 ├── scripts/
-│   ├── check_scraper.py direct scraper canary
+│   ├── check_scraper.py direct scraper canary (also runs in CI daily)
 │   ├── check_profiles.py isolated real-profile pipeline check
-│   └── warm_cache.py    profile cache warmer
+│   ├── warm_cache.py    profile cache warmer
+│   ├── reset_profile.py clears one profile's stored snapshot
+│   ├── admin_users.py   local-only aggregate activity report
+│   └── generate_og.py   regenerates static/og-image-v3.png
 ├── static/
 │   ├── index.html       semantic frontend shell
+│   ├── css/source.css   Tailwind source
 │   ├── app.css          generated production Tailwind CSS
-│   └── js/              auth/api/profile/recommendation/blend modules
+│   └── js/              auth/api/profile/recommendation/blend/letters modules
+├── frontend/lumina_cinematic/DESIGN.md   design token reference
+├── supabase/schema.sql  tables, RPCs, RLS and grants
+├── tests/               pytest suite
 ├── package.json         frontend CSS build and JS syntax checks
 ├── requirements.txt
 └── .env.example
 ```
+
+## Product documentation
+
+| Document | Contents |
+|----------|----------|
+| [IMPROVEMENT_CHECKLIST.md](IMPROVEMENT_CHECKLIST.md) | Running engineering checklist (Turkish) |
+| [REKABET_ANALIZI.md](REKABET_ANALIZI.md) | Competitive research and feature inventory (Turkish) |
+| [OZELLIK_TASARIMI.md](OZELLIK_TASARIMI.md) | Design of the approved next features (Turkish) |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Screening bulletin and Letterboxd import plan |
 
 ## Account rollout
 

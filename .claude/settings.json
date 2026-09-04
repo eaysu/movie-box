@@ -105,7 +105,11 @@
       "Bash(python -c \"import app.main\")",
       "Bash(python -m pytest tests/test_api_integration.py::SseIntegrationTests::test_rate_limit_budget_is_shared_between_modes tests/test_product_behavior.py::ProductBehaviorTests::test_random_pick_has_a_short_reason -q)",
       "Bash(node -e ' *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(git reset *)",
+      "Bash(git diff *)",
+      "Bash(git apply *)",
+      "Bash(git commit *)"
     ]
   }
 }
