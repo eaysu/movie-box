@@ -1,5 +1,6 @@
-import unittest
 import asyncio
+import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -7,6 +8,7 @@ from app.auth import Account
 from app.enrich import EnrichedFilm
 from app.main import (
     _add_random_reasons,
+    _diary_recent_rows,
     _check_profile_watchlist_freshness,
     _community_random_pool,
     _community_reason,
@@ -260,3 +262,78 @@ class ProductBehaviorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecentFilmsOrderTests(unittest.TestCase):
+    """The "Son filmler" card must show watch order, not release order.
+
+    `user_watched_films.watched_rank` follows Letterboxd's /films/ listing,
+    which is ordered by release date. Caching that as if it were the diary is
+    what made the card show the newest films instead of the last ones watched.
+    """
+
+    def _account(self):
+        return Account(id=1, auth_user_id="auth-1", username="film_fan", display_name="Fan")
+
+    def _settings(self):
+        return SimpleNamespace(scrape_max_retries=1)
+
+    def test_diary_order_is_reported_as_watch_order(self):
+        diary = [ScrapedFilm(title="Son İzlenen", year=1959, slug="son-izlenen")]
+        service = SimpleNamespace(
+            watched_films_by_slugs=lambda _id, _slugs: {},
+            list_recent_watched=lambda _id, _limit: [],
+        )
+
+        with patch("app.main.scrape_diary", new=AsyncMock(return_value=(diary, True))):
+            rows, watch_order = asyncio.run(
+                _diary_recent_rows(self._account(), service, self._settings(), 10)
+            )
+
+        self.assertTrue(watch_order)
+        self.assertEqual(rows[0]["title"], "Son İzlenen")
+
+    def test_rss_is_tried_before_falling_back_to_stored_order(self):
+        rss = [ScrapedFilm(title="RSS Filmi", year=2001, slug="rss-filmi")]
+        service = SimpleNamespace(
+            watched_films_by_slugs=lambda _id, _slugs: {},
+            list_recent_watched=lambda _id, _limit: [{"title": "Yanlış Sıra"}],
+        )
+
+        with (
+            patch("app.main.scrape_diary", new=AsyncMock(return_value=([], True))),
+            patch("app.main._scrape_watched_rss", new=AsyncMock(return_value=rss)),
+        ):
+            rows, watch_order = asyncio.run(
+                _diary_recent_rows(self._account(), service, self._settings(), 10)
+            )
+
+        self.assertTrue(watch_order)
+        self.assertEqual(rows[0]["title"], "RSS Filmi")
+
+    def test_stored_fallback_is_flagged_as_not_watch_order(self):
+        service = SimpleNamespace(
+            watched_films_by_slugs=lambda _id, _slugs: {},
+            list_recent_watched=lambda _id, _limit: [{"title": "Çıkış Sırası"}],
+        )
+
+        with (
+            patch("app.main.scrape_diary", new=AsyncMock(return_value=([], True))),
+            patch("app.main._scrape_watched_rss", new=AsyncMock(return_value=[])),
+        ):
+            rows, watch_order = asyncio.run(
+                _diary_recent_rows(self._account(), service, self._settings(), 10)
+            )
+
+        self.assertFalse(watch_order)
+        self.assertEqual(rows[0]["title"], "Çıkış Sırası")
+
+    def test_only_real_watch_order_is_cached(self):
+        main = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+        endpoint = main.split('@app.get("/api/profile/recent")', 1)[1].split("@app.", 1)[0]
+
+        self.assertIn("if watch_order:", endpoint)
+        self.assertLess(
+            endpoint.index("if watch_order:"),
+            endpoint.index('pcache.set, "films_diary_recent"'),
+        )

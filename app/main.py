@@ -53,6 +53,7 @@ from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
     AccessBlockedError,
+    _scrape_watched_rss,
     EmptyListError,
     ScrapedFilm,
     ScrapedProfile,
@@ -1931,8 +1932,16 @@ async def _random_discover_pool(settings, service, account, cache, limit=RANDOM_
     )
 
 
-async def _diary_recent_rows(account: Account, service, settings, limit: int) -> list[dict]:
-    """Last `limit` diary entries in true watch order, hydrated from the DB."""
+async def _diary_recent_rows(
+    account: Account, service, settings, limit: int
+) -> tuple[list[dict], bool]:
+    """Last `limit` films in real watch order. Returns (rows, is_watch_order).
+
+    Two sources carry the order a member actually watched in: the diary pages
+    and the RSS feed. The stored history does not — `watched_rank` follows the
+    /films/ listing, which is ordered by release date — so falling back to it
+    answers a different question, and the caller is told when that happened.
+    """
     try:
         films, _ = await scrape_diary(
             account.username, max_pages=1, film_limit=max(limit + 5, 15),
@@ -1942,8 +1951,14 @@ async def _diary_recent_rows(account: Account, service, settings, limit: int) ->
         films = []
     scraped = [f for f in films if f.slug][:limit]
     if not scraped:
-        # Diary private/blocked → fall back to the swept-history order.
-        return await asyncio.to_thread(service.list_recent_watched, account.id, limit)
+        # The RSS feed is the other genuine watch-order source and costs one
+        # request, so it is tried before giving up on chronology.
+        with contextlib.suppress(Exception):
+            rss = await _scrape_watched_rss(account.username)
+            scraped = [f for f in rss if f.slug][:limit]
+    if not scraped:
+        rows = await asyncio.to_thread(service.list_recent_watched, account.id, limit)
+        return rows, False
     by_slug = await asyncio.to_thread(
         service.watched_films_by_slugs, account.id, [f.slug for f in scraped]
     )
@@ -1960,7 +1975,7 @@ async def _diary_recent_rows(account: Account, service, settings, limit: int) ->
             "user_rating": rating,
             "tmdb_id": d.get("tmdb_id"),
         })
-    return out
+    return out, True
 
 
 @app.get("/api/profile/recent")
@@ -1982,11 +1997,15 @@ async def profile_recent_films(
     if cached:
         rows = cached
     else:
-        rows = await _diary_recent_rows(account, service, settings, 10)
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(
-                pcache.set, "films_diary_recent", account.username, rows
-            )
+        rows, watch_order = await _diary_recent_rows(account, service, settings, 10)
+        # Caching a release-ordered fallback under the diary key is what made
+        # this card show the newest films for an hour at a time; only real
+        # watch order is worth storing.
+        if watch_order:
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(
+                    pcache.set, "films_diary_recent", account.username, rows
+                )
     await _fill_overviews(service, rows, max(0, min(preview, 10)))
     return {"films": rows}
 

@@ -116,7 +116,9 @@ CREATE TABLE IF NOT EXISTS public.user_watched_films (
   rating_observed BOOLEAN NOT NULL DEFAULT FALSE,
   poster_url     TEXT,
   poster_resolver_url TEXT,
-  watched_rank   INTEGER,          -- diary position; 0 = most recent (chronological proxy)
+  watched_rank   INTEGER,          -- /films/ listing position, which Letterboxd
+                                   -- orders by release date. NOT watch order:
+                                   -- diary pages or the RSS feed give that.
   details_loaded BOOLEAN NOT NULL DEFAULT FALSE,
   last_seen_run_id UUID,
   is_active      BOOLEAN NOT NULL DEFAULT TRUE,
