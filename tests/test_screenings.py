@@ -421,3 +421,27 @@ class VenueResilienceTests(unittest.TestCase):
         self.assertIn("site down", service.failures["broken"])
         # The release layer has its own ingest and is skipped here.
         self.assertNotIn("release", service.written)
+
+
+class DigestCacheTests(unittest.TestCase):
+    """An empty week must not be frozen for seven days.
+
+    The first version cached whatever it computed, so a card built while the
+    programme was still being ingested pinned "nothing found" until Monday.
+    """
+
+    def test_empty_digest_is_not_persisted(self):
+        main = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+        bulletin = main.split('@app.get("/api/bulletin")', 1)[1].split("@app.get", 1)[0]
+
+        self.assertIn('if digest.get("total"):', bulletin)
+        save_at = bulletin.index("save_bulletin_digest")
+        guard_at = bulletin.index('if digest.get("total"):')
+        self.assertLess(guard_at, save_at)
+
+    def test_a_new_programme_invalidates_the_weeks_cards(self):
+        main = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+        auth = (Path(__file__).parents[1] / "app" / "auth.py").read_text()
+
+        self.assertIn("clear_bulletin_digests", main)
+        self.assertIn("def clear_bulletin_digests", auth)

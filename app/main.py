@@ -2014,7 +2014,12 @@ def _kick_bulletin_ingest(settings, service) -> None:
             await screenings.ingest_release_layer(service, settings, enricher=enricher)
             # Venues run after the release layer so their titles can match
             # against films it has just resolved.
-            await screenings.ingest_venues(service, enricher=enricher)
+            written = await screenings.ingest_venues(service, enricher=enricher)
+            # A changed programme invalidates every card built from the old one.
+            if written:
+                await asyncio.to_thread(
+                    service.clear_bulletin_digests, screenings.week_start().isoformat()
+                )
         except Exception as exc:  # noqa: BLE001 - never surface to the caller
             log.warning("bulletin ingest failed: %s", exc)
 
@@ -2071,9 +2076,13 @@ async def bulletin(request: Request, city: str = "") -> dict:
     digest = screenings.build_digest(
         rows, watched, watchlist_slugs, (stored or {}).get("taste") or {}
     )
-    await asyncio.to_thread(
-        service.save_bulletin_digest, account.id, week, selected, digest
-    )
+    # An empty digest is not worth a week of cache: the programme is still
+    # being ingested, or a title has not resolved yet, and both heal on their
+    # own. Only a card with something in it gets frozen for the week.
+    if digest.get("total"):
+        await asyncio.to_thread(
+            service.save_bulletin_digest, account.id, week, selected, digest
+        )
     await _record_activity_event(
         service, account, "bulletin_viewed", {"total": digest.get("total", 0)}
     )

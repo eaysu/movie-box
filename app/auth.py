@@ -1465,6 +1465,13 @@ class AuthService:
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }, on_conflict="user_id,week_start,city").execute()
 
+    def clear_bulletin_digests(self, week_start: str) -> None:
+        """Drop one week's cards so the next visit rebuilds them."""
+        with contextlib.suppress(Exception):
+            self._service_client().table("bulletin_digests").delete().eq(
+                "week_start", week_start
+            ).execute()
+
     def get_rated_watched_films(self, user_id: int) -> list[dict]:
         """Only the fields the bulletin needs, so this stays a cheap read."""
         try:
