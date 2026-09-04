@@ -97,13 +97,12 @@ Open http://localhost:8000
 |----------|---------|
 | `GET /api/sinefil-alani` | Lists opted-in, safe profile cards ranked by taste overlap |
 | `GET /api/sinefil-alani/{username}/personality` | Lazy-loads an opted-in profile's Fav 4 reading |
-| `GET/PUT /api/letters/key-material` | Reads/writes only the caller's device public encryption key |
 | `POST /api/letters/receiving` | Opens or closes voluntary letter receiving |
-| `GET/POST /api/letters` | Lists opaque inbox packets or sends one client-encrypted letter per 24h |
+| `GET/POST /api/letters` | Lists the caller's letters or sends one per 24h |
 | `GET /api/letters/unread-count` | Badge count for the inbox |
 | `GET /api/letters/send-status` | Remaining 24h send allowance |
 | `POST /api/letters/{id}/read` | Marks one letter read |
-| `GET /api/letters/recipients/{username}` | Gets an eligible recipient's public encryption key |
+| `GET /api/letters/recipients/{username}` | Confirms a recipient is eligible and returns their card |
 
 **Blend & safety**
 
@@ -125,10 +124,22 @@ Open http://localhost:8000
 
 ### Sinefil Mektupları
 
-Mektuplar cihaz-yerel bir ECDH anahtarıyla korunur. Tarayıcı ECDH P-256, HKDF ve
-AES-GCM kullanarak gövdeyi ve isteğe bağlı film hediyesini şifreler; API yalnızca
-şifreli paketi taşır. Anahtar tarayıcının IndexedDB deposundadır; tarayıcı verisi
-silinir veya başka cihaza geçilirse eski mektuplar teknik olarak açılamaz.
+Mektuplar hesaba bağlıdır: kullanıcı giriş yaptığı her cihazda aynı mektupları
+görür. Önceki tasarımda anahtar yalnızca tarayıcının IndexedDB deposunda
+durduğu için ikinci bir cihaza girmek hem eski mektupları okunamaz yapıyor hem
+de sunucudaki public key'i değiştirerek ilk cihazı bozuyordu; bu yüzden uçtan
+uca şifreleme kaldırıldı.
+
+Gizliliği artık erişim kuralları sağlıyor: bir mektubu yalnızca gönderen ve
+alıcı listeleyebilir, engelleme iki taraftaki mektupları siler, admin raporu
+gövdeyi hiç seçmez. Servis mektupları teknik olarak okuyabilir — bu, ürünün
+verdiği sözün sınırıdır. Eski şifreli satırlar veritabanında kalır ama artık
+kimse tarafından açılamaz; arayüz bunu açıkça söyler.
+
+Mektup yollamak için kullanıcının kendi mektup kutusunun da açık olması gerekir
+(`letter_sender_closed`); kapalıysa arayüz kutuyu açmayı öneren bir modal
+gösterir. Gerekçesi: kapalı bir hesaptan gönderilen mektup, alıcının cevap
+veremediği tek yönlü bir kanal olur.
 
 ## Local admin activity report
 
@@ -150,8 +161,7 @@ sent/received/unread, the last send date, scan progress, watched and watchlist
 counts, Blend sent/received/completed, recommendation success rate, random
 picks, sync requests, logins and last activity. A summary line closes the table
 with how many accounts are visible and who has sent letters. Letters are
-counted only — bodies and film gifts are end-to-end encrypted and unreadable to
-the server, and recipients are deliberately not reported.
+counted only: the report never selects a body, a film gift or a recipient.
 
 Run the current `supabase/schema.sql` in Supabase SQL Editor before using the
 command; an outdated report function makes the letter and visibility columns

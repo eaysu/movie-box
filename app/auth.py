@@ -185,8 +185,7 @@ class AuthService:
             "blend_results": "id,request_id",
             "user_blocks": "blocker_user_id,blocked_user_id",
             "user_reports": "id,status",
-            "user_letter_keys": "user_id,public_key,key_version",
-            "cinephile_letters": "id,sender_user_id,recipient_user_id,read_at",
+            "cinephile_letters": "id,sender_user_id,recipient_user_id,body,read_at",
         }
         for table, columns in required.items():
             service.table(table).select(columns).limit(0).execute()
@@ -719,35 +718,11 @@ class AuthService:
         return bool(visible)
 
     # ── Sinefil Mektupları ─────────────────────────────────────────────
-    # The service only stores opaque browser-encrypted packets.  In particular,
-    # it never receives a letter lock password, a decrypted private key, message
-    # body, or film attachment.
-    def get_letter_key_material(self, account: Account) -> dict | None:
-        row = self._first(
-            self._service_client().table("user_letter_keys")
-            .select("public_key,key_version,created_at,updated_at")
-            .eq("user_id", account.id).limit(1).execute()
-        )
-        return row or None
-
-    def save_letter_key_material(self, account: Account, payload: dict) -> dict:
-        public_key = str(payload.get("public_key") or "")
-        if not (40 <= len(public_key) <= 512):
-            raise BlendServiceError("invalid_letter_key")
-        now = datetime.now(timezone.utc).isoformat()
-        row = self._service_client().table("user_letter_keys").upsert(
-            {
-                "user_id": account.id,
-                "public_key": public_key,
-                "key_version": 1,
-                "updated_at": now,
-            }, on_conflict="user_id"
-        ).execute()
-        return self._first(row) or {"public_key": public_key, "key_version": 1}
-
+    # Letters are stored as ordinary rows the service can read. The privacy
+    # boundary is access control: only the two participants can fetch a letter,
+    # blocking deletes the thread, and the admin report counts letters without
+    # ever selecting a body.
     def set_letter_receiving(self, account: Account, enabled: bool) -> bool:
-        if enabled and not self.get_letter_key_material(account):
-            raise BlendServiceError("letter_key_required")
         self._service_client().table("users").update(
             {"letter_receiving_enabled": bool(enabled), "updated_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", account.id).execute()
@@ -768,37 +743,60 @@ class AuthService:
         ).limit(1).execute().data or []
         if blocks:
             raise BlendServiceError("letter_recipient_unavailable")
-        key = self._first(service.table("user_letter_keys").select("public_key,key_version")
-            .eq("user_id", recipient["id"]).limit(1).execute())
-        if not key:
-            raise BlendServiceError("letter_recipient_unavailable")
         return {"username": recipient["username"], "display_name": recipient.get("display_name") or recipient["username"],
-                "avatar_url": recipient.get("avatar_url") or "", "public_key": key["public_key"],
-                "key_version": int(key.get("key_version") or 1)}
+                "avatar_url": recipient.get("avatar_url") or ""}
 
-    def send_letter(self, account: Account, recipient_username: str, envelope: dict) -> str:
-        required = ("ciphertext", "iv", "salt", "sender_public_key", "recipient_public_key")
-        if any(not isinstance(envelope.get(item), str) or not envelope[item] for item in required):
-            raise BlendServiceError("invalid_letter")
-        if len(envelope["ciphertext"]) > 12000 or any(len(envelope[item]) > 1024 for item in required[1:]):
-            raise BlendServiceError("invalid_letter")
+    def send_letter(
+        self, account: Account, recipient_username: str, body: str, film: dict | None = None
+    ) -> str:
+        text = str(body or "").strip()
+        if not 1 <= len(text) <= 600:
+            raise BlendServiceError("invalid_letter_body")
+        gift = self._letter_film_payload(film)
         try:
             result = self._service_client().rpc("send_cinephile_letter", {
                 "p_sender_user_id": account.id,
                 "p_recipient_username": recipient_username,
-                "p_envelope": envelope,
+                "p_body": text,
+                "p_film": gift,
             }).execute()
             return str(self._rpc_value(result))
         except Exception as exc:
             message = str(exc)
-            known = ("letter_recipient_unavailable", "letter_send_cooldown", "letter_blocked", "invalid_letter_envelope")
+            known = (
+                "letter_sender_closed",
+                "letter_recipient_unavailable",
+                "letter_send_cooldown",
+                "letter_blocked",
+                "invalid_letter_body",
+            )
             raise BlendServiceError(next((item for item in known if item in message), "letter_send_failed")) from exc
+
+    @staticmethod
+    def _letter_film_payload(film: dict | None) -> dict | None:
+        """Keep only the fields the letter card renders, bounded in size."""
+        if not isinstance(film, dict):
+            return None
+        slug = str(film.get("slug") or film.get("film_slug") or "")[:200]
+        title = str(film.get("title") or "")[:200]
+        if not slug or not title:
+            return None
+        year = film.get("year") or film.get("release_year")
+        try:
+            year = int(year) if year is not None else None
+        except (TypeError, ValueError):
+            year = None
+        return {
+            "slug": slug,
+            "title": title,
+            "year": year,
+            "poster_url": str(film.get("poster_url") or "")[:500] or None,
+        }
 
     def list_letters(self, account: Account) -> list[dict]:
         service = self._service_client()
         rows = service.table("cinephile_letters").select(
-            "id,sender_user_id,recipient_user_id,sender_public_key,recipient_public_key,"
-            "sender_key_version,recipient_key_version,ciphertext,iv,salt,created_at,read_at"
+            "id,sender_user_id,recipient_user_id,body,film,ciphertext,created_at,read_at"
         ).or_(f"sender_user_id.eq.{account.id},recipient_user_id.eq.{account.id}").order("created_at", desc=True).limit(100).execute().data or []
         peers = self._accounts_by_id(service, {
             int(row["recipient_user_id"] if int(row["sender_user_id"]) == account.id else row["sender_user_id"])
@@ -807,9 +805,12 @@ class AuthService:
         return [{
             "id": row["id"], "direction": "sent" if int(row["sender_user_id"]) == account.id else "received",
             "peer": peers.get(int(row["recipient_user_id"] if int(row["sender_user_id"]) == account.id else row["sender_user_id"])),
-            "sender_public_key": row["sender_public_key"], "recipient_public_key": row["recipient_public_key"],
-            "sender_key_version": int(row.get("sender_key_version") or 1), "recipient_key_version": int(row.get("recipient_key_version") or 1),
-            "ciphertext": row["ciphertext"], "iv": row["iv"], "salt": row["salt"], "created_at": row["created_at"], "read_at": row.get("read_at"),
+            "body": row.get("body") or "",
+            "film": row.get("film") or None,
+            # Rows written under the old device-key design can no longer be
+            # opened by anyone; the UI says so instead of showing an empty card.
+            "legacy_encrypted": not (row.get("body") or "") and bool(row.get("ciphertext")),
+            "created_at": row["created_at"], "read_at": row.get("read_at"),
         } for row in rows]
 
     def mark_letter_read(self, account: Account, letter_id: str) -> bool:

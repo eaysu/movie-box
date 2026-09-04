@@ -516,13 +516,11 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "block_failed": (400, "Kullanıcı engellenemedi."),
         "unblock_failed": (400, "Engel kaldırılamadı."),
         "report_failed": (400, "Bildirim gönderilemedi."),
-        "invalid_letter_key": (422, "Mektup anahtarı geçersiz."),
-        "letter_key_required": (409, "Mektupları açmadan önce şifreli mektup anahtarını oluşturmalısın."),
+        "letter_sender_closed": (409, "Mektup yollayabilmek için kendi mektup kutunu da açman gerekiyor."),
         "letter_recipient_unavailable": (403, "Bu kullanıcı şu anda mektup almaya açık değil."),
         "letter_send_cooldown": (429, "Bugün bir mektup gönderdin. Yeni bir mektup için 24 saat beklemelisin."),
         "letter_blocked": (403, "Bu kullanıcıyla mektuplaşamazsın."),
-        "invalid_letter": (422, "Mektup zarfı geçersiz."),
-        "invalid_letter_envelope": (422, "Mektup zarfı geçersiz."),
+        "invalid_letter_body": (422, "Mektup 1–600 karakter arasında olmalı."),
         "letter_send_failed": (503, "Mektup şu an gönderilemedi. Lütfen tekrar dene."),
     }
     status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
@@ -1095,30 +1093,27 @@ class DiscoveryVisibilityRequest(BaseModel):
     visible: bool
 
 
-class LetterKeyMaterialRequest(BaseModel):
-    public_key: str
-
-    @field_validator("public_key")
-    @classmethod
-    def validate_public_key(cls, value: str) -> str:
-        value = str(value or "").strip()
-        if not 40 <= len(value) <= 512:
-            raise ValueError("Geçersiz mektup anahtarı.")
-        return value
-
-
 class LetterReceivingRequest(BaseModel):
     enabled: bool
 
 
 class SendLetterRequest(BaseModel):
     recipient_username: str
-    envelope: dict
+    body: str
+    film: dict | None = None
 
     @field_validator("recipient_username", mode="before")
     @classmethod
     def validate_recipient(cls, value: str) -> str:
         return _normalize_username(value)
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not 1 <= len(value) <= 600:
+            raise ValueError("Mektup 1–600 karakter arasında olmalı.")
+        return value
 
 
 @app.get("/")
@@ -1522,25 +1517,6 @@ async def update_discovery_settings(
     return {"ok": True, "discoverable": visible}
 
 
-@app.get("/api/letters/key-material")
-async def get_letter_key_material(request: Request) -> dict:
-    """Return only the caller's opaque, browser-encrypted key envelopes."""
-    account = await _require_account(request)
-    material = await asyncio.to_thread(_auth_service().get_letter_key_material, account)
-    return {"key_material": material}
-
-
-@app.put("/api/letters/key-material")
-async def save_letter_key_material(req: LetterKeyMaterialRequest, request: Request) -> dict:
-    _require_csrf(request)
-    account = await _require_account(request)
-    material = await asyncio.to_thread(
-        _auth_service().save_letter_key_material, account, req.model_dump()
-    )
-    await _record_activity_event(_auth_service(), account, "letter_key_created", {})
-    return {"ok": True, "key_material": material}
-
-
 @app.post("/api/letters/receiving")
 async def update_letter_receiving(req: LetterReceivingRequest, request: Request) -> dict:
     _require_csrf(request)
@@ -1598,7 +1574,11 @@ async def send_letter(req: SendLetterRequest, request: Request) -> dict:
     account = await _require_account(request)
     try:
         letter_id = await asyncio.to_thread(
-            _auth_service().send_letter, account, req.recipient_username, req.envelope
+            _auth_service().send_letter,
+            account,
+            req.recipient_username,
+            req.body,
+            req.film,
         )
     except BlendServiceError as exc:
         _raise_blend_http(exc)

@@ -21,7 +21,7 @@ Letterboxd 26 milyon kullanıcıya ulaşmış bir platform ve etrafında üç ay
 
 ### Tek cümlelik konum
 
-> Movieboxd, tek atışlık zevk araçlarının verdiği şeyi **hafızası olan bir hesaba** bağlayan ve iki sinefil arasında **rızaya dayalı, uçtan uca şifreli bir kanal** açan tek üründür.
+> Movieboxd, tek atışlık zevk araçlarının verdiği şeyi **hafızası olan bir hesaba** bağlayan ve iki sinefil arasında **rızaya dayalı, özel bir yazışma kanalı** açan tek üründür.
 
 Bu konum savunulabilir; çünkü rakiplerin mimarisi (login yok, veritabanı yok, tek atış) onları bunu kopyalamaktan **yapısal olarak** alıkoyuyor. Ancak konumun bedeli, pazarın en yüksek aktivasyon sürtünmesi.
 
@@ -67,7 +67,7 @@ Nadirlik etiketleri: **[TEK BİZ]** pazarda başka kimsede yok · **[NADİR]** b
 | Özellik | Ne yapıyor | Nadirlik |
 |---|---|---|
 | **Onaylı Blend** | İstek → gelen kutusu → kabul akışı. 0–100 kalibre skor, skordan bağımsız veri-kapsamı göstergesi, ortak izlenenler ve ortak watchlist köprüsü (5 filme tamamlanıyor), kalıcı sonuç + geçmiş snapshot, 10 pending kota, 14 gün expiry. | **TEK BİZ** |
-| **Sinefil Mektupları** | Tarayıcıda ECDH P-256 + HKDF + AES-256-GCM; anahtar yalnızca cihazın IndexedDB'sinde, sunucuda yalnız şifreli paket. Günde bir mektup, opsiyonel film hediyesi, opt-in alma tercihi, engellemede iki taraftan silme. | **TEK BİZ** |
+| **Sinefil Mektupları** | Günde bir mektup, opsiyonel film hediyesi, opt-in alma tercihi, engellemede iki taraftan silme. Yollamak için gönderenin kutusunun da açık olması şart. Hesaba bağlıdır: her cihazdan okunur. (4 Eylül 2026'da uçtan uca şifreleme kaldırıldı — cihaz-yerel anahtar ikinci cihazda mektupları okunamaz yapıyordu.) | **TEK BİZ** |
 | **Sinefil Sineması** | Opt-in dizin; profiller zevk örtüşmesine göre sıralanıyor, Fav 4 okuması detay modalında lazy yükleniyor. | NADİR |
 | **Güvenlik araçları** | Karşılıklı engelleme (pending istekleri iptal eder, mektupları siler), kategorili rapor ve 24 saatlik rapor kotası. | NADİR |
 | **Paylaşım kartları** | 1080×1350 PNG üretimi (ortak filmler, Fav 4 kişilik analizi), Web Share API ile paylaşım, davet akışı. | STANDART |
@@ -155,7 +155,7 @@ Herkes swipe ediyor, ortak beğeni anında eşleşme olarak bildiriliyor. CineDu
 | Watchlist önerisi / zar | **●** | ● | ● | ○ | ● | ○ |
 | İki kişilik uyum skoru | **●** | ● | ● | ○ | ◐ | ○ |
 | Karşı tarafın onayı şart | **●** | ○ | ○ | ○ | ● | ○ |
-| Uçtan uca şifreli mesaj | **●** | ○ | ○ | ○ | ○ | ○ |
+| Özel yazışma kanalı | **●** | ○ | ○ | ○ | ○ | ○ |
 | Öneri geri bildiriminden öğrenme | **○** | ○ | ○ | ○ | ● | ○ |
 | Engelleme / raporlama | **●** | ○ | ○ | ○ | ◐ | ● |
 | Paylaşım kartı | **●** | ◐ | ● | ● | ◐ | ● |
@@ -194,7 +194,7 @@ Her hat, rakiplerin mimarisinin yapısal olarak taşıyamadığı bir şeye daya
 | Hat | Konum | Neden savunulabilir |
 |---|---|---|
 | **A — Hafızası olan zevk** | Rakipler tek atış; bizde her filmin satırı, her taramanın run id'si ve her önerinin geri bildirimi duruyor. | Zamanı olan tek ürün biziz; veritabanı olmayan bir araç bunu üretemez. |
-| **B — Rızaya dayalı yakınlık** | Blend onay istiyor, mektup uçtan uca şifreli, dizin opt-in. | Hiçbir rakip karşı tarafa sormuyor — çünkü hiçbirinin karşı tarafla ilişkisi yok. |
+| **B — Rızaya dayalı yakınlık** | Blend onay istiyor, mektup çift taraflı açık kutu şartına bağlı, dizin opt-in. | Hiçbir rakip karşı tarafa sormuyor — çünkü hiçbirinin karşı tarafla ilişkisi yok. |
 | **C — Yerel sinema hayatı** | Türkçe-first sinefil topluluğu, vizyon takvimi, TR streaming uygunluğu. | Global araçların hiçbirinin ilgilenmediği katman. |
 
 ### Hat A — Hafızayı ürüne çevirmek
@@ -246,7 +246,7 @@ Efor bandları kaba: **S** birkaç gün · **M** bir–iki hafta · **L** daha f
 
 **Veri erişimi asimetrisi.** Toolboxd resmî API ile çalışıyor, biz public HTML parse ediyoruz. Letterboxd markup'ı değişirse veya sıkılaşırsa bizim maliyetimiz onlarınkinden çok daha yüksek. Başvuru + export import'u, aynı riskin iki ayrı sigortası.
 
-**Platformun kendi içine alması.** Letterboxd bir "uyum" veya "yıl boyu istatistik" özelliğini Pro'ya eklerse araç katmanının yarısı anlamsızlaşır. Sigortamız, platformun asla yapmayacağı taraf: uçtan uca şifreli özel kanal ve rıza akışı.
+**Platformun kendi içine alması.** Letterboxd bir "uyum" veya "yıl boyu istatistik" özelliğini Pro'ya eklerse araç katmanının yarısı anlamsızlaşır. Sigortamız, platformun asla yapmayacağı taraf: rızaya dayalı özel yazışma ve onay akışı.
 
 **Aktivasyon sürtünmesi.** Bio doğrulaması ürünün güvenlik temeli ama aynı zamanda en büyük terk noktası. Önizleme katmanı gelmezse, analiz kalitemiz ne olursa olsun rakipler daha çok kullanıcı görecek.
 

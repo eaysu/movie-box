@@ -20,12 +20,6 @@ import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js
 import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
 import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 
-let _lettersCryptoModule = null;
-function lettersCrypto() {
-  _lettersCryptoModule ||= import('./letters-crypto.js?v=20260902.27');
-  return _lettersCryptoModule;
-}
-
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
@@ -1446,7 +1440,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && _account) refreshBlendBadge();
 });
 
-let _letterIdentity = null;
+let _letterEnablePendingRecipient = null;
 let _letterRecipient = null;
 let _letterPickedFilm = null;
 let _letterSearchTimer = null;
@@ -1511,7 +1505,7 @@ function renderLetterSettings() {
   $('btn-letter-receiving').setAttribute('aria-pressed', String(open));
   $('btn-letter-receiving').textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
   $('letters-status').textContent = open
-    ? 'Diğer sinefiller sana günde bir şifreli mektup gönderebilir.'
+    ? 'Diğer sinefiller sana günde bir mektup gönderebilir.'
     : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
 }
 
@@ -1533,7 +1527,12 @@ function letterCard(item, payload) {
   const title = escapeHTML(author.display_name || author.username || 'Bilinmeyen sinefil');
   const username = escapeHTML(author.username || '');
   const peerUsername = escapeHTML(peer.username || '');
-  const body = escapeHTML(payload?.body || 'Mektup bu cihazda çözülemedi.');
+  const body = escapeHTML(
+    payload?.body
+      || (item.legacy_encrypted
+        ? 'Bu mektup eski cihaz-anahtarlı biçimde yazılmıştı ve artık açılamıyor.'
+        : 'Mektup içeriği okunamadı.'),
+  );
   const date = new Date(item.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' });
   const seen = item.read_at ? new Date(item.read_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const attachment = payload?.film ? `<div class="mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"><span class="mb-2 block text-[10px] font-bold uppercase tracking-wide">Film hediyesi</span>${letterFilmMarkup(payload.film)}</div>` : '';
@@ -1549,35 +1548,19 @@ function letterThreadCard(group) {
   return `<article class="overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container shadow-lg"><button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 p-4 text-left hover:bg-surface-variant/40"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="text-xs text-on-surface-variant">@${username} · ${group.items.length} mektup</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread} yeni</span>` : ''}<span class="material-symbols-outlined text-on-surface-variant transition-transform">expand_more</span></button><div data-letter-thread-body="${username}" class="hidden border-t border-outline-variant/20 p-3"><div class="flex flex-col gap-3">${details}</div></div></article>`;
 }
 
-async function ensureDeviceLetterIdentity() {
-  if (!_account) return null;
-  const crypto = await lettersCrypto();
-  const identity = await crypto.loadOrCreateDeviceIdentity(_account.id);
-  _letterIdentity = identity;
-  const existing = await apiJSON('/api/letters/key-material');
-  if (existing.key_material?.public_key !== identity.publicKey) {
-    await apiJSON('/api/letters/key-material', {
-      method: 'PUT', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ public_key: identity.publicKey }),
-    });
-  }
-  return identity;
-}
-
 async function loadLetters() {
   if (!_account) return;
   letterMessage('error');
   try {
-    await ensureDeviceLetterIdentity();
     const unreadData = await apiJSON('/api/letters/unread-count');
     const unreadCount = Math.max(0, Number(unreadData.count) || 0);
     $('inbox-letters-badge').textContent = unreadCount > 9 ? '9+' : String(unreadCount);
     $('inbox-letters-badge').classList.toggle('hidden', unreadCount === 0);
     const data = await apiJSON('/api/letters');
-    const crypto = await lettersCrypto();
-    const decoded = await Promise.all((data.letters || []).map(async item => {
-      try { return { item, payload: await crypto.decryptLetter(_letterIdentity.privateKey, item, item.direction === 'sent') }; }
-      catch (_) { return { item, payload: null }; }
+    const decoded = (data.letters || []).map(item => ({
+      item,
+      // Rows from the retired device-key design cannot be opened by anyone.
+      payload: item.legacy_encrypted ? null : { body: item.body || '', film: item.film || null },
     }));
     const unread = decoded.filter(({ item, payload }) => item.direction === 'received' && !item.read_at && payload).map(({ item }) => item.id);
     await Promise.all(unread.map(async id => {
@@ -1610,11 +1593,9 @@ async function loadLetters() {
 }
 
 async function toggleLetterReceiving(trigger = null) {
-  try { await ensureDeviceLetterIdentity(); }
-  catch (error) { letterMessage('error', error.message || 'Bu cihazda şifreli mektup anahtarı hazırlanamadı.'); return; }
   const next = !_account?.letter_receiving_enabled;
   const prompt = next
-    ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana günde bir şifreli mektup gönderebilir. Açmak istiyor musun?'
+    ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana günde bir mektup gönderebilir. Açmak istiyor musun?'
     : 'Mektupları kapatırsan yeni mektup alamazsın. Mevcut mektupların korunur. Kapatmak istiyor musun?';
   if (!window.confirm(prompt)) return;
   const button = trigger || $('btn-letter-receiving'); button.disabled = true;
@@ -1628,8 +1609,12 @@ async function toggleLetterReceiving(trigger = null) {
 }
 
 function openLetterCompose(username) {
-  if (!_letterIdentity) {
-    ensureDeviceLetterIdentity().then(() => openLetterCompose(username)).catch(error => sinefilMessage('error', error.message || 'Mektup bu cihazda hazırlanamadı.'));
+  // Writing requires an open letterbox of your own, so the recipient can answer.
+  if (!_account?.letter_receiving_enabled) {
+    _letterEnablePendingRecipient = username;
+    $('letter-enable-username').textContent = `@${username}`;
+    $('letter-enable-error').classList.add('hidden');
+    $('dialog-letter-enable').showModal();
     return;
   }
   _letterRecipient = { username };
@@ -1668,21 +1653,24 @@ async function searchLetterFilms() {
 
 async function sendLetter(event) {
   event.preventDefault();
-  if (!_letterRecipient || !_letterIdentity) return;
+  if (!_letterRecipient) return;
   if (!_letterSendStatus.can_send) return;
-  if (!window.confirm('Bu mektup gönderildikten sonra geri alınamaz. Şifreleyip göndermek istiyor musun?')) return;
+  if (!window.confirm('Bu mektup gönderildikten sonra geri alınamaz. Göndermek istiyor musun?')) return;
   const button = $('btn-letter-send'); button.disabled = true;
   try {
     const recipientData = await apiJSON(`/api/letters/recipients/${encodeURIComponent(_letterRecipient.username)}`);
     const recipient = recipientData.recipient;
-    const crypto = await lettersCrypto();
-    const envelope = await crypto.encryptLetter(_letterIdentity.privateKey, _letterIdentity.publicKey, {
-      ...recipient, body: $('letter-compose-body').value, film: _letterPickedFilm,
+    await apiJSON('/api/letters', {
+      method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        recipient_username: recipient.username,
+        body: $('letter-compose-body').value,
+        film: _letterPickedFilm,
+      }),
     });
-    await apiJSON('/api/letters', { method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ recipient_username: recipient.username, envelope }) });
     _letterSendStatus = { can_send: false, seconds_remaining: 24 * 60 * 60 };
     $('dialog-letter-compose').close();
-    letterMessage('notice', `Mektubun @${recipient.username} için şifrelendi ve gönderildi.`);
+    letterMessage('notice', `Mektubun @${recipient.username} adresine gönderildi.`);
     await loadLetters();
   } catch (error) {
     $('letter-compose-error').textContent = error.message || 'Mektup gönderilemedi.';
@@ -3798,6 +3786,28 @@ $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 document.querySelectorAll('[data-inbox-tab]').forEach(button => button.addEventListener('click', () => setInboxTab(button.dataset.inboxTab)));
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
 $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
+
+// Opening the letterbox straight from the prompt, then continuing to the letter
+// the member came to write.
+$('btn-letter-enable-confirm').addEventListener('click', async () => {
+  const username = _letterEnablePendingRecipient;
+  const button = $('btn-letter-enable-confirm');
+  button.disabled = true;
+  try {
+    const data = await apiJSON('/api/letters/receiving', {
+      method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ enabled: true }),
+    });
+    if (_account) _account.letter_receiving_enabled = data.letter_receiving_enabled;
+    renderLetterSettings();
+    _letterEnablePendingRecipient = null;
+    $('dialog-letter-enable').close();
+    if (username) openLetterCompose(username);
+  } catch (error) {
+    $('letter-enable-error').textContent = error.message || 'Mektup kutusu açılamadı.';
+    $('letter-enable-error').classList.remove('hidden');
+  } finally { button.disabled = false; }
+});
 $('letter-compose-form').addEventListener('submit', sendLetter);
 $('letter-compose-body').addEventListener('input', () => { $('letter-compose-count').textContent = `${600 - $('letter-compose-body').value.length} karakter kaldı`; });
 $('letter-film-search').addEventListener('input', () => { clearTimeout(_letterSearchTimer); _letterSearchTimer = setTimeout(searchLetterFilms, 250); });

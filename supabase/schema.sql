@@ -31,8 +31,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAU
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;
 UPDATE public.users SET discoverable = TRUE
 WHERE account_status = 'active' AND (discoverable IS NULL OR discoverable = FALSE);
--- Mektup alma tercihi ayrı ve varsayılan olarak kapalıdır. Anahtar malzemesi
--- users tablosunda değil, aşağıdaki private user_letter_keys tablosundadır.
+-- Mektup alma tercihi ayrı ve varsayılan olarak kapalıdır. Aynı tercih gönderme
+-- hakkını da belirler: kutusu kapalı bir hesap mektup yollayamaz.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS letter_receiving_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_user_id
@@ -456,22 +456,14 @@ CREATE INDEX IF NOT EXISTS idx_user_reports_status_time
 CREATE INDEX IF NOT EXISTS idx_user_reports_reporter_time
   ON public.user_reports (reporter_user_id, created_at DESC);
 
--- Sinefil Mektupları: private keys and all letter payloads stay opaque to the
--- server. The browser stores ECDH public keys and AES-GCM encrypted envelopes;
--- no plaintext body, film attachment, lock password or recovery code exists in
--- this database.
-CREATE TABLE IF NOT EXISTS public.user_letter_keys (
-  user_id                 BIGINT PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
-  public_key              TEXT NOT NULL CHECK (char_length(public_key) BETWEEN 40 AND 512),
-  key_version             SMALLINT NOT NULL DEFAULT 1 CHECK (key_version >= 1),
-  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Remove the short-lived password/recovery-key columns from the first E2EE
--- prototype. Device-only keys must never be persisted on the server.
-ALTER TABLE public.user_letter_keys DROP COLUMN IF EXISTS encrypted_private_key;
-ALTER TABLE public.user_letter_keys DROP COLUMN IF EXISTS recovery_private_key;
+-- Sinefil Mektupları. The device-key E2EE design was dropped: a key that only
+-- ever lived in one browser meant a member could not read their own mail after
+-- switching devices, and a second login silently rotated the public key and
+-- broke the first device too. Letters are now ordinary rows, readable by the
+-- service, and the privacy guarantee is access control plus the block rule
+-- below — not cryptography. The old envelope columns stay for the rows that
+-- were written under the previous design.
+DROP TABLE IF EXISTS public.user_letter_keys;
 
 CREATE TABLE IF NOT EXISTS public.cinephile_letters (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -488,6 +480,22 @@ CREATE TABLE IF NOT EXISTS public.cinephile_letters (
   read_at                TIMESTAMPTZ,
   CHECK (sender_user_id <> recipient_user_id)
 );
+
+-- Plaintext body and optional film gift. The encrypted columns become optional
+-- so historical envelopes survive while new letters are written as text.
+ALTER TABLE public.cinephile_letters ADD COLUMN IF NOT EXISTS body TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.cinephile_letters ADD COLUMN IF NOT EXISTS film JSONB;
+ALTER TABLE public.cinephile_letters ALTER COLUMN ciphertext DROP NOT NULL;
+ALTER TABLE public.cinephile_letters ALTER COLUMN iv DROP NOT NULL;
+ALTER TABLE public.cinephile_letters ALTER COLUMN salt DROP NOT NULL;
+ALTER TABLE public.cinephile_letters ALTER COLUMN sender_public_key DROP NOT NULL;
+ALTER TABLE public.cinephile_letters ALTER COLUMN recipient_public_key DROP NOT NULL;
+
+DO $$ BEGIN
+  ALTER TABLE public.cinephile_letters ADD CONSTRAINT cinephile_letters_body_length
+    CHECK (char_length(body) <= 600);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_cinephile_letters_recipient_unread
   ON public.cinephile_letters (recipient_user_id, created_at DESC) WHERE read_at IS NULL;
@@ -600,9 +608,8 @@ blend_completed AS (
   GROUP BY b.user_id
 ),
 letters AS (
-  -- Volume only. Letter bodies and film gifts are end-to-end encrypted, so the
-  -- server cannot read them even if this report wanted to; recipients are also
-  -- deliberately not exposed here.
+  -- Volume only: the report counts letters and never selects a body, a film
+  -- gift or a recipient.
   SELECT
     l.user_id,
     COUNT(*) FILTER (WHERE l.direction = 'sent') AS letters_sent,
@@ -1191,10 +1198,12 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.send_cinephile_letter(BIGINT, TEXT, JSONB);
 CREATE OR REPLACE FUNCTION public.send_cinephile_letter(
   p_sender_user_id BIGINT,
   p_recipient_username TEXT,
-  p_envelope JSONB
+  p_body TEXT,
+  p_film JSONB DEFAULT NULL
 ) RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -1202,15 +1211,21 @@ SET search_path = public
 AS $$
 DECLARE
   v_recipient_user_id BIGINT;
-  v_recipient_key TEXT;
-  v_recipient_key_version SMALLINT;
-  v_sender_key TEXT;
-  v_sender_key_version SMALLINT;
+  v_body TEXT;
   v_id UUID;
 BEGIN
   -- One transaction-level lock makes the 24-hour quota race-safe even if a
   -- user double-clicks or has two browser tabs open.
   PERFORM pg_advisory_xact_lock(p_sender_user_id);
+
+  -- Writing requires an open letterbox of your own: a letter sent from a closed
+  -- account is a channel the recipient cannot answer.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.users u
+    WHERE u.id = p_sender_user_id
+      AND u.account_status = 'active'
+      AND u.letter_receiving_enabled = TRUE
+  ) THEN RAISE EXCEPTION 'letter_sender_closed'; END IF;
 
   SELECT u.id INTO v_recipient_user_id
   FROM public.users u
@@ -1226,18 +1241,9 @@ BEGIN
        OR (b.blocker_user_id = v_recipient_user_id AND b.blocked_user_id = p_sender_user_id)
   ) THEN RAISE EXCEPTION 'letter_blocked'; END IF;
 
-  SELECT public_key, key_version INTO v_sender_key, v_sender_key_version
-  FROM public.user_letter_keys WHERE user_id = p_sender_user_id;
-  SELECT public_key, key_version INTO v_recipient_key, v_recipient_key_version
-  FROM public.user_letter_keys WHERE user_id = v_recipient_user_id;
-  IF v_sender_key IS NULL OR v_recipient_key IS NULL THEN RAISE EXCEPTION 'letter_recipient_unavailable'; END IF;
-
-  IF COALESCE(p_envelope->>'sender_public_key', '') <> v_sender_key
-     OR COALESCE(p_envelope->>'recipient_public_key', '') <> v_recipient_key
-     OR char_length(COALESCE(p_envelope->>'ciphertext', '')) NOT BETWEEN 16 AND 12000
-     OR char_length(COALESCE(p_envelope->>'iv', '')) NOT BETWEEN 12 AND 128
-     OR char_length(COALESCE(p_envelope->>'salt', '')) NOT BETWEEN 16 AND 256 THEN
-    RAISE EXCEPTION 'invalid_letter_envelope';
+  v_body := trim(COALESCE(p_body, ''));
+  IF char_length(v_body) < 1 OR char_length(v_body) > 600 THEN
+    RAISE EXCEPTION 'invalid_letter_body';
   END IF;
 
   IF EXISTS (
@@ -1247,12 +1253,10 @@ BEGIN
   ) THEN RAISE EXCEPTION 'letter_send_cooldown'; END IF;
 
   INSERT INTO public.cinephile_letters (
-    sender_user_id, recipient_user_id, sender_public_key, recipient_public_key,
-    sender_key_version, recipient_key_version, ciphertext, iv, salt
+    sender_user_id, recipient_user_id, body, film
   ) VALUES (
-    p_sender_user_id, v_recipient_user_id, v_sender_key, v_recipient_key,
-    v_sender_key_version, v_recipient_key_version,
-    p_envelope->>'ciphertext', p_envelope->>'iv', p_envelope->>'salt'
+    p_sender_user_id, v_recipient_user_id, v_body,
+    CASE WHEN jsonb_typeof(p_film) = 'object' THEN p_film ELSE NULL END
   ) RETURNING id INTO v_id;
   RETURN v_id;
 END;
@@ -1308,7 +1312,8 @@ REVOKE ALL ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB, JS
 REVOKE ALL ON FUNCTION public.block_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.unblock_user(BIGINT, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.send_cinephile_letter(BIGINT, TEXT, JSONB) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.send_cinephile_letter(BIGINT, TEXT, TEXT, JSONB)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_blend_request(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.decide_blend_request(UUID, BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.cancel_blend_request(UUID, BIGINT) TO service_role;
@@ -1317,7 +1322,7 @@ GRANT EXECUTE ON FUNCTION public.save_blend_result(UUID, BIGINT, INTEGER, JSONB,
 GRANT EXECUTE ON FUNCTION public.block_user(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.unblock_user(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) TO service_role;
-GRANT EXECUTE ON FUNCTION public.send_cinephile_letter(BIGINT, TEXT, JSONB) TO service_role;
+GRANT EXECUTE ON FUNCTION public.send_cinephile_letter(BIGINT, TEXT, TEXT, JSONB) TO service_role;
 
 -- TMDb API önbelleği: SQLite'ın üretim ortamındaki yedeği.
 CREATE TABLE IF NOT EXISTS public.tmdb_cache (
@@ -1344,7 +1349,6 @@ ALTER TABLE public.blend_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_letter_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cinephile_letters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_audit_log ENABLE ROW LEVEL SECURITY;
 
@@ -1364,7 +1368,6 @@ REVOKE ALL ON TABLE public.blend_requests FROM anon, authenticated;
 REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_blocks FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_reports FROM anon, authenticated;
-REVOKE ALL ON TABLE public.user_letter_keys FROM anon, authenticated;
 REVOKE ALL ON TABLE public.cinephile_letters FROM anon, authenticated;
 REVOKE ALL ON TABLE public.auth_audit_log FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.users_id_seq FROM anon, authenticated;
@@ -1383,7 +1386,6 @@ GRANT ALL ON TABLE public.blend_requests TO service_role;
 GRANT ALL ON TABLE public.blend_results TO service_role;
 GRANT ALL ON TABLE public.user_blocks TO service_role;
 GRANT ALL ON TABLE public.user_reports TO service_role;
-GRANT ALL ON TABLE public.user_letter_keys TO service_role;
 GRANT ALL ON TABLE public.cinephile_letters TO service_role;
 GRANT ALL ON TABLE public.auth_audit_log TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.users_id_seq TO service_role;

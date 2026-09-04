@@ -149,7 +149,7 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
   - [ ] "We fetch N pages per user today; with API access that goes to zero."
   - [ ] Traffic returned: film and profile links out to Letterboxd; OAuth watchlist writes on the user's behalf.
   - [ ] No competition: we host no catalog, no reviews, no lists, no alternative social feed.
-  - [ ] Data hygiene, all already true: full account deletion (`DELETE /api/data`), end-to-end encrypted letters the server cannot read, RLS with no browser access, documented rate limits and caching.
+  - [ ] Data hygiene, all already true: full account deletion (`DELETE /api/data`), letters only the two participants can read, RLS with no browser access, documented rate limits and caching.
   - [ ] Attribution: "not affiliated with Letterboxd", no logo use.
 - [ ] Prepare the package: live demo link, user count and growth, a one-page architecture summary, privacy policy and terms pages, a domain-based contact address.
 - [ ] Decide consciously on the naming risk: a product name ending in "boxd" may draw a trademark objection. Toolboxd and Blendboxd surviving suggests tolerance, not permission.

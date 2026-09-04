@@ -262,10 +262,9 @@ def test_sinefil_area_uses_compact_cards_and_profile_modal():
     assert "def sinefil_personality" in auth_py
 
 
-def test_sinefil_letters_are_client_encrypted_and_keep_inbox_private():
+def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
-    crypto_js = (ROOT / "static" / "js" / "letters-crypto.js").read_text()
     schema = (ROOT / "supabase" / "schema.sql").read_text()
 
     assert 'id="inbox-letters-panel"' in html
@@ -273,18 +272,37 @@ def test_sinefil_letters_are_client_encrypted_and_keep_inbox_private():
     assert 'function letterThreadCard' in app_js
     assert 'data-letter-thread=' in app_js
     assert "apiJSON('/api/letters')" in app_js
-    assert "ECDH" in crypto_js
-    assert "AES-GCM" in crypto_js
-    assert "user_letter_keys" in schema
     assert "cinephile_letters" in schema
     assert "send_cinephile_letter" in schema
     assert 'id="profile-letters"' in html
     assert 'id="profile-letter-toggle"' in html
     assert "600 karakter kaldı" in html
-    assert "loadOrCreateDeviceIdentity" in app_js
-    assert "IndexedDB" in crypto_js
     assert "/api/letters/send-status" in app_js
     assert "Görüldü" in app_js
+
+    # The device-key design is gone: letters follow the account, not a browser.
+    assert not (ROOT / "static" / "js" / "letters-crypto.js").exists()
+    assert "loadOrCreateDeviceIdentity" not in app_js
+    assert "user_letter_keys" not in app_js
+    assert "/api/letters/key-material" not in app_js
+    assert "DROP TABLE IF EXISTS public.user_letter_keys" in schema
+    # And the UI must not promise encryption it no longer performs.
+    assert "cihazında şifrelenir" not in html
+    assert "yalnızca alıcısının cihazında" not in html
+
+
+def test_writing_a_letter_requires_your_own_letterbox_to_be_open():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    schema = (ROOT / "supabase" / "schema.sql").read_text()
+
+    assert 'id="dialog-letter-enable"' in html
+    assert 'id="btn-letter-enable-confirm"' in html
+    assert "_account?.letter_receiving_enabled" in app_js
+    assert "dialog-letter-enable').showModal()" in app_js
+    # Enforced server-side too, not just hidden in the UI.
+    assert "letter_sender_closed" in schema
+    assert "letter_sender_closed" in (ROOT / "app" / "main.py").read_text()
 
 
 def test_blend_watchlist_renders_common_and_bridge_picks_as_one_five_film_list():

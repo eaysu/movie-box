@@ -172,9 +172,9 @@ Fav 4 ile yapma fikri doğru ama tek başına iki sorunu var: **4 film ince bir 
 
 Eklenmiş olması doğru yer; asıl tasarım sorusu şifreleme kısıtından geliyor.
 
-**Kısıt:** mektup gövdesi `{v:2, body, film}` olarak şifreleniyor — **sunucu hediye edilen filmi göremez.** Bu doğru tasarım, ama "izledi mi / ne verdi" halkası sunucu tarafında hiç kurulamaz.
+**Not (4 Eylül 2026):** Bu bölüm mektupların uçtan uca şifreli olduğu döneme göre yazılmıştı. Şifreleme kaldırıldığı için halka artık sunucuda kurulabilir: gönderilen film `cinephile_letters.film` sütununda duruyor. Aşağıdaki istemci-tarafı tasarım yerine, kabul kaydı doğrudan API'de tutulabilir; rızalı bildirim adımı yine korunmalı.
 
-**Çözüm: halkayı alıcının tarayıcısında kapat.**
+**Eski çözüm — halkayı alıcının tarayıcısında kapat.**
 
 1. Mektup çözüldükten sonra alıcıya açık bir seçim: **"Bu öneriyi kabul et."**
 2. İstemci sunucuya yalnızca alıcının **kendi** hesabına ait, düz metin bir satır yazar:
@@ -231,7 +231,7 @@ Letterboxd API erişimi kapalı değil, **seçici** — Toolboxd'un "generous ac
 1. **Scrape'i azaltma taahhüdü — en güçlü argüman.** Ölçülebilir yaz: "bugün kullanıcı başına N sayfa çekiyoruz; API ile bu 0'a iner." Platform için doğrudan maliyet tasarrufu.
 2. **Trafiği geri verme.** Her film ve profil kartında Letterboxd linki; OAuth ile kullanıcı adına watchlist'e ekleme → Letterboxd'da etkileşim artışı.
 3. **Rekabet etmediğini göster.** Katalog, inceleme veya liste barındırmıyoruz; alternatif bir sosyal akış kurmuyoruz. Konum: tamamlayıcı analiz + rızaya dayalı eşleşme.
-4. **Veri hijyeni — madde madde ve doğrulanabilir.** Veri satılmıyor/yeniden dağıtılmıyor; `DELETE /api/data` ile tam silme; mektuplar uçtan uca şifreli (sunucu okuyamıyor); RLS ile browser erişimi kapalı; rate limit ve cache politikaları belgeli. Bunların hepsi bugün doğru — başvurunun en kolay kısmı.
+4. **Veri hijyeni — madde madde ve doğrulanabilir.** Veri satılmıyor/yeniden dağıtılmıyor; `DELETE /api/data` ile tam silme; mektupları yalnızca iki taraf listeleyebiliyor, engelleme iki taraftan siliyor; RLS ile browser erişimi kapalı; rate limit ve cache politikaları belgeli. Bunların hepsi bugün doğru — başvurunun en kolay kısmı.
 5. **Attribution ve marka.** "Letterboxd ile ilişkili değildir" ibaresi, logo kullanmama. **Not:** ürün adının "…boxd" ile bitmesi marka açısından itiraz alabilir; Blendboxd/Toolboxd örnekleri tolerans olduğunu gösteriyor ama garanti değil — başvuru öncesi bilinçli bir karar olmalı.
 6. **Somut paket:** çalışan demo linki, kullanıcı sayısı ve büyüme eğrisi, tek sayfalık teknik özet (mimari, cache, rate limit), gizlilik politikası ve kullanım şartları sayfası, alan adına bağlı kalıcı bir iletişim adresi. TR pazarı ve Türkçe topluluk, Letterboxd'un yerelleşmediği bir bölge olarak ayrı bir değer önerisi.
 7. **Plan B kalıcı olsun.** ZIP import'u API gelmese de asıl hızlı yolumuz. Başvuru bir bahis değil, bir opsiyon.
