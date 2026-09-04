@@ -17,6 +17,7 @@ module wrote, so the card never waits on a scrape.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import unicodedata
@@ -89,6 +90,19 @@ async def resolve_screening_title(
     key = normalize_title(title_raw)
     if not key:
         return {"match_status": "unresolved"}
+
+    # Some venues print both titles on one line ("The Unknown / İçimdeki
+    # Yabancı"). Either half is a real title; try them before giving up on the
+    # combined string, which matches nothing anywhere.
+    if "/" in str(title_raw):
+        parts = [part.strip() for part in str(title_raw).split("/") if part.strip()]
+        if len(parts) > 1:
+            for part in parts:
+                found = await resolve_screening_title(
+                    part, year, catalog=catalog, enricher=enricher
+                )
+                if found.get("match_status") == "matched":
+                    return found
 
     local = catalog.get(key)
     if local and _year_close(local.get("release_year"), year):
@@ -363,9 +377,19 @@ async def ingest_repertory_venue(service, venue, *, fetch_page, enricher, catalo
 
 
 # ── Digest ─────────────────────────────────────────────────────────────────
+_GENRE_TR = {
+    "Action": "Aksiyon", "Adventure": "Macera", "Animation": "Animasyon",
+    "Comedy": "Komedi", "Crime": "Suç", "Documentary": "Belgesel", "Drama": "Dram",
+    "Family": "Aile", "Fantasy": "Fantastik", "History": "Tarih", "Horror": "Korku",
+    "Music": "Müzik", "Mystery": "Gizem", "Romance": "Romantik",
+    "Science Fiction": "Bilim Kurgu", "Thriller": "Gerilim", "War": "Savaş",
+    "Western": "Western",
+}
+
+
 def _film_card(row: dict, extra: dict | None = None) -> dict:
     card = {
-        "title": row.get("title_raw") or row.get("title") or "",
+        "title": row.get("title") or row.get("title_raw") or "",
         "year": row.get("year"),
         "tmdb_id": row.get("tmdb_id"),
         "slug": row.get("film_slug") or "",
@@ -378,14 +402,28 @@ def _film_card(row: dict, extra: dict | None = None) -> dict:
     return card
 
 
-def build_digest(screenings: list[dict], watched: list[dict], watchlist_slugs, taste) -> dict:
+def build_digest(screenings: list[dict], watched: list[dict], watchlist, taste) -> dict:
     """Shape one member's week from rows already in the database.
 
     Sections are ordered by how directly they can be acted on: something you
     already wanted to see, then something you loved that is back, then a new
     release that fits. An empty section is omitted, never padded.
     """
-    wanted = {slug for slug in (watchlist_slugs or []) if slug}
+    # A watchlist entry may arrive as a slug string or as a full film row; a
+    # screening may only know its tmdb_id, so both keys are indexed.
+    wanted_slugs: set[str] = set()
+    wanted_tmdb: set[int] = set()
+    for item in watchlist or []:
+        if isinstance(item, str):
+            wanted_slugs.add(item)
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("slug"):
+            wanted_slugs.add(item["slug"])
+        if item.get("tmdb_id"):
+            with contextlib.suppress(TypeError, ValueError):
+                wanted_tmdb.add(int(item["tmdb_id"]))
     watched_by_tmdb: dict[int, dict] = {}
     watched_by_title: dict[str, dict] = {}
     for row in watched or []:
@@ -413,17 +451,17 @@ def build_digest(screenings: list[dict], watched: list[dict], watchlist_slugs, t
         if seen:
             rating = seen.get("user_rating")
             if seen.get("rating_observed") and rating and float(rating) >= 4:
-                first_seen = str(seen.get("first_seen_at") or "")[:4]
                 back_on_screen.append(_film_card(row, {
                     "slug": slug or seen.get("film_slug") or "",
-                    "note": (
-                        f"{first_seen}'de {float(rating):.1f} vermiştin"
-                        if first_seen.isdigit() else f"{float(rating):.1f} vermiştin"
-                    ),
+                    "note": f"Bu filme {float(rating):.1f} vermiştin",
                     "user_rating": float(rating),
                 }))
             continue
-        if slug and slug in wanted:
+        tmdb_id = row.get("tmdb_id")
+        on_list = (slug and slug in wanted_slugs) or (
+            tmdb_id is not None and int(tmdb_id) in wanted_tmdb
+        )
+        if on_list:
             on_watchlist.append(_film_card(row, {"note": "İzleme listende"}))
             continue
         director = str(row.get("director") or "").lower()
@@ -432,12 +470,29 @@ def build_digest(screenings: list[dict], watched: list[dict], watchlist_slugs, t
             fits_taste.append(_film_card(row, {"note": f"{row.get('director')} filmi"}))
         elif row_genres & genres:
             match = sorted(row_genres & genres)[0].title()
-            fits_taste.append(_film_card(row, {"note": f"{match} tarafında"}))
+            fits_taste.append(_film_card(row, {
+                "note": f"{_GENRE_TR.get(match, match)} tarafında",
+            }))
+
+    def _dedupe(cards: list[dict]) -> list[dict]:
+        """One film is one card, however many venues are showing it."""
+        merged: dict[str, dict] = {}
+        for card in cards:
+            key = str(card.get("tmdb_id") or card.get("slug") or normalize_title(card["title"]))
+            existing = merged.get(key)
+            if not existing:
+                merged[key] = card
+                continue
+            venues = [existing.get("venue"), card.get("venue")]
+            existing["venue"] = " · ".join(
+                dict.fromkeys(venue for venue in venues if venue)
+            )
+        return list(merged.values())
 
     sections = [
-        ("watchlist", "İzleme listende ve perdede", on_watchlist),
-        ("back", "Tekrar perdede", back_on_screen),
-        ("taste", "Zevkine uyan yeni vizyon", fits_taste),
+        ("watchlist", "İzleme listende ve perdede", _dedupe(on_watchlist)),
+        ("back", "Tekrar perdede", _dedupe(back_on_screen)),
+        ("taste", "Zevkine uyan yeni vizyon", _dedupe(fits_taste)),
     ]
     return {
         "week_start": week_start().isoformat(),

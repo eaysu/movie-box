@@ -118,7 +118,8 @@
       "Bash(python -c \"import app.screenings\")",
       "Bash(node --check static/js/app.js)",
       "Bash(python -m pytest tests/test_screenings.py -q)",
-      "Bash(python -m scripts.resolve_screenings --help)"
+      "Bash(python -m scripts.resolve_screenings --help)",
+      "Bash(python -c \"import app.auth, app.screenings\")"
     ]
   }
 }

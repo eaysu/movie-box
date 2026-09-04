@@ -1403,7 +1403,45 @@ class AuthService:
                 "venue_city": venue.get("city") or "",
                 "venue_kind": venue.get("kind") or "",
             })
-        return out
+        return self._hydrate_screenings(out)
+
+    def _hydrate_screenings(self, rows: list[dict]) -> list[dict]:
+        """Fill in the film identity a programme page cannot give us.
+
+        A cinema lists a title; TMDb resolves it to an id. Everything the digest
+        needs beyond that — the Letterboxd slug that watchlists are keyed by,
+        plus genres and director for taste matching — lives in the shared
+        catalog, so one lookup by tmdb_id makes the rows usable.
+        """
+        wanted = sorted({int(row["tmdb_id"]) for row in rows if row.get("tmdb_id")})
+        if not wanted:
+            return rows
+        catalog: dict[int, dict] = {}
+        service = self._service_client()
+        for index in range(0, len(wanted), 100):
+            chunk = wanted[index : index + 100]
+            try:
+                found = self._retry_storage_read(
+                    lambda chunk=chunk: service.table("film_posters").select(
+                        "film_slug,tmdb_id,title,release_year,genres,director,poster_url"
+                    ).in_("tmdb_id", chunk).execute()
+                ).data or []
+            except Exception:
+                continue
+            for item in found:
+                if item.get("tmdb_id"):
+                    catalog.setdefault(int(item["tmdb_id"]), item)
+        for row in rows:
+            entry = catalog.get(int(row["tmdb_id"])) if row.get("tmdb_id") else None
+            if not entry:
+                continue
+            row["title"] = entry.get("title") or row.get("title_raw") or ""
+            row["film_slug"] = row.get("film_slug") or entry.get("film_slug") or ""
+            row["genres"] = entry.get("genres") or []
+            row["director"] = entry.get("director") or ""
+            row["poster_url"] = row.get("poster_url") or entry.get("poster_url") or ""
+            row["year"] = row.get("year") or entry.get("release_year")
+        return rows
 
     def get_bulletin_digest(self, user_id: int, week_start: str, city: str) -> dict | None:
         try:

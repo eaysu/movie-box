@@ -131,7 +131,11 @@ class DigestTests(unittest.TestCase):
         keys = [section["key"] for section in digest["sections"]]
         self.assertEqual(keys, ["watchlist", "back", "taste"])
         self.assertEqual(digest["sections"][0]["films"][0]["title"], "Stalker")
-        self.assertIn("2021", digest["sections"][1]["films"][0]["note"])
+        # first_seen_at is when the sync first saw the film, not when it was
+        # watched, so the note must not print it as a viewing year.
+        note = digest["sections"][1]["films"][0]["note"]
+        self.assertIn("4.5", note)
+        self.assertNotIn("2021", note)
         self.assertEqual(digest["total"], 3)
 
     def test_low_rated_rewatches_are_not_advertised_as_back_on_screen(self):
@@ -149,6 +153,39 @@ class DigestTests(unittest.TestCase):
 
         for section in digest["sections"]:
             self.assertTrue(section["films"])
+
+    def test_watchlist_matches_on_tmdb_id_when_the_slug_is_missing(self):
+        """A screening resolved through TMDb has no Letterboxd slug, and every
+        watchlist is keyed by slug — matching on either is what makes the
+        section fire at all."""
+        rows = [{"title_raw": "Stalker", "tmdb_id": 1, "film_slug": None,
+                 "venue_name": "Atlas", "genres": [], "director": ""}]
+
+        digest = build_digest(rows, [], [{"slug": "stalker", "tmdb_id": 1}], {})
+
+        self.assertEqual(digest["sections"][0]["key"], "watchlist")
+
+    def test_one_film_at_several_venues_is_one_card(self):
+        rows = [
+            {"title_raw": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
+             "venue_name": "Atlas", "genres": [], "director": ""},
+            {"title_raw": "Stalker", "tmdb_id": 1, "film_slug": "stalker",
+             "venue_name": "Kadıköy", "genres": [], "director": ""},
+        ]
+
+        digest = build_digest(rows, [], ["stalker"], {})
+        films = digest["sections"][0]["films"]
+
+        self.assertEqual(len(films), 1)
+        self.assertEqual(films[0]["venue"], "Atlas · Kadıköy")
+
+    def test_taste_notes_use_turkish_genre_names(self):
+        rows = [{"title_raw": "Yeni Film", "tmdb_id": 9, "film_slug": "yeni-film",
+                 "venue_name": "Vizyon", "genres": ["Adventure"], "director": ""}]
+
+        digest = build_digest(rows, [], [], {"top_genres": ["Adventure"]})
+
+        self.assertIn("Macera", digest["sections"][0]["films"][0]["note"])
 
     def test_watched_films_never_appear_as_new_releases(self):
         watched = [{
