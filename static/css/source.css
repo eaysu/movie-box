@@ -296,7 +296,10 @@
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    padding-bottom: 0.25rem;
+    /* overflow-y: hidden clips at the padding box, so a card flush against the
+       top edge loses its ring. This padding is what keeps the highlight ring
+       and the rounded corners fully drawn. */
+    padding: 0.25rem 0.125rem 0.4rem;
   }
   .bulletin-strip::-webkit-scrollbar { display: none; }
   .bulletin-strip > * { scroll-snap-align: start; }

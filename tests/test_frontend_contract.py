@@ -320,6 +320,11 @@ def test_cinema_bulletin_scrolls_horizontally_only():
     assert "overflow-x: auto" in strip
     assert "overflow-y: hidden" in strip
     assert "scroll-snap-type: x mandatory" in strip
+    # Vertical padding keeps the highlight ring off the clipping edge.
+    padding = [line for line in strip.splitlines() if line.strip().startswith("padding:")]
+    assert padding, "the strip needs vertical padding or the card rings clip"
+    top = padding[0].split("padding:", 1)[1].strip().rstrip(";").split()[0]
+    assert top not in ("0", "0px"), "a zero top padding clips the ring again"
     # A vertically scrolling grid was what this replaced.
     assert "max-h-[70vh] overflow-y-auto" not in js
 
@@ -342,7 +347,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     """
     expected = {
         "static/js/app.js": "c6ebc02a68e26e8f93747720e948b6af9359dc903ea5c67eddebc859dd81448e",
-        "static/app.css": "089ec8a61b137724cea1b5306e52e85bf4be1744e8029cb17f1279b1e9e2ffa4",
+        "static/app.css": "390e94bd1e80dd924c585ea60016293bcde687b961ae303ef27ddd758e7cd0db",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -374,7 +379,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260904.27"
+    css_version = "v=20260904.28"
     assert f"/static/app.css?{css_version}" in html
     assert "/static/js/app.js?v=20260904.39" in html
     assert app_js.count(f"?{dependency_version}") == 5
