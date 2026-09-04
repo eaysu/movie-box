@@ -372,6 +372,40 @@ INSERT INTO public.venues (slug, name, city, kind, source_url)
 VALUES ('tr-vizyon', 'Türkiye vizyonu', '', 'release', 'https://www.themoviedb.org/movie/now-playing')
 ON CONFLICT (slug) DO NOTHING;
 
+-- Seeded venues. `config.robots` records the permission check that was made
+-- before enabling each one, so the decision is auditable later. Selectors are
+-- deliberately the sturdiest thing each site offers: a data attribute where one
+-- exists, then a stable container class, then a URL pattern.
+INSERT INTO public.venues (slug, name, city, kind, source_url, config) VALUES
+  ('paribu-cineverse', 'Paribu Cineverse', '', 'repertory',
+   'https://www.paribucineverse.com/vizyondakiler',
+   '{"strategy":"attr","item_selector":"div.movie-list-banner-item",
+     "title_attr":"data-movie-title","link_attr":"data-slug-url","limit":60,
+     "robots":{"checked":"2026-09-04","allowed":true,
+               "note":"Allow: / ; only /biletleme/ is disallowed and we never fetch it."}}'::jsonb),
+  ('baska-sinema', 'Başka Sinema', '', 'repertory',
+   'https://www.baskasinema.com/filmler/',
+   '{"strategy":"css","item_selector":"div.movie_box","title_selector":"h3.movie_title",
+     "link_selector":"div.movie_cover a[href]","limit":60,
+     "robots":{"checked":"2026-09-04","allowed":true,"note":"Only /wp-admin/ disallowed."}}'::jsonb),
+  ('atlas-1948', 'Atlas 1948 Sineması', 'İstanbul', 'repertory',
+   'https://www.atlas1948.com/',
+   '{"strategy":"link","href_pattern":"/film/[^/]+/?$",
+     "skip_titles":["BİLETİNİ AL","Detaylar","İncele","Seanslar"],"limit":60,
+     "robots":{"checked":"2026-09-04","allowed":true,"note":"No robots restrictions on /film/."}}'::jsonb),
+  ('kadikoy-sinemasi', 'Kadıköy Sineması', 'İstanbul', 'repertory',
+   'https://biletinial.com/tr-tr/mekan/kadikoy-sinemasi',
+   '{"strategy":"css","item_selector":"div.yeniMekan__sayfalar__vizyondakiler li",
+     "title_selector":"h3 a","limit":60,
+     "robots":{"checked":"2026-09-04","allowed":true,
+               "note":"kadikoysinemasi.com redirects here. /kino/ and /WebLogin disallowed; /mekan/ is not."}}'::jsonb)
+ON CONFLICT (slug) DO UPDATE SET
+  name = EXCLUDED.name,
+  city = EXCLUDED.city,
+  source_url = EXCLUDED.source_url,
+  config = EXCLUDED.config,
+  updated_at = now();
+
 CREATE TABLE IF NOT EXISTS public.screenings (
   id             BIGSERIAL PRIMARY KEY,
   venue_id       BIGINT NOT NULL REFERENCES public.venues(id) ON DELETE CASCADE,

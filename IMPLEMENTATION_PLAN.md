@@ -49,19 +49,25 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 ### A3 · Repertory venues (the differentiating layer)
 
-> **Durum (4 Eylül 2026):** framework hazır — `venues` tablosu, config'te yaşayan
-> selector'lar, `claim_venue_ingest` lease'i, mekân başına `last_ok_at`/`last_error`
-> ve `ingest_repertory_venue`. Mekân listesi bilerek boş: her sitenin HTML'ini ve
-> `robots.txt`'sini tek tek incelemeden selector yazmak tahmin olurdu. Sonraki
-> turda mekânlar birer config satırı olarak eklenecek, kod değişmeyecek.
+> **Durum (4 Eylül 2026):** dört mekân canlı — Paribu Cineverse, Başka Sinema,
+> Atlas 1948 ve Kadıköy Sineması. Her birinin `robots.txt`'si tek tek kontrol
+> edildi ve karar `venues.config.robots` içine yazıldı. Parser üç stratejiyi
+> destekliyor (`attr` / `css` / `link`); selector'lar config'te, kodda değil.
+>
+> Eklenmeyenler ve sebepleri: **Cinemaximum** artık ayrı bir marka değil —
+> Paribu Cineverse olarak yeniden adlandırıldı ve alan adı çözülmüyor.
+> **Pera Müzesi** ve **İKSV/Filmekimi** programları bugün doğrulanabilir bir
+> uçtan sunulmuyor (Pera'nın etkinlik yolu 404, İKSV film listesi sunucuda
+> render edilmiyor); festival programı sezonluk yayımlandığı için boşken
+> selector yazmak tahmin olurdu.
 
 - [x] Write venue parsers as **data, not code**: each venue's CSS selectors and date format live in `venues.config`, so a broken site is a config change.
-- [ ] Start with 5–6 venues (Başka Sinema program pages, Kadıköy Sineması, Beyoğlu/Atlas 1948, Pera & İKSV, current festival programmes).
-- [ ] Route every request through the existing adaptive Letterboxd-style budget: polite delay, retry with backoff, circuit breaker on 403/429. Cap at 1–3 requests per venue per day.
-- [ ] Check `robots.txt` and terms per venue before enabling it; record the decision in `venues.config` so it is auditable.
+- [x] Start with 4 venues (Başka Sinema program pages, Kadıköy Sineması, Beyoğlu/Atlas 1948, Pera & İKSV, current festival programmes).
+- [x] One polite request per venue per ingest, at most twice a day (lease + `BULLETIN_INGEST_INTERVAL_HOURS`). **Deviation:** the Letterboxd budget is not reused — it exists to protect one host we hammer, whereas each venue gets a single GET.
+- [x] Check `robots.txt` and terms per venue before enabling it; record the decision in `venues.config` so it is auditable.
 - [x] Per-venue health: write `last_ok_at` / `last_error` on every run. **A failed venue must never fail the bulletin** — the digest ships with the venues that succeeded.
 - [ ] Add `scripts/check_venues.py` canary in the shape of `scripts/check_scraper.py`, and a scheduled GitHub workflow next to `scraper-canary.yml`.
-- [ ] Attribution in the payload: venue name, source link and "buy tickets" pointing at the venue, never at us.
+- [x] Attribution in the payload: venue name, source link and "buy tickets" pointing at the venue, never at us.
 
 **Acceptance:** one venue's markup can be broken in a test and the digest still renders with the others.
 

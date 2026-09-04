@@ -1,10 +1,12 @@
 import asyncio
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.screenings import (
     LOCAL_TZ,
+    parse_programme,
     build_digest,
     ingest_release_layer,
     normalize_title,
@@ -237,3 +239,148 @@ class WeekTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VenueParserTests(unittest.TestCase):
+    """Pinned against trimmed copies of the real programme pages.
+
+    When a venue redesigns, this is the test that fails first, and the fix is a
+    `venues.config` change plus a refreshed fixture — not application code.
+    """
+
+    FIXTURES = Path(__file__).parent / "fixtures" / "venues"
+
+    def _parse(self, fixture, config, base_url):
+        html = (self.FIXTURES / fixture).read_text(encoding="utf-8")
+        return parse_programme(html, config, base_url)
+
+    def test_paribu_cineverse_reads_titles_from_the_data_attribute(self):
+        rows = self._parse("paribu_cineverse.html", {
+            "strategy": "attr",
+            "item_selector": "div.movie-list-banner-item",
+            "title_attr": "data-movie-title",
+            "link_attr": "data-slug-url",
+        }, "https://www.paribucineverse.com/vizyondakiler")
+
+        self.assertTrue(rows)
+        self.assertIn("Fall 2: Ölümcül Tırmanış", [row["title_raw"] for row in rows])
+        self.assertTrue(rows[0]["url"].startswith("https://www.paribucineverse.com/"))
+
+    def test_baska_sinema_reads_the_card_title_not_the_details_link(self):
+        rows = self._parse("baska_sinema.html", {
+            "strategy": "css",
+            "item_selector": "div.movie_box",
+            "title_selector": "h3.movie_title",
+            "link_selector": "div.movie_cover a[href]",
+        }, "https://www.baskasinema.com/filmler/")
+
+        titles = [row["title_raw"] for row in rows]
+        self.assertTrue(titles)
+        self.assertNotIn("Detaylar", titles)
+        self.assertTrue(all(row["url"].startswith("https://") for row in rows))
+
+    def test_atlas_link_strategy_skips_call_to_action_anchors(self):
+        rows = self._parse("atlas_1948.html", {
+            "strategy": "link",
+            "href_pattern": r"/film/[^/]+/?$",
+            "skip_titles": ["BİLETİNİ AL", "Detaylar", "İncele", "Seanslar"],
+        }, "https://www.atlas1948.com/")
+
+        titles = [row["title_raw"] for row in rows]
+        self.assertTrue(titles)
+        for junk in ("BİLETİNİ AL", "Biletini Al"):
+            self.assertNotIn(junk, titles)
+
+    def test_kadikoy_listing_parses_and_non_film_events_stay_unresolved(self):
+        rows = self._parse("kadikoy_sinemasi.html", {
+            "strategy": "css",
+            "item_selector": "div.yeniMekan__sayfalar__vizyondakiler li",
+            "title_selector": "h3 a",
+        }, "https://biletinial.com/tr-tr/mekan/kadikoy-sinemasi")
+
+        self.assertTrue(rows)
+        # The venue also lists stand-up nights; they simply never resolve to a
+        # film, which is why the matcher refuses to guess.
+        stand_up = next(
+            (row for row in rows if "Gösteri" in row["title_raw"]), None
+        )
+        if stand_up:
+            resolved = asyncio.run(resolve_screening_title(
+                stand_up["title_raw"], None, catalog={}, enricher=None
+            ))
+            self.assertEqual(resolved["match_status"], "unresolved")
+
+    def test_duplicate_titles_on_one_page_collapse(self):
+        html = """<html><body>
+          <div class="movie-list-banner-item" data-movie-title="Aynı Film" data-slug-url="/a"></div>
+          <div class="movie-list-banner-item" data-movie-title="AYNI FİLM" data-slug-url="/b"></div>
+        </body></html>"""
+        rows = parse_programme(html, {
+            "strategy": "attr",
+            "item_selector": "div.movie-list-banner-item",
+            "title_attr": "data-movie-title",
+            "link_attr": "data-slug-url",
+        }, "https://example.com/")
+
+        self.assertEqual(len(rows), 1)
+
+
+class VenueConfigTests(unittest.TestCase):
+    def test_every_seeded_venue_records_its_robots_check(self):
+        schema = (Path(__file__).parents[1] / "supabase" / "schema.sql").read_text()
+        seed = schema.split("INSERT INTO public.venues (slug, name, city, kind, source_url, config)", 1)[1]
+        seed = seed.split("ON CONFLICT", 1)[0]
+
+        for slug in ("paribu-cineverse", "baska-sinema", "atlas-1948", "kadikoy-sinemasi"):
+            self.assertIn(slug, seed)
+        # A venue may only be enabled after someone checked its terms.
+        self.assertEqual(seed.count('"robots"'), 4)
+        self.assertEqual(seed.count('"checked"'), 4)
+
+
+class VenueResilienceTests(unittest.TestCase):
+    class _Service:
+        def __init__(self, venues):
+            self.venues = venues
+            self.written = {}
+            self.failures = {}
+
+        def list_active_venues(self, kind=None):
+            return self.venues
+
+        def claim_venue_ingest(self, slug, token, lease, min_age):
+            return True
+
+        def upsert_screenings(self, slug, rows, run_id):
+            self.written[slug] = rows
+            return len(rows)
+
+        def record_venue_failure(self, slug, error):
+            self.failures[slug] = error
+
+    def test_one_broken_venue_does_not_stop_the_others(self):
+        from app import screenings as module
+
+        service = self._Service([
+            {"slug": "release", "kind": "release"},
+            {"slug": "broken", "kind": "repertory", "source_url": "https://broken.example"},
+            {"slug": "healthy", "kind": "repertory", "source_url": "https://healthy.example"},
+        ])
+
+        async def fetch(venue):
+            if venue["slug"] == "broken":
+                raise RuntimeError("site down")
+            return [{"title_raw": "Stalker", "url": "https://healthy.example/stalker"}]
+
+        original = module._fetch_and_parse
+        module._fetch_and_parse = fetch
+        try:
+            written = asyncio.run(module.ingest_venues(service, enricher=None))
+        finally:
+            module._fetch_and_parse = original
+
+        self.assertEqual(written, 1)
+        self.assertIn("healthy", service.written)
+        self.assertIn("site down", service.failures["broken"])
+        # The release layer has its own ingest and is skipped here.
+        self.assertNotIn("release", service.written)

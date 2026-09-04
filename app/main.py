@@ -2012,6 +2012,9 @@ def _kick_bulletin_ingest(settings, service) -> None:
             supabase_client, cache = _make_cache(settings)
             enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
             await screenings.ingest_release_layer(service, settings, enricher=enricher)
+            # Venues run after the release layer so their titles can match
+            # against films it has just resolved.
+            await screenings.ingest_venues(service, enricher=enricher)
         except Exception as exc:  # noqa: BLE001 - never surface to the caller
             log.warning("bulletin ingest failed: %s", exc)
 

@@ -194,6 +194,141 @@ async def ingest_release_layer(service, settings, *, enricher) -> int:
         return 0
 
 
+def parse_programme(html: str, config: dict, base_url: str) -> list[dict]:
+    """Turn a venue page into programme rows using the venue's own config.
+
+    Three strategies cover every venue seen so far, and each venue picks one:
+
+    * ``attr`` — the item element carries the title in a data attribute. The
+      sturdiest, because it survives any visual redesign.
+    * ``css``  — item container plus a title selector inside it.
+    * ``link`` — anchors whose href matches a pattern; the link text is the
+      title. Useful when a site has no stable class names but stable URLs.
+    """
+    from bs4 import BeautifulSoup  # imported lazily: ingest-only dependency
+
+    soup = BeautifulSoup(html or "", "lxml")
+    strategy = config.get("strategy") or "css"
+    # Call-to-action anchors ("BİLETİNİ AL", "Detaylar") sit next to the real
+    # ones and match the same URL pattern, so they are excluded by name.
+    skip = {normalize_title(item) for item in (config.get("skip_titles") or [])}
+    rows: list[dict] = []
+
+    def _abs(href: str) -> str:
+        href = (href or "").strip()
+        if not href:
+            return ""
+        if href.startswith("http"):
+            return href
+        from urllib.parse import urljoin
+
+        return urljoin(base_url, href)
+
+    def _poster(node) -> str:
+        selector = config.get("poster_selector")
+        image = node.select_one(selector) if selector else node.find("img")
+        if not image:
+            return ""
+        src = image.get("src") or image.get("data-src") or ""
+        return _abs(src) if src and not src.startswith("data:") else ""
+
+    if strategy == "link":
+        pattern = re.compile(config.get("href_pattern") or r".")
+        for anchor in soup.find_all("a", href=True):
+            if not pattern.search(anchor["href"]):
+                continue
+            title = anchor.get("title") or anchor.get_text(" ", strip=True)
+            title = _SPACES.sub(" ", str(title or "")).strip()
+            if not title or normalize_title(title) in skip:
+                continue
+            rows.append({
+                "title_raw": title,
+                "url": _abs(anchor["href"]),
+                "poster_url": _poster(anchor),
+            })
+    else:
+        for node in soup.select(config.get("item_selector") or ""):
+            if strategy == "attr":
+                title = node.get(config.get("title_attr") or "data-title") or ""
+            else:
+                selector = config.get("title_selector")
+                found = node.select_one(selector) if selector else None
+                title = found.get_text(" ", strip=True) if found else ""
+            title = _SPACES.sub(" ", str(title or "")).strip()
+            if not title or normalize_title(title) in skip:
+                continue
+            link = ""
+            if config.get("link_attr"):
+                link = node.get(config["link_attr"]) or ""
+            if not link:
+                anchor = node.select_one(config.get("link_selector") or "a[href]")
+                link = anchor.get("href") if anchor and anchor.get("href") else ""
+            rows.append({
+                "title_raw": title,
+                "url": _abs(link),
+                "poster_url": _poster(node),
+            })
+
+    # The same film often appears in several blocks of one page.
+    unique: dict[str, dict] = {}
+    for row in rows:
+        unique.setdefault(normalize_title(row["title_raw"]), row)
+    return list(unique.values())[: int(config.get("limit") or 60)]
+
+
+async def fetch_venue_page(venue: dict) -> str:
+    """One polite GET per venue. Never retried aggressively: a venue that is
+    down simply misses this run."""
+    import httpx
+
+    url = venue.get("source_url") or ""
+    if not url:
+        return ""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; MovieboxdBot/1.0; +https://movieboxd.onrender.com)"
+        ),
+        "Accept-Language": "tr,en;q=0.8",
+    }
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers=headers) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.text
+
+
+async def ingest_venues(service, *, enricher, catalog=None) -> int:
+    """Refresh every active repertory/festival venue, independently.
+
+    Each venue is claimed, fetched and written on its own, so one broken site
+    cannot take the bulletin down with it.
+    """
+    venues = await asyncio.to_thread(service.list_active_venues)
+    total = 0
+    for venue in venues:
+        if venue.get("kind") == "release":
+            continue
+        total += await ingest_repertory_venue(
+            service,
+            venue,
+            fetch_page=_fetch_and_parse,
+            enricher=enricher,
+            catalog=catalog or {},
+        )
+    return total
+
+
+async def _fetch_and_parse(venue: dict) -> list[dict]:
+    html = await fetch_venue_page(venue)
+    source = venue.get("source_url") or ""
+    rows = parse_programme(html, venue.get("config") or {}, source)
+    # Venues whose listing links are JavaScript handlers leave no per-film URL;
+    # point those at the venue's own programme page rather than nowhere.
+    for row in rows:
+        if not row.get("url"):
+            row["url"] = source
+    return rows
+
+
 async def ingest_repertory_venue(service, venue, *, fetch_page, enricher, catalog) -> int:
     """Parse one venue with the selectors stored on its own row.
 

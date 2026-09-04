@@ -266,6 +266,10 @@ class Enricher:
         query = (title or "").strip()
         if not query:
             return []
+        cache_key = f"search:{language}:{year or ''}:{query.casefold()}"
+        cached = await asyncio.to_thread(self.cache.get, "tmdb", cache_key)
+        if cached is not None:
+            return list(cached)
         client = await _get_tmdb_client()
         params = {"query": query, "language": language, "include_adult": "false"}
         if year:
@@ -287,6 +291,7 @@ class Enricher:
                 "year": int(release[:4]) if release[:4].isdigit() else None,
                 "poster_url": f"{TMDB_IMAGE_BASE}{poster}" if poster else "",
             })
+        await asyncio.to_thread(self.cache.set, "tmdb", cache_key, out)
         return out
 
     async def discover_pool(
