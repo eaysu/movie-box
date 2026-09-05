@@ -296,6 +296,22 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "yalnızca alıcısının cihazında" not in html
 
 
+def test_a_correspondence_continues_from_the_inbox():
+    """Replying used to mean finding the person again in Sinefil Sineması."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "function letterReplyBar" in app_js
+    assert "data-letter-reply=" in app_js
+    assert "letterReplyBar(peer)" in app_js
+    # The reply opens the same composer the directory uses.
+    reply = app_js.split("data-letter-reply]", 1)[1].split("}", 1)[0]
+    assert "openLetterCompose" in reply
+    # The daily limit is stated on the bar instead of only inside the dialog.
+    assert "Günlük mektubunu yolladın" in app_js
+    # And answering does not collapse the conversation you were reading.
+    assert "_openLetterThread" in app_js
+
+
 def test_writing_a_letter_requires_your_own_letterbox_to_be_open():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -346,7 +362,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "c6ebc02a68e26e8f93747720e948b6af9359dc903ea5c67eddebc859dd81448e",
+        "static/js/app.js": "f9759d41303544e885f3a56237cf64b8393a7f3e62f79378b91ea37a899071b3",
         "static/app.css": "390e94bd1e80dd924c585ea60016293bcde687b961ae303ef27ddd758e7cd0db",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
@@ -381,7 +397,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260904.28"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260904.39" in html
+    assert "/static/js/app.js?v=20260905.40" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js

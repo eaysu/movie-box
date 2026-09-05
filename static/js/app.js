@@ -1673,19 +1673,42 @@ function letterCard(item, payload) {
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(author)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
 }
 
+function letterReplyBar(peer) {
+  const username = escapeHTML(peer?.username || '');
+  const name = escapeHTML(peer?.display_name || peer?.username || 'bu sinefile');
+  if (!username) return '';
+  const remaining = Math.max(0, Number(_letterSendStatus?.seconds_remaining) || 0);
+  if (_letterSendStatus && _letterSendStatus.can_send === false && remaining > 0) {
+    return `<p class="mt-3 rounded-xl border border-outline-variant/25 bg-surface-variant/40 py-3 text-center font-label-md text-label-md text-on-surface-variant">
+      Günlük mektubunu yolladın · ${escapeHTML(formatLetterCooldown(remaining))} sonra yazabilirsin
+    </p>`;
+  }
+  // A correspondence continues where it lives. Before this, replying meant
+  // finding the person again in Sinefil Sineması and starting over.
+  return `<button type="button" data-letter-reply="${username}" class="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/20 transition-colors">
+    <span class="material-symbols-outlined text-[18px]">mail</span>${name} kişisine yaz
+  </button>`;
+}
+
+let _openLetterThread = '';
+
 function letterThreadCard(group) {
   const peer = group.peer || {};
   const username = escapeHTML(peer.username || '');
   const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
   const unread = group.items.filter(({ item }) => item.direction === 'received' && !item.read_at).length;
   const details = group.items.map(({ item, payload }) => letterCard(item, payload)).join('');
-  return `<article class="overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container shadow-lg"><button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 p-4 text-left hover:bg-surface-variant/40"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="text-xs text-on-surface-variant">@${username} · ${group.items.length} mektup</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread} yeni</span>` : ''}<span class="material-symbols-outlined text-on-surface-variant transition-transform">expand_more</span></button><div data-letter-thread-body="${username}" class="hidden border-t border-outline-variant/20 p-3"><div class="flex flex-col gap-3">${details}</div></div></article>`;
+  return `<article class="overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container shadow-lg"><button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 p-4 text-left hover:bg-surface-variant/40"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="text-xs text-on-surface-variant">@${username} · ${group.items.length} mektup</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread} yeni</span>` : ''}<span class="material-symbols-outlined text-on-surface-variant transition-transform">expand_more</span></button><div data-letter-thread-body="${username}" class="hidden border-t border-outline-variant/20 p-3"><div class="flex flex-col gap-3">${details}</div>${letterReplyBar(peer)}</div></article>`;
 }
 
 async function loadLetters() {
   if (!_account) return;
   letterMessage('error');
   try {
+    // The reply bar states the daily limit, so the inbox needs the allowance
+    // before it renders rather than only when the composer opens. Not knowing
+    // it is survivable: the composer says so on open.
+    try { await loadLetterSendStatus(); } catch (_) {}
     const unreadData = await apiJSON('/api/letters/unread-count');
     const unreadCount = Math.max(0, Number(unreadData.count) || 0);
     $('inbox-letters-badge').textContent = unreadCount > 9 ? '9+' : String(unreadCount);
@@ -1719,6 +1742,13 @@ async function loadLetters() {
     $('letters-list').innerHTML = decoded.length
       ? sortedThreads.map(letterThreadCard).join('')
       : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">Henüz mektubun yok. Mektuba açık sinefilleri Sinefil Sineması’nda bulabilirsin.</div>';
+    // Reloading after a reply should leave the conversation open, not collapse
+    // everything back to a list.
+    if (_openLetterThread) {
+      const body = document.querySelector(`[data-letter-thread-body="${CSS.escape(_openLetterThread)}"]`);
+      if (body) body.classList.remove('hidden');
+      else _openLetterThread = '';
+    }
     if (unread.length) refreshBlendBadge();
   } catch (error) {
     $('letters-list').innerHTML = '';
@@ -2060,7 +2090,16 @@ async function handleBlendInboxAction(event) {
   if (thread) {
     const username = thread.dataset.letterThread;
     const body = document.querySelector(`[data-letter-thread-body="${CSS.escape(username)}"]`);
-    if (body) body.classList.toggle('hidden');
+    if (body) {
+      body.classList.toggle('hidden');
+      _openLetterThread = body.classList.contains('hidden') ? '' : username;
+    }
+    return;
+  }
+  const reply = event.target.closest('[data-letter-reply]');
+  if (reply) {
+    _openLetterThread = reply.dataset.letterReply;
+    openLetterCompose(reply.dataset.letterReply);
     return;
   }
   const letterButton = event.target.closest('[data-letter-action]');
