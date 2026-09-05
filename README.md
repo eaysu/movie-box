@@ -137,6 +137,12 @@ gövdeyi hiç seçmez. Servis mektupları teknik olarak okuyabilir — bu, ürü
 verdiği sözün sınırıdır. Eski şifreli satırlar veritabanında kalır ama artık
 kimse tarafından açılamaz; arayüz bunu açıkça söyler.
 
+Mektup kutusu, Sinefil Sineması gibi varsayılan olarak açıktır; izole kalmak
+isteyen profilinden kapatır. Var olan hesaplar bir kereliğine
+`python -m scripts.open_letterboxes --apply` ile açıldı; toplu güncelleme
+şemada değil, çünkü şema tekrar tekrar uygulanıyor ve kapatanların tercihini
+sessizce geri alırdı.
+
 Mektup yollamak için kullanıcının kendi mektup kutusunun da açık olması gerekir
 (`letter_sender_closed`); kapalıysa arayüz kutuyu açmayı öneren bir modal
 gösterir. Gerekçesi: kapalı bir hesaptan gönderilen mektup, alıcının cevap
@@ -177,6 +183,32 @@ python -m scripts.resolve_screenings --map "Sonbahar Sonatı=4174"
 
 The feature ships dark: set `BULLETIN_ENABLED=true` to turn it on, and
 `venues.active` disables a single venue.
+
+## Local development
+
+Registration needs a password and a bio code in a public Letterboxd profile,
+which is the right gate in production and pure friction when the thing being
+tested is onboarding. One command prepares the account, starts the server and
+opens the browser already signed in:
+
+```bash
+python -m scripts.dev_start                # sign in as enesaysu, keep data
+python -m scripts.dev_start --fresh        # replay onboarding from scratch
+python -m scripts.dev_start --user someone --port 8010
+```
+
+It needs `SUPABASE_ANON_KEY` and `AUTH_IDENTITY_SECRET` in `.env.local`, and the
+identity secret **must match Render's**: the synthetic login email is derived
+from it, so a different value cannot find the existing account.
+
+Two consequences worth knowing. The script sets the account's password to
+`DEV_LOGIN_PASSWORD`, so the previous password stops working until it is reset
+through the app. And there is no separate local database — `--fresh` deletes
+that username's real profile rows, which is why it asks first.
+
+The route it uses (`GET /api/dev/login`) exists only when `DEV_LOGIN_ENABLED`
+is set and refuses any caller that is not on the loopback interface. It is not
+in `render.yaml` and must never be.
 
 ## Local admin activity report
 

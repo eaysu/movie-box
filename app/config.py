@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     recommendation_history_limit: int = 100
     favorite_director_boost: float = 0.08
 
+    # --- Local development ---
+    # Opens a password-free login route, so onboarding can be replayed without
+    # re-registering. Never set this in a deployed environment: it is a login
+    # bypass. The route also refuses any caller that is not on this machine.
+    dev_login_enabled: bool = False
+    dev_login_password: str = "movieboxd-dev-only"
+
     # --- Sinema gündemi (bülten) ---
     # Ships dark: the release layer and the venue framework are inert until this
     # is turned on for an account cohort.

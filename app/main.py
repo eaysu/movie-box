@@ -30,7 +30,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
 
@@ -1357,6 +1357,38 @@ async def login(req: LoginRequest, request: Request, response: Response) -> dict
         _raise_auth_http(exc)
     _set_session_cookies(response, session)
     return {"ok": True, "account": session.account.__dict__}
+
+
+if get_settings().dev_login_enabled:  # pragma: no cover - local tooling only
+    log.warning(
+        "DEV LOGIN ENABLED — /api/dev/login accepts a username without a "
+        "password. This must never be set in a deployed environment."
+    )
+
+    @app.get("/api/dev/login")
+    async def dev_login(request: Request, username: str = "") -> Response:
+        """Password-free login for local testing, then straight to the app.
+
+        The route exists only when DEV_LOGIN_ENABLED is set and additionally
+        refuses anything but a loopback caller, so a stray flag on a deployed
+        host still cannot be reached from outside the machine.
+        """
+        client = request.client.host if request.client else ""
+        if client not in ("127.0.0.1", "::1", "localhost"):
+            raise HTTPException(status_code=404, detail="Not found")
+        settings = get_settings()
+        try:
+            session = await asyncio.to_thread(
+                _auth_service().login,
+                _normalize_username(username),
+                settings.dev_login_password,
+                ip_hash="dev",
+            )
+        except AuthError as exc:
+            _raise_auth_http(exc)
+        response = RedirectResponse(url="/", status_code=303)
+        _set_session_cookies(response, session)
+        return response
 
 
 @app.get("/api/auth/me")

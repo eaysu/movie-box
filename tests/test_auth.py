@@ -739,3 +739,40 @@ def test_deleting_blend_removes_the_shared_record():
     assert response.status_code == 200
     assert response.json() == {"ok": True, "request_id": "request-123"}
     assert deleted == ["request-123"]
+
+
+def test_dev_login_route_only_exists_behind_the_flag():
+    """The password-free route is local tooling and must stay unreachable."""
+    main_source = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+
+    # Registered inside the flag check, not registered-then-guarded, so a
+    # deployed build does not expose the path at all.
+    assert "if get_settings().dev_login_enabled:" in main_source
+    block = main_source.split("if get_settings().dev_login_enabled:", 1)[1]
+    block = block.split("\n@app.get", 1)[0]
+    assert '@app.get("/api/dev/login")' in block
+    # And even then only from this machine.
+    assert '("127.0.0.1", "::1", "localhost")' in block
+    assert "status_code=404" in block
+
+
+def test_dev_login_defaults_to_off_and_is_never_deployed():
+    from app.config import Settings
+
+    assert Settings().dev_login_enabled is False
+    render = (Path(__file__).parents[1] / "render.yaml").read_text()
+    assert "DEV_LOGIN_ENABLED" not in render
+
+
+def test_new_accounts_get_an_open_letterbox():
+    schema = (Path(__file__).parents[1] / "supabase" / "schema.sql").read_text()
+
+    assert "ALTER COLUMN letter_receiving_enabled SET DEFAULT TRUE" in schema
+
+
+def test_bulk_letterbox_open_is_a_script_not_a_schema_line():
+    """Re-applying the schema must not undo someone's choice to close it."""
+    schema = (Path(__file__).parents[1] / "supabase" / "schema.sql").read_text()
+
+    assert "UPDATE public.users SET letter_receiving_enabled" not in schema
+    assert (Path(__file__).parents[1] / "scripts" / "open_letterboxes.py").exists()

@@ -31,9 +31,14 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS top_films JSONB NOT NULL DEFAU
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;
 UPDATE public.users SET discoverable = TRUE
 WHERE account_status = 'active' AND (discoverable IS NULL OR discoverable = FALSE);
--- Mektup alma tercihi ayrı ve varsayılan olarak kapalıdır. Aynı tercih gönderme
--- hakkını da belirler: kutusu kapalı bir hesap mektup yollayamaz.
+-- Mektup kutusu, Sinefil Sineması gibi varsayılan olarak açıktır; izole
+-- kalmak isteyen profilinden kapatır. Aynı tercih gönderme hakkını da belirler:
+-- kutusu kapalı bir hesap mektup yollayamaz.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS letter_receiving_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.users ALTER COLUMN letter_receiving_enabled SET DEFAULT TRUE;
+-- Var olan hesaplar bir kereliğine `scripts.open_letterboxes` ile açıldı.
+-- Toplu UPDATE bilerek burada değil: şema her uygulandığında çalışır ve
+-- kutusunu kapatanların tercihini sessizce geri alırdı.
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_auth_user_id
   ON public.users (auth_user_id) WHERE auth_user_id IS NOT NULL;
