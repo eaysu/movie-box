@@ -191,38 +191,15 @@ Eklenmiş olması doğru yer; asıl tasarım sorusu şifreleme kısıtından gel
 
 ---
 
-## 6. ZIP import'u ve resmî API başvurusu
+## 6. Resmî API başvurusu
 
-### 6.1 Girişten sonra iki seçenekli soru
-
-Fikir doğru ve uygulanabilir. Ekran, tam tarama kuyruğa girerken çıkar:
-
-> **Hızlı yol — verini yükle.** Letterboxd → Settings → Data → *Export your data* linkine git, inen ZIP'i buraya bırak. Sonuç saniyeler içinde hazır.
-> **Ya da beklemeyi seç.** Arka planda biz tararız; profilin ~X dakika içinde hazır olur.
-
-Süre tahmini `profile_sync_jobs.films_total` ilerlemesinden verilebilir.
-
-**Kritik ayrım:** ZIP `diary` fazını atlar, **`enrich` fazını atlamaz.** Export yalnız film listesi + puan + tarih veriyor; yönetmen/tür/keyword yine TMDb'den gelir. Kazanç, Letterboxd'a yapılan onlarca sayfa isteğinin sıfıra inmesi — en yavaş ve en kırılgan kısım.
-
-**Teknik oturma noktası:** export CSV'lerinde `Letterboxd URI` kolonu var → **film slug'ı doğrudan türetilebilir**, yani mevcut `user_watched_films.film_slug` şemasına birebir oturuyor.
-
-| Dosya | Kullanım |
-|---|---|
-| `ratings.csv` | slug + puan (`rating_observed = true`) |
-| `watched.csv` | tam izlenen kümesi |
-| `watchlist.csv` | öneri havuzu |
-| `diary.csv` | tarih sırası → `watched_rank`, rewatch |
-| `likes/films.csv` | pozitif sinyal |
-
-Satırlar `upsert_watched_films` RPC'sinin beklediği şekle map edilir; yükleme bir "run" sayılır (`sync_run_id` verilir, `finalize_profile_sync_run` pasifleştirmeyi yapar). `profile_sync_jobs.scope` için yeni değer: `'import'`.
-
-**Güvenlik ve dayanıklılık:**
-- Dosya boyutu sınırı (~20 MB), ZIP entry sayısı **ve açılmış toplam boyut** sınırı (zip-bomb), yalnız beklenen dosya adları, path traversal reddi.
-- CSV satır sınırı (~100k), kolon şeması doğrulama, tamamen bellek içinde işleme.
-- Hata mesajlarında dosya içeriği yansıtılmaz.
-- Export'taki profil adı hesabın username'iyle eşleşmiyorsa uyar (sahiplik doğrulaması zaten var, bu ek bir tutarlılık kontrolü).
-
-**Yan fayda:** aynı parser §1 önizlemesinin de hızlı yolu olabilir — **tarayıcıda, sunucuya hiç göndermeden** ZIP analizi. Achriom'un gizlilik konumunu bizim hikâyemizle birleştirir.
+> **ZIP import'u denendi ve kaldırıldı (6 Eylül 2026).** Aşağıdaki 6.1 tasarımı
+> uygulandı: onboarding'de "verini yükle / biz tarayalım" sorusu, parser, uç
+> nokta ve güvenlik sınırları. Pratikte beklenen hız kazancını vermedi —
+> `enrich` fazı yine TMDb'ye bağlı olduğu için toplam süre yeterince kısalmadı —
+> ve karşılığında kullanıcıya onboarding'de fazladan bir karar sordurdu. Kod
+> tamamen silindi; geçmiş yalnızca tarama ile geliyor. Bu, API başvurusunun
+> önemini artırıyor: scrape'i emekliye ayırmanın kalan tek yolu o.
 
 ### 6.2 API başvurusu nasıl kabul alır
 
@@ -234,9 +211,9 @@ Letterboxd API erişimi kapalı değil, **seçici** — Toolboxd'un "generous ac
 4. **Veri hijyeni — madde madde ve doğrulanabilir.** Veri satılmıyor/yeniden dağıtılmıyor; `DELETE /api/data` ile tam silme; mektupları yalnızca iki taraf listeleyebiliyor, engelleme iki taraftan siliyor; RLS ile browser erişimi kapalı; rate limit ve cache politikaları belgeli. Bunların hepsi bugün doğru — başvurunun en kolay kısmı.
 5. **Attribution ve marka.** "Letterboxd ile ilişkili değildir" ibaresi, logo kullanmama. **Not:** ürün adının "…boxd" ile bitmesi marka açısından itiraz alabilir; Blendboxd/Toolboxd örnekleri tolerans olduğunu gösteriyor ama garanti değil — başvuru öncesi bilinçli bir karar olmalı.
 6. **Somut paket:** çalışan demo linki, kullanıcı sayısı ve büyüme eğrisi, tek sayfalık teknik özet (mimari, cache, rate limit), gizlilik politikası ve kullanım şartları sayfası, alan adına bağlı kalıcı bir iletişim adresi. TR pazarı ve Türkçe topluluk, Letterboxd'un yerelleşmediği bir bölge olarak ayrı bir değer önerisi.
-7. **Plan B kalıcı olsun.** ZIP import'u API gelmese de asıl hızlı yolumuz. Başvuru bir bahis değil, bir opsiyon.
+7. **Alternatifi kalmadı.** ZIP import'u denendi ve kaldırıldı; scrape'i emekliye ayırmanın başka yolu yok. Bu, başvuruyu daha da önemli kılıyor.
 
-**Efor:** ZIP import M · başvuru paketi S.
+**Efor:** başvuru paketi S.
 
 ---
 
@@ -247,7 +224,6 @@ Letterboxd API erişimi kapalı değil, **seçici** — Toolboxd'un "generous ac
 | **P0** | Hesapsız önizleme + paylaşım kartı (§1) | Deterministik analiz, LLM yok |
 | **P0** | Sinema bülteni — TMDb now_playing katmanı (§2) | Repertuar katmanı hemen ardından |
 | **P0** | "Bu akşam bu" + kilitleme (§3) | Blend motorunun %80'i hazır |
-| **P0** | ZIP import + onboarding sorusu (§6.1) | Onboarding'i dakikalardan saniyelere indirir |
 | **P1** | Repertuar mekân parser'ları (§2) | 5–6 mekânla başla, kısmi başarıyla yayınla |
 | **P1** | Sabit tip: 4 eksen + histerezis (§4) | Tam geçmişten hesapla, Fav 4 ile anlat |
 | **P1** | Mektup öneri halkası (§5) | İstemci tarafı kabul + rızalı bildirim |

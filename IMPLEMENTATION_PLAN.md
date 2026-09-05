@@ -3,7 +3,7 @@
 Scope: the two directions approved from [REKABET_ANALIZI.md](REKABET_ANALIZI.md) / [OZELLIK_TASARIMI.md](OZELLIK_TASARIMI.md).
 
 - **Workstream A — Screening Bulletin.** A weekly, city-aware card of films playing in Turkish cinemas, matched against the user's watchlist and rated history. Replaces the commodity "where to stream" feature.
-- **Workstream B — Letterboxd data import + official API.** Let a signed-in user upload their own Letterboxd export instead of waiting for a full crawl, and prepare a credible API access application.
+- **Workstream B — Official Letterboxd API access.** Prepare a credible application, so the fragile scraping path can be retired.
 
 Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human performs outside the codebase (SQL Editor, Letterboxd application form).
 
@@ -110,55 +110,18 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 ---
 
-## Workstream B — Letterboxd data import
+## Workstream B — Official Letterboxd API access
 
-### B1 · Onboarding choice
-
-- [ ] After the first login, while the full crawl is being queued, present two options:
-  - [ ] **Fast path** — open `letterboxd.com/data/export` in a new tab, drop the ZIP here, results in seconds
-  - [ ] **Wait** — we crawl in the background; show the estimate derived from `profile_sync_jobs.films_total` progress
-- [ ] The choice must be skippable and re-offerable later from the profile menu; never a hard gate.
-- [ ] Record `import_offered` / `import_chosen` / `crawl_chosen` in `user_activity_events`.
-
-### B2 · Parser
-
-- [ ] Add `app/letterboxd_import.py`, parsing in memory only — nothing is written to disk at any point.
-- [ ] Map the export files onto the existing model:
-  - [ ] `ratings.csv` → `film_slug` from the `Letterboxd URI` column, `user_rating`, `rating_observed = true`
-  - [ ] `watched.csv` → the full active set
-  - [ ] `diary.csv` → chronological order for `watched_rank`, rewatch flag
-  - [ ] `watchlist.csv` → recommendation candidate pool
-  - [ ] `likes/films.csv` → positive signal
-- [ ] Derive the slug from the `Letterboxd URI` column — this is what makes the export line up with `user_watched_films.film_slug` with no fuzzy matching.
-- [ ] Verify the export belongs to this account (profile name vs. account username); warn on mismatch instead of importing silently.
-
-### B3 · Pipeline integration
-
-- [ ] Feed parsed rows through the existing `upsert_watched_films` RPC in batches; do not add a second write path.
-- [ ] Treat an import as a sync run: allocate a `sync_run_id`, then call `finalize_profile_sync_run` so films removed on Letterboxd are deactivated exactly as after a crawl.
-- [ ] Add `'import'` to the `profile_sync_jobs.scope` CHECK constraint and set `phase='enrich'` on completion.
-- [ ] **The import skips the diary phase, not the enrich phase** — director/genre/keyword metadata still comes from TMDb, resolved through the shared catalog first.
-- [ ] Cancel or supersede any queued full crawl for that user once an import succeeds.
-- [ ] Run the taste snapshot exactly as the crawl path does, so both routes produce the same `algorithm_version` and fingerprint.
-
-### B4 · Upload safety
-
-- [ ] `POST /api/profile/import` — authenticated, CSRF-checked, its own rate-limit bucket (a few attempts per hour).
-- [ ] Reject before reading: request size cap (~20 MB), and a cap on both entry count and **total uncompressed size** (zip-bomb protection).
-- [ ] Allow-list expected entry names only; reject absolute paths, `..` segments and symlinks.
-- [ ] Cap CSV rows (~100k) and validate the header schema; unknown columns are ignored, missing required columns are a clear error.
-- [ ] Error messages never echo file contents.
-- [ ] Tests: zip bomb, path traversal, wrong-account export, truncated CSV, missing files, oversized upload, and a valid import ending in the same state a crawl produces.
-
-### B5 · Preview reuse (optional, after §1 of the design doc ships)
-
-- [ ] Reuse the same parser client-side so a visitor can analyse a ZIP **without uploading it**, matching our privacy positioning.
+> **ZIP import kaldırıldı (6 Eylül 2026).** Uygulandı, denendi ve geri alındı:
+> pratikte beklenen hız kazancını vermedi ve karşılığında kullanıcıya
+> onboarding'de bir karar daha sorduruyordu. Kod, uç nokta, parser ve testleri
+> tamamen silindi. Geçmiş, tek yol olarak taranıyor.
 
 ### B6 · Official API application
 
 - [ ] Measure and record the current cost: Letterboxd page requests per user for a full crawl and for an incremental refresh. This number is the application's strongest argument.
 - [ ] Draft the application around what the platform gains:
-  - [ ] "We fetch N pages per user today; with API access that goes to zero."
+  - [ ] "We fetch N pages per user today; with API access that goes to zero." Scraping is now the only way history reaches us, which makes that number the whole story.
   - [ ] Traffic returned: film and profile links out to Letterboxd; OAuth watchlist writes on the user's behalf.
   - [ ] No competition: we host no catalog, no reviews, no lists, no alternative social feed.
   - [ ] Data hygiene, all already true: full account deletion (`DELETE /api/data`), letters only the two participants can read, RLS with no browser access, documented rate limits and caching.
@@ -166,7 +129,6 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 - [ ] Prepare the package: live demo link, user count and growth, a one-page architecture summary, privacy policy and terms pages, a domain-based contact address.
 - [ ] Decide consciously on the naming risk: a product name ending in "boxd" may draw a trademark objection. Toolboxd and Blendboxd surviving suggests tolerance, not permission.
 - [ ] **MANUAL:** submit the application and log the date and response.
-- [ ] Keep the import path as the permanent Plan B regardless of the outcome — the application is an option, not a bet.
 
 ---
 
@@ -174,17 +136,16 @@ Conventions used below: `[ ]` open, `[x]` done, **MANUAL** = a step a human perf
 
 | Order | Item | Why first |
 |---|---|---|
-| 1 | B1–B4 (import) | Shortest path to a visibly faster product; removes the most fragile scraping work |
-| 2 | A0–A2 (schema + release layer) | Ships a real bulletin with zero scraping risk |
-| 3 | A4–A5 (digest + tab) | Turns the data into the weekly habit the product currently lacks |
-| 4 | A3 (repertory venues) | The differentiator, once the surface around it exists |
-| 5 | A6 (Blend intersection) | Needs both a bulletin and an accepted Blend |
-| 6 | B6 (API application) | Argument is strongest once import has measurably cut our request volume |
+| 1 | A0–A2 (schema + release layer) | Ships a real bulletin with zero scraping risk |
+| 2 | A4–A5 (digest + card) | Turns the data into the weekly habit the product currently lacks |
+| 3 | A3 (repertory venues) | The differentiator, once the surface around it exists |
+| 4 | A6 (Blend intersection) | Needs both a bulletin and an accepted Blend |
+| 5 | B6 (API application) | The only remaining way to retire scraping |
 
 ## Definition of done
 
 - [ ] Both workstreams ship behind flags and can be disabled without a deploy.
 - [ ] No new blocking call on profile load; every new surface is lazy or cached.
 - [ ] Every new table has RLS enabled and browser roles revoked, matching the existing schema.
-- [ ] `pytest` covers ingest idempotency, title matching, digest shaping, and every upload-safety case.
+- [ ] `pytest` covers ingest idempotency, title matching and digest shaping.
 - [ ] `README.md` documents the new endpoints and settings when they land.

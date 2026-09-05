@@ -179,7 +179,7 @@ Herkes swipe ediyor, ortak beğeni anında eşleşme olarak bildiriliyor. CineDu
 | **Bu akşam ne izleyelim** | Blend uyumu ölçüyor, kararı vermiyor. Rakiplerin (Tonightboxd, grup seçici, swipe app'ler) tam olarak sattığı şey bu son adım. | **KRİTİK** |
 | **Grup / 3+ kişi** | Blend ikili. Toolboxd grup watchlist seçici veriyor, swipe app'ler grup modunu standart sayıyor. | Yüksek |
 | **Doğal dil keşfi** | TasteRay ve Cinebot mood tabanlı serbest metin alıyor. LLM katmanımız bunu zaten yapabilir; sadece arayüz ve prompt sözleşmesi eksik. | Yüksek |
-| **CSV / ZIP import** | Achriom ve tarayıcı analizörleri Letterboxd export'unu kabul ediyor: tam geçmiş, saniyeler içinde, scrape riski sıfır. En pahalı işimize (full crawl) ücretsiz bir hızlı yol. | Yüksek |
+| **CSV / ZIP import** | Achriom ve tarayıcı analizörleri Letterboxd export'unu kabul ediyor. Bizde denendi ve kaldırıldı (6 Eylül 2026): `enrich` fazı yine TMDb'ye bağlı olduğu için toplam süre yeterince kısalmadı, karşılığında onboarding'e bir karar ekledi. | Kapandı |
 | **Ezberlenebilir kişilik çerçevesi** | Screened'in SMTI'si sabit bir tip veriyor — paylaşılabilir, karşılaştırılabilir, kimliğe dönüşüyor. Bizim prose analizimiz her seferinde farklı bir metin; paylaşımda tutunacak dalı yok. | Yüksek |
 | **Öneri geri bildirimi** | "İzleyeceğim" / "bunu önerme" katmanı yazılmış ama kaldırılmış (`52add68`). Swipe app'lerde standart; bizde öneriler her seferinde sıfırdan, öğrenmeden geliyor. "Bu akşam bu" filtreleri de buna dayanacağı için geri gelmesi gerekiyor. | Yüksek |
 | **İstatistik derinliği** | Dekad, ülke, süre, dil, obscurity, tekrar izleme dağılımları ve yıllık rapor rakiplerde standart; bizde temel sayaçlar var. | Orta |
@@ -229,7 +229,6 @@ Efor bandları kaba: **S** birkaç gün · **M** bir–iki hafta · **L** daha f
 | **P0** | Hesapsız önizleme + paylaşım kartı | Tek kritik funnel açığı; rakiplerin tamamı burada bizden hızlı | M |
 | **P0** | Sinema bülteni — vizyon katmanı (TMDb `now_playing`, TR) | Haftalık tekrar gelme sebebi; repertuar katmanının temeli | S |
 | **P0** | Blend → "bu akşam bu" + kilitleme | Blend'i ölçümden karara taşır; motorun %80'i hazır | S–M |
-| **P0** | Letterboxd ZIP import'u + onboarding sorusu | Onboarding'i dakikalardan saniyelere indirir; scrape riskini düşürür | M |
 | **P1** | Repertuar mekân parser'ları (5–6 sinema) | Rakiplerde hiç yok; "tekrar perdede" anını yalnız biz kurabiliriz | M |
 | **P1** | Sabit kişilik tipi — 4 eksen + histerezis | Tam geçmişten hesapla, Fav 4 ile anlat; paylaşımda tutunacak dal | M |
 | **P1** | Mektup öneri halkası (kabul + rızalı bildirim) | Mektup altyapısı hazır; "insan önerisi isabet oranı" metriğini açar | S |

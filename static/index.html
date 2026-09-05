@@ -208,25 +208,6 @@
   </div>
 </dialog>
 
-<dialog id="dialog-import-choice" class="auth-info-dialog">
-  <div class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl">
-    <span class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Hesabın hazır</span>
-    <h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Geçmişini nasıl getirelim?</h2>
-    <p class="mt-3 text-sm leading-relaxed text-on-surface-variant">Hızlı başlamak istersen Letterboxd export’unu yükleyebilirsin. İstersen hiç uğraşmadan profilini bizim taramamıza da bırakabilirsin.</p>
-    <div class="mt-5 rounded-xl border border-secondary-container/25 bg-secondary-container/10 p-4">
-      <p class="font-label-sm text-label-sm text-secondary-container">Hızlı import</p>
-      <p class="mt-1 text-sm leading-relaxed text-on-surface-variant">Letterboxd’da <a href="https://letterboxd.com/user/exportdata" target="_blank" rel="noopener noreferrer" class="text-secondary-container underline underline-offset-2">verilerini indir</a>, gelen ZIP dosyasını buraya bırak. İzlediklerin, puanların ve watchlist’in hemen eklenir.</p>
-      <input id="letterboxd-export-file" type="file" accept=".zip,application/zip,application/x-zip-compressed" class="mt-4 block w-full text-sm text-on-surface-variant file:mr-3 file:rounded-lg file:border-0 file:bg-secondary-container file:px-3 file:py-2 file:font-label-sm file:text-on-secondary-container"/>
-      <p id="letterboxd-export-error" class="hidden mt-3 text-sm text-error"></p>
-      <button id="btn-letterboxd-export-upload" type="button" class="mt-4 w-full rounded-xl bg-secondary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-secondary-container disabled:opacity-40">ZIP’i içe aktar</button>
-    </div>
-    <div class="mt-3 rounded-xl border border-outline-variant/25 bg-surface-container p-4">
-      <p class="font-label-sm text-label-sm text-on-surface">Tarama ile devam et</p>
-      <p class="mt-1 text-sm leading-relaxed text-on-surface-variant">Sen hiçbir şey yükleme; herkese açık Letterboxd profilini sırayla okuyalım.</p>
-      <button id="btn-import-use-scraper" type="button" class="mt-4 w-full rounded-xl border border-outline-variant/35 px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:border-primary-container/45 hover:text-primary-container">Profilimi tara</button>
-    </div>
-  </div>
-</dialog>
 
 <dialog id="dialog-letter-compose" class="auth-info-dialog">
   <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sana özel bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektubu yalnızca sen ve alıcısı görebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bu sinefile bugün bir mektup yazdıysan, yeniden yazmak için 24 saat beklemen gerekir. Başka bir sinefile ise hemen yazabilirsin. Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu gönder</button></form>
@@ -1199,6 +1180,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260905.42"></script>
+<script type="module" src="/static/js/app.js?v=20260906.43"></script>
 </body>
 </html>

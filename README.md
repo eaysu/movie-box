@@ -343,7 +343,7 @@ movie-box/
 | [IMPROVEMENT_CHECKLIST.md](IMPROVEMENT_CHECKLIST.md) | Running engineering checklist (Turkish) |
 | [REKABET_ANALIZI.md](REKABET_ANALIZI.md) | Competitive research and feature inventory (Turkish) |
 | [OZELLIK_TASARIMI.md](OZELLIK_TASARIMI.md) | Design of the approved next features (Turkish) |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Screening bulletin and Letterboxd import plan |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Screening bulletin plan and the Letterboxd API application |
 
 ## Account rollout
 

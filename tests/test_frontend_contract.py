@@ -298,23 +298,6 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "yalnızca alıcısının cihazında" not in html
 
 
-def test_import_choice_is_offered_to_any_unsynced_account():
-    """Not only to accounts created seconds ago.
-
-    A member who signed in without ever completing a sync — including the
-    developer using the local login — has the same choice to make: upload the
-    Letterboxd export, or wait for the scrape.
-    """
-    app_js = (ROOT / "static" / "js" / "app.js").read_text()
-
-    assert "function _importChoicePending" in app_js
-    boot = app_js.split("async function boot()", 1)[1].split("\n}", 1)[0]
-    assert "_importChoicePending(me.account)" in boot
-    assert "openImportChoice(me.account)" in boot
-    # Asked once per tab, so it does not reappear on every reload.
-    assert "_markImportAsked" in app_js
-
-
 def test_a_correspondence_continues_from_the_inbox():
     """Replying used to mean finding the person again in Sinefil Sineması."""
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -381,7 +364,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "c8fc74d2c81cd28fa8c80cf6e88786c7e57dce24db049a2de7d8d61941d04a35",
+        "static/js/app.js": "cad70aecec74a66716b7bdf9b87f63dd765c2e14136ba9f4211ab2676d97b869",
         "static/app.css": "32784d5471161fc3e83693ee171096d30f01564dbe3a724bf69b1edc6bc049e2",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
@@ -416,7 +399,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260905.42"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260905.42" in html
+    assert "/static/js/app.js?v=20260906.43" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js

@@ -2746,20 +2746,6 @@ async function startOnboarding() {
   _obShowRevealSlide(0);
 }
 
-const _IMPORT_ASKED_KEY = 'mb_import_asked';
-
-function _importChoicePending(account) {
-  if (!account || account.onboarding_completed_at) return false;
-  if (!['pending', 'failed'].includes(account.profile_sync_status)) return false;
-  try { return !sessionStorage.getItem(_IMPORT_ASKED_KEY + ':' + account.username); }
-  catch (_) { return true; }
-}
-
-function _markImportAsked(account) {
-  try { sessionStorage.setItem(_IMPORT_ASKED_KEY + ':' + account.username, '1'); }
-  catch (_) {}
-}
-
 async function boot() {
   // Health ve session birbirinden bağımsızdır. Mobil ağda iki round-trip'i
   // sıraya koymak yerine aynı anda başlatarak giriş/profil açılışını hızlandır.
@@ -2770,10 +2756,7 @@ async function boot() {
   _authEnabled = Boolean(health?.auth_enabled);
   if (!_authEnabled) { showView('idle'); loadPublicStats(); return; }
   if (me?.account) {
-    // A signed-in account whose history was never synced has the same choice to
-    // make as a fresh registration: upload the export, or wait for the scrape.
-    if (_importChoicePending(me.account)) openImportChoice(me.account);
-    else enterApp(me.account);
+    enterApp(me.account);
     return;
   }
   if (cookieValue('mb_csrf')) {
@@ -3751,7 +3734,7 @@ async function verifyRegistration() {
         });
         _pendingRegPassword = null;
         setAuthMessage(null);
-        openImportChoice(data.account);
+        enterApp(data.account, { fromRegistration: true });
         return;
       } catch (_) {
         // Otomatik giriş tutmadıysa elle girişe düş.
@@ -3763,55 +3746,6 @@ async function verifyRegistration() {
     setAuthMessage('Hesap doğrulandı. Şimdi parolanla giriş yapabilirsin.');
   } catch (error) {
     setAuthMessage(error.message || 'Bio doğrulanamadı.', true);
-  } finally { button.disabled = false; }
-}
-
-function openImportChoice(account) {
-  _registrationAccount = account;
-  applyAccount(account);
-  $('letterboxd-export-file').value = '';
-  $('letterboxd-export-error').classList.add('hidden');
-  $('dialog-import-choice').showModal();
-}
-
-function continueWithScraper() {
-  const account = _registrationAccount;
-  _registrationAccount = null;
-  $('dialog-import-choice').close();
-  if (!account) return;
-  _markImportAsked(account);
-  enterApp(account, { fromRegistration: true });
-}
-
-async function importLetterboxdExport() {
-  const account = _registrationAccount;
-  const file = $('letterboxd-export-file').files?.[0];
-  const button = $('btn-letterboxd-export-upload');
-  const error = $('letterboxd-export-error');
-  if (!account || !file) {
-    error.textContent = 'Önce Letterboxd’dan indirdiğin ZIP dosyasını seç.';
-    error.classList.remove('hidden');
-    return;
-  }
-  button.disabled = true;
-  error.classList.add('hidden');
-  try {
-    const data = await apiJSON('/api/profile/import/letterboxd-export', {
-      method: 'POST',
-      headers: csrfHeaders({ 'Content-Type': 'application/zip' }),
-      body: file,
-    });
-    account.profile_sync_status = 'syncing';
-    _registrationAccount = null;
-    _markImportAsked(account);
-    $('dialog-import-choice').close();
-    setAuthMessage(null);
-    enterApp(account, { fromRegistration: true });
-    const count = Number(data.watched_count || 0).toLocaleString('tr-TR');
-    $('ob-bg-note').textContent = `${count} filmin içe aktarıldı; zevk profilin hazırlanıyor.`;
-  } catch (err) {
-    error.textContent = err.message || 'ZIP içe aktarılamadı. İstersen profilini taramayı seçebilirsin.';
-    error.classList.remove('hidden');
   } finally { button.disabled = false; }
 }
 
@@ -3914,8 +3848,6 @@ $('auth-tab-login').addEventListener('click', () => setAuthMode('login'));
 $('auth-tab-register').addEventListener('click', () => setAuthMode('register'));
 $('btn-verify').addEventListener('click', verifyRegistration);
 $('btn-verify-back').addEventListener('click', () => { _pendingRegPassword = null; setAuthMode('register'); });
-$('btn-import-use-scraper').addEventListener('click', continueWithScraper);
-$('btn-letterboxd-export-upload').addEventListener('click', importLetterboxdExport);
 $('verification-code').addEventListener('click', () => copyCode($('verification-code')));
 $('reset-code-display').addEventListener('click', () => copyCode($('reset-code-display')));
 $('btn-show-reset').addEventListener('click', () => {
@@ -3945,7 +3877,6 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
     if (event.target === dialog) dialog.close();
   });
 });
-$('dialog-import-choice').addEventListener('cancel', event => event.preventDefault());
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {
   showView('sinefil');

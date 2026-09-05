@@ -50,7 +50,6 @@ from .cache import Cache, LayeredCache
 from .database import delete_user, upsert_user, SupabaseCache
 from .enrich import Enricher, EnrichedFilm, close_tmdb_client
 from .llm import analyze_taste, rank_candidates
-from .letterboxd_export import MAX_EXPORT_BYTES, LetterboxdExportError, parse_letterboxd_export
 from .recommender import rank_watchlist
 from .rate_limit import SlidingWindowRateLimiter
 from .scraper import (
@@ -3088,122 +3087,6 @@ async def sync_my_profile(
             )
             result["sync_job"] = profile_sync.progress_of(job)
     return result
-
-
-_export_watchlist_tasks: dict[int, asyncio.Task] = {}
-
-
-async def _enrich_imported_watchlist(account: Account, films: list[dict], settings, service) -> None:
-    """Replace the immediate export cache with TMDb-enriched watchlist rows."""
-    try:
-        pipeline = _SyncPipeline(settings)
-        enriched = await pipeline.enrich_search(films)
-        _client, cache = _make_cache(settings)
-        pcache = _make_persistent_cache(settings, _client)
-        await asyncio.to_thread(
-            pcache.set, "films_watchlist", account.username,
-            [film.to_dict() for film in enriched],
-        )
-    except Exception as exc:
-        # The raw import remains a valid recommendation candidate pool.
-        log.warning("export watchlist enrichment failed user=%s: %s", account.id, exc)
-    finally:
-        _export_watchlist_tasks.pop(account.id, None)
-
-
-@app.post("/api/profile/import/letterboxd-export")
-async def import_letterboxd_export(request: Request) -> dict:
-    """Seed an account from Letterboxd's official, user-provided ZIP export."""
-    _require_csrf(request)
-    await _enforce_heavy_rate_limit(request)
-    account = await _require_account(request)
-    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
-    if content_type not in {"application/zip", "application/x-zip-compressed", "application/octet-stream"}:
-        raise HTTPException(status_code=415, detail="Letterboxd export ZIP dosyasını seç.")
-    try:
-        content_length = int(request.headers.get("content-length") or 0)
-        if content_length > MAX_EXPORT_BYTES:
-            raise LetterboxdExportError("ZIP dosyası çok büyük.")
-        payload = await request.body()
-        export = parse_letterboxd_export(payload)
-    except LetterboxdExportError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    settings = get_settings()
-    service = _auth_service()
-    try:
-        await asyncio.to_thread(service.check_sync_schema)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Import şeması henüz hazır değil. Lütfen biraz sonra tekrar dene.") from exc
-    if profile_sync.is_running(account.id):
-        raise HTTPException(status_code=409, detail="Profilin zaten hazırlanıyor. Birazdan tekrar dene.")
-
-    run_id = str(uuid.uuid4())
-    watched_rows = [
-        {
-            "slug": film["slug"],
-            "title": film["title"],
-            "release_year": film.get("year"),
-            "user_rating": film.get("user_rating"),
-            "rating_observed": True,
-            "watched_rank": rank,
-            "last_seen_run_id": run_id,
-            "is_active": True,
-        }
-        for rank, film in enumerate(export.watched)
-    ]
-    watchlist_rows = [
-        {
-            "slug": film["slug"],
-            "title": film["title"],
-            "year": film.get("year"),
-        }
-        for film in export.watchlist
-    ]
-    try:
-        await asyncio.to_thread(service.save_watched_films, account.id, watched_rows)
-        _client, cache = _make_cache(settings)
-        pcache = _make_persistent_cache(settings, _client)
-        await asyncio.to_thread(pcache.set, "films_watchlist", account.username, watchlist_rows)
-        await asyncio.to_thread(
-            pcache.set, "films_full_refresh", f"watchlist:{account.username}",
-            {"complete": True, "source": "letterboxd_export"},
-        )
-        await asyncio.to_thread(service.mark_sync_status, account.id, "syncing")
-        job = await asyncio.to_thread(
-            service.upsert_sync_job,
-            account.id,
-            state="queued",
-            phase="enrich",
-            scope="full",
-            cursor_page=1,
-            films_processed=0,
-            films_total=len(watched_rows),
-            attempts=0,
-            last_error="",
-            backoff_until=None,
-            sync_run_id=run_id,
-            lease_token=None,
-            lease_expires_at=None,
-        )
-        profile_sync.start(_SyncPipeline(settings, use_stored_profile=True), service, account)
-        if watchlist_rows:
-            task = asyncio.create_task(_enrich_imported_watchlist(account, watchlist_rows, settings, service))
-            _export_watchlist_tasks[account.id] = task
-    except Exception as exc:
-        log.warning("letterboxd export import failed user=%s", account.id, exc_info=True)
-        raise HTTPException(status_code=503, detail="Export içe aktarılamadı. Lütfen tekrar dene.") from exc
-
-    await _record_activity_event(
-        service, account, "letterboxd_export_imported",
-        {"watched": len(watched_rows), "watchlist": len(watchlist_rows)},
-    )
-    return {
-        "ok": True,
-        "watched_count": len(watched_rows),
-        "watchlist_count": len(watchlist_rows),
-        "sync_job": profile_sync.progress_of(job),
-    }
 
 
 @app.get("/api/users/search")
