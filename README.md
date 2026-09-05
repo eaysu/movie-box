@@ -142,6 +142,12 @@ Mektup yollamak için kullanıcının kendi mektup kutusunun da açık olması g
 gösterir. Gerekçesi: kapalı bir hesaptan gönderilen mektup, alıcının cevap
 veremediği tek yönlü bir kanal olur.
 
+Bu kural gelmeden önce mektup yollamış ve kutusu kapalı kalmış hesaplar tam da o
+tek yönlü durumda kalır. `python -m scripts.fix_letter_senders` bunları listeler,
+`--apply` ile kutularını açar; her değişiklik `user_activity_events` içine
+`reason: sent_before_rule` olarak yazılır ve kullanıcı profilinden yine
+kapatabilir.
+
 ## Sinema gündemi
 
 `GET /api/bulletin` returns a weekly card with three sections: films on the

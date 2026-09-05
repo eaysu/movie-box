@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from scripts.admin_users import (
     _normalise,
@@ -125,3 +126,48 @@ def test_report_tracks_recommendation_and_sync_lifecycle_events():
     from app.auth import AuthService
 
     assert hasattr(AuthService, "record_activity_event")
+
+
+def test_letter_sender_repair_only_touches_active_closed_senders():
+    """Only accounts stuck in the one-way state are repaired.
+
+    A member who never sent a letter has not opted into the feature, and a
+    disabled account must not be reactivated by a maintenance script.
+    """
+    from scripts.fix_letter_senders import find_affected
+
+    class _Table:
+        def __init__(self, client, name):
+            self.client, self.name = client, name
+
+        def select(self, *_args):
+            return self
+
+        def in_(self, _column, values):
+            self.values = values
+            return self
+
+        def execute(self):
+            if self.name == "cinephile_letters":
+                return SimpleNamespace(data=[
+                    {"sender_user_id": 1}, {"sender_user_id": 1}, {"sender_user_id": 2},
+                    {"sender_user_id": 3},
+                ])
+            return SimpleNamespace(data=[
+                {"id": 1, "username": "closed_sender", "account_status": "active",
+                 "letter_receiving_enabled": False},
+                {"id": 2, "username": "open_sender", "account_status": "active",
+                 "letter_receiving_enabled": True},
+                {"id": 3, "username": "disabled_sender", "account_status": "disabled",
+                 "letter_receiving_enabled": False},
+            ])
+
+    class _Client:
+        def table(self, name):
+            return _Table(self, name)
+
+    affected = find_affected(_Client())
+
+    self_usernames = [row["username"] for row in affected]
+    assert self_usernames == ["closed_sender"]
+    assert affected[0]["sent"] == 2

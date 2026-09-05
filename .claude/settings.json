@@ -119,7 +119,10 @@
       "Bash(node --check static/js/app.js)",
       "Bash(python -m pytest tests/test_screenings.py -q)",
       "Bash(python -m scripts.resolve_screenings --help)",
-      "Bash(python -c \"import app.auth, app.screenings\")"
+      "Bash(python -c \"import app.auth, app.screenings\")",
+      "Bash(python -m scripts.fix_letter_senders)",
+      "Bash(python -m scripts.fix_letter_senders --apply)",
+      "Bash(python -m pytest tests/test_admin_activity.py::test_letter_sender_repair_only_touches_active_closed_senders -q)"
     ]
   }
 }
