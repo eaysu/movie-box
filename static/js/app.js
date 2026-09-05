@@ -719,6 +719,7 @@ let _resetChallenge = null;
 // Parola, kayıt sırasında girildiği haliyle bio doğrulaması bitene kadar
 // bellekte tutulur; doğrulama başarılıysa oturum otomatik açılır, sonra silinir.
 let _pendingRegPassword = null;
+let _registrationAccount = null;
 
 function setImage(img, fallback, value, alt) {
   try {
@@ -1600,7 +1601,8 @@ function renderLetterCooldown() {
   const blocked = !_letterSendStatus.can_send && remaining > 0;
   const notice = $('letter-compose-cooldown');
   const send = $('btn-letter-send');
-  notice.textContent = blocked ? `Yeni mektup hakkın ${formatLetterCooldown(remaining)} sonra açılacak.` : '';
+  const recipient = _letterSendStatus.recipient_username ? `@${_letterSendStatus.recipient_username} için ` : '';
+  notice.textContent = blocked ? `${recipient}yeni mektup hakkın ${formatLetterCooldown(remaining)} sonra açılacak. Bu arada başka bir sinefile yazabilirsin.` : '';
   notice.classList.toggle('hidden', !blocked);
   send.disabled = blocked;
   if (_letterCooldownTimer) clearInterval(_letterCooldownTimer);
@@ -1613,8 +1615,9 @@ function renderLetterCooldown() {
   }
 }
 
-async function loadLetterSendStatus() {
-  _letterSendStatus = await apiJSON('/api/letters/send-status');
+async function loadLetterSendStatus(username = _letterRecipient?.username || '') {
+  const query = username ? `?recipient_username=${encodeURIComponent(username)}` : '';
+  _letterSendStatus = await apiJSON(`/api/letters/send-status${query}`);
   renderLetterCooldown();
   return _letterSendStatus;
 }
@@ -1639,7 +1642,7 @@ function renderLetterSettings() {
   $('btn-letter-receiving').setAttribute('aria-pressed', String(open));
   $('btn-letter-receiving').textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
   $('letters-status').textContent = open
-    ? 'Diğer sinefiller sana günde bir mektup gönderebilir.'
+    ? 'Her sinefil sana 24 saatte bir mektup gönderebilir.'
     : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
 }
 
@@ -1677,12 +1680,6 @@ function letterReplyBar(peer) {
   const username = escapeHTML(peer?.username || '');
   const name = escapeHTML(peer?.display_name || peer?.username || 'bu sinefile');
   if (!username) return '';
-  const remaining = Math.max(0, Number(_letterSendStatus?.seconds_remaining) || 0);
-  if (_letterSendStatus && _letterSendStatus.can_send === false && remaining > 0) {
-    return `<p class="mt-3 rounded-xl border border-outline-variant/25 bg-surface-variant/40 py-3 text-center font-label-md text-label-md text-on-surface-variant">
-      Günlük mektubunu yolladın · ${escapeHTML(formatLetterCooldown(remaining))} sonra yazabilirsin
-    </p>`;
-  }
   // A correspondence continues where it lives. Before this, replying meant
   // finding the person again in Sinefil Sineması and starting over.
   return `<button type="button" data-letter-reply="${username}" class="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 py-3 font-label-md text-label-md uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/20 transition-colors">
@@ -1708,7 +1705,6 @@ async function loadLetters() {
     // The reply bar states the daily limit, so the inbox needs the allowance
     // before it renders rather than only when the composer opens. Not knowing
     // it is survivable: the composer says so on open.
-    try { await loadLetterSendStatus(); } catch (_) {}
     const unreadData = await apiJSON('/api/letters/unread-count');
     const unreadCount = Math.max(0, Number(unreadData.count) || 0);
     $('inbox-letters-badge').textContent = unreadCount > 9 ? '9+' : String(unreadCount);
@@ -1759,7 +1755,7 @@ async function loadLetters() {
 async function toggleLetterReceiving(trigger = null) {
   const next = !_account?.letter_receiving_enabled;
   const prompt = next
-    ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana günde bir mektup gönderebilir. Açmak istiyor musun?'
+    ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana 24 saatte bir mektup gönderebilir. Açmak istiyor musun?'
     : 'Mektupları kapatırsan yeni mektup alamazsın. Mevcut mektupların korunur. Kapatmak istiyor musun?';
   if (!window.confirm(prompt)) return;
   const button = trigger || $('btn-letter-receiving'); button.disabled = true;
@@ -1791,7 +1787,7 @@ function openLetterCompose(username) {
   $('letter-film-picked').classList.add('hidden');
   $('letter-compose-error').classList.add('hidden');
   $('dialog-letter-compose').showModal();
-  loadLetterSendStatus().catch(error => {
+  loadLetterSendStatus(username).catch(error => {
     $('letter-compose-error').textContent = error.message || 'Gönderim hakkı kontrol edilemedi.';
     $('letter-compose-error').classList.remove('hidden');
   });
@@ -1832,7 +1828,7 @@ async function sendLetter(event) {
         film: _letterPickedFilm,
       }),
     });
-    _letterSendStatus = { can_send: false, seconds_remaining: 24 * 60 * 60 };
+    _letterSendStatus = { can_send: false, seconds_remaining: 24 * 60 * 60, recipient_username: recipient.username };
     $('dialog-letter-compose').close();
     letterMessage('notice', `Mektubun @${recipient.username} adresine gönderildi.`);
     await loadLetters();
@@ -3738,7 +3734,7 @@ async function verifyRegistration() {
         });
         _pendingRegPassword = null;
         setAuthMessage(null);
-        enterApp(data.account, { fromRegistration: true });
+        openImportChoice(data.account);
         return;
       } catch (_) {
         // Otomatik giriş tutmadıysa elle girişe düş.
@@ -3750,6 +3746,52 @@ async function verifyRegistration() {
     setAuthMessage('Hesap doğrulandı. Şimdi parolanla giriş yapabilirsin.');
   } catch (error) {
     setAuthMessage(error.message || 'Bio doğrulanamadı.', true);
+  } finally { button.disabled = false; }
+}
+
+function openImportChoice(account) {
+  _registrationAccount = account;
+  applyAccount(account);
+  $('letterboxd-export-file').value = '';
+  $('letterboxd-export-error').classList.add('hidden');
+  $('dialog-import-choice').showModal();
+}
+
+function continueWithScraper() {
+  const account = _registrationAccount;
+  _registrationAccount = null;
+  $('dialog-import-choice').close();
+  if (account) enterApp(account, { fromRegistration: true });
+}
+
+async function importLetterboxdExport() {
+  const account = _registrationAccount;
+  const file = $('letterboxd-export-file').files?.[0];
+  const button = $('btn-letterboxd-export-upload');
+  const error = $('letterboxd-export-error');
+  if (!account || !file) {
+    error.textContent = 'Önce Letterboxd’dan indirdiğin ZIP dosyasını seç.';
+    error.classList.remove('hidden');
+    return;
+  }
+  button.disabled = true;
+  error.classList.add('hidden');
+  try {
+    const data = await apiJSON('/api/profile/import/letterboxd-export', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/zip' }),
+      body: file,
+    });
+    account.profile_sync_status = 'syncing';
+    _registrationAccount = null;
+    $('dialog-import-choice').close();
+    setAuthMessage(null);
+    enterApp(account, { fromRegistration: true });
+    const count = Number(data.watched_count || 0).toLocaleString('tr-TR');
+    $('ob-bg-note').textContent = `${count} filmin içe aktarıldı; zevk profilin hazırlanıyor.`;
+  } catch (err) {
+    error.textContent = err.message || 'ZIP içe aktarılamadı. İstersen profilini taramayı seçebilirsin.';
+    error.classList.remove('hidden');
   } finally { button.disabled = false; }
 }
 
@@ -3852,6 +3894,8 @@ $('auth-tab-login').addEventListener('click', () => setAuthMode('login'));
 $('auth-tab-register').addEventListener('click', () => setAuthMode('register'));
 $('btn-verify').addEventListener('click', verifyRegistration);
 $('btn-verify-back').addEventListener('click', () => { _pendingRegPassword = null; setAuthMode('register'); });
+$('btn-import-use-scraper').addEventListener('click', continueWithScraper);
+$('btn-letterboxd-export-upload').addEventListener('click', importLetterboxdExport);
 $('verification-code').addEventListener('click', () => copyCode($('verification-code')));
 $('reset-code-display').addEventListener('click', () => copyCode($('reset-code-display')));
 $('btn-show-reset').addEventListener('click', () => {
@@ -3881,6 +3925,7 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
     if (event.target === dialog) dialog.close();
   });
 });
+$('dialog-import-choice').addEventListener('cancel', event => event.preventDefault());
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {
   showView('sinefil');

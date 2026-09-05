@@ -283,6 +283,8 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert 'id="profile-letter-toggle"' in html
     assert "600 karakter kaldı" in html
     assert "/api/letters/send-status" in app_js
+    assert "recipient_username" in app_js
+    assert "recipient_user_id = v_recipient_user_id" in schema
     assert "Görüldü" in app_js
 
     # The device-key design is gone: letters follow the account, not a browser.
@@ -306,8 +308,8 @@ def test_a_correspondence_continues_from_the_inbox():
     # The reply opens the same composer the directory uses.
     reply = app_js.split("data-letter-reply]", 1)[1].split("}", 1)[0]
     assert "openLetterCompose" in reply
-    # The daily limit is stated on the bar instead of only inside the dialog.
-    assert "Günlük mektubunu yolladın" in app_js
+    # A cooldown only applies to the same correspondence, not every recipient.
+    assert "loadLetterSendStatus(username)" in app_js
     # And answering does not collapse the conversation you were reading.
     assert "_openLetterThread" in app_js
 
@@ -362,8 +364,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "f9759d41303544e885f3a56237cf64b8393a7f3e62f79378b91ea37a899071b3",
-        "static/app.css": "390e94bd1e80dd924c585ea60016293bcde687b961ae303ef27ddd758e7cd0db",
+        "static/js/app.js": "89318a7563c93c780554754ac552ddc614dd955ab2925e6127a25a9a00b38a45",
+        "static/app.css": "32784d5471161fc3e83693ee171096d30f01564dbe3a724bf69b1edc6bc049e2",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -395,9 +397,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260904.28"
+    css_version = "v=20260905.42"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260905.40" in html
+    assert "/static/js/app.js?v=20260905.42" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js

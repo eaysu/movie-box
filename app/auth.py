@@ -825,21 +825,30 @@ class AuthService:
             "recipient_user_id", account.id).is_("read_at", "null").execute().data or []
         return len(rows)
 
-    def letter_send_status(self, account: Account) -> dict:
-        """Expose only the sender's own 24h cooldown, never letter content."""
-        row = self._first(
+    def letter_send_status(self, account: Account, recipient_username: str = "") -> dict:
+        """Return the 24h cooldown for one recipient, never letter content."""
+        username = str(recipient_username or "").strip().lstrip("@").lower()
+        query = (
             self._service_client().table("cinephile_letters").select("created_at")
-            .eq("sender_user_id", account.id).order("created_at", desc=True).limit(1).execute()
+            .eq("sender_user_id", account.id)
         )
+        if username:
+            recipient = self._first(
+                self._service_client().table("users").select("id").eq("username", username).limit(1).execute()
+            )
+            if not recipient:
+                return {"can_send": True, "seconds_remaining": 0, "next_send_at": None, "recipient_username": username}
+            query = query.eq("recipient_user_id", recipient["id"])
+        row = self._first(query.order("created_at", desc=True).limit(1).execute())
         if not row or not row.get("created_at"):
-            return {"can_send": True, "seconds_remaining": 0, "next_send_at": None}
+            return {"can_send": True, "seconds_remaining": 0, "next_send_at": None, "recipient_username": username}
         try:
             sent_at = datetime.fromisoformat(str(row["created_at"]).replace("Z", "+00:00"))
             next_at = sent_at + timedelta(hours=24)
             remaining = max(0, int((next_at - datetime.now(timezone.utc)).total_seconds()))
-            return {"can_send": remaining == 0, "seconds_remaining": remaining, "next_send_at": next_at.isoformat()}
+            return {"can_send": remaining == 0, "seconds_remaining": remaining, "next_send_at": next_at.isoformat(), "recipient_username": username}
         except ValueError:
-            return {"can_send": False, "seconds_remaining": 60, "next_send_at": None}
+            return {"can_send": False, "seconds_remaining": 60, "next_send_at": None, "recipient_username": username}
 
     @staticmethod
     def _safe_slug_set(values) -> set[str]:
