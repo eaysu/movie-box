@@ -1386,6 +1386,14 @@ if get_settings().dev_login_enabled:  # pragma: no cover - local tooling only
             )
         except AuthError as exc:
             _raise_auth_http(exc)
+        except Exception as exc:  # noqa: BLE001 - this route exists to diagnose
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"@{username} için dev girişi yapılamadı: {exc}. "
+                    "Hesabı 'python -m scripts.dev_start' ile hazırla."
+                ),
+            ) from exc
         response = RedirectResponse(url="/", status_code=303)
         _set_session_cookies(response, session)
         return response

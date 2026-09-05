@@ -30,6 +30,7 @@ import signal
 import subprocess
 import sys
 import time
+import http.cookiejar
 import urllib.error
 import urllib.request
 import webbrowser
@@ -182,6 +183,32 @@ def wait_for_server(base_url: str, process: subprocess.Popen, timeout: float = 6
     return False
 
 
+def verify_session(base_url: str, username: str) -> str:
+    """Walk the real login round-trip before handing it to the browser.
+
+    Landing on the account screen because the session silently failed is the
+    exact failure this script exists to prevent, so it is checked here rather
+    than discovered by clicking.
+    """
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    try:
+        with opener.open(f"{base_url}/api/dev/login?username={username}", timeout=20):
+            pass
+        with opener.open(f"{base_url}/api/auth/me", timeout=20) as response:
+            import json
+
+            account = (json.load(response) or {}).get("account") or {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:200]
+        return f"giriş reddedildi ({exc.code}): {detail}"
+    except Exception as exc:  # noqa: BLE001 - report, never crash the launcher
+        return f"oturum doğrulanamadı: {exc}"
+    if not account.get("username"):
+        return "oturum açıldı ama hesap okunamadı (auth ayarlarını kontrol et)"
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--user", default=DEFAULT_USER, help=f"varsayılan: {DEFAULT_USER}")
@@ -255,7 +282,17 @@ def main() -> int:
             print("Sunucu ayağa kalkmadı; yukarıdaki hatalara bak.", file=sys.stderr)
             process.terminate()
             return 1
-        print(f"Giriş yapılıyor: @{username}")
+        problem = verify_session(base_url, username)
+        if problem:
+            print(f"\nGiriş çalışmıyor — {problem}", file=sys.stderr)
+            print(
+                "  .env.local içindeki SUPABASE_ANON_KEY ve AUTH_IDENTITY_SECRET\n"
+                "  değerlerini kontrol et; ikincisi Render'daki ile aynı olmalı.",
+                file=sys.stderr,
+            )
+            process.terminate()
+            return 1
+        print(f"Giriş doğrulandı: @{username}")
         if args.no_browser:
             print(f"  Tarayıcıda aç: {login_url}")
         else:

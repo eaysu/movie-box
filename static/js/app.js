@@ -2746,6 +2746,20 @@ async function startOnboarding() {
   _obShowRevealSlide(0);
 }
 
+const _IMPORT_ASKED_KEY = 'mb_import_asked';
+
+function _importChoicePending(account) {
+  if (!account || account.onboarding_completed_at) return false;
+  if (!['pending', 'failed'].includes(account.profile_sync_status)) return false;
+  try { return !sessionStorage.getItem(_IMPORT_ASKED_KEY + ':' + account.username); }
+  catch (_) { return true; }
+}
+
+function _markImportAsked(account) {
+  try { sessionStorage.setItem(_IMPORT_ASKED_KEY + ':' + account.username, '1'); }
+  catch (_) {}
+}
+
 async function boot() {
   // Health ve session birbirinden bağımsızdır. Mobil ağda iki round-trip'i
   // sıraya koymak yerine aynı anda başlatarak giriş/profil açılışını hızlandır.
@@ -2756,7 +2770,10 @@ async function boot() {
   _authEnabled = Boolean(health?.auth_enabled);
   if (!_authEnabled) { showView('idle'); loadPublicStats(); return; }
   if (me?.account) {
-    enterApp(me.account);
+    // A signed-in account whose history was never synced has the same choice to
+    // make as a fresh registration: upload the export, or wait for the scrape.
+    if (_importChoicePending(me.account)) openImportChoice(me.account);
+    else enterApp(me.account);
     return;
   }
   if (cookieValue('mb_csrf')) {
@@ -3761,7 +3778,9 @@ function continueWithScraper() {
   const account = _registrationAccount;
   _registrationAccount = null;
   $('dialog-import-choice').close();
-  if (account) enterApp(account, { fromRegistration: true });
+  if (!account) return;
+  _markImportAsked(account);
+  enterApp(account, { fromRegistration: true });
 }
 
 async function importLetterboxdExport() {
@@ -3784,6 +3803,7 @@ async function importLetterboxdExport() {
     });
     account.profile_sync_status = 'syncing';
     _registrationAccount = null;
+    _markImportAsked(account);
     $('dialog-import-choice').close();
     setAuthMessage(null);
     enterApp(account, { fromRegistration: true });
