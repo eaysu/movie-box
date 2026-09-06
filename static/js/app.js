@@ -676,6 +676,7 @@ function stopFeedNotificationPolling() {
 }
 
 function showView(name) {
+  setMobileToolsMenu(false);
   ['auth', 'onboarding', 'profile', 'tools', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
@@ -759,6 +760,15 @@ function goNav(target) {
     case 'profile': showView('profile'); break;
     default: openFeed();
   }
+}
+
+function setMobileToolsMenu(open) {
+  const menu = $('mobile-tools-menu');
+  const toggle = $('tab-tools-toggle');
+  if (!menu || !toggle) return;
+  menu.classList.toggle('hidden', !open);
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.classList.toggle('text-primary-container', open);
 }
 
 // ── Profile-only light/dark theme (opt-in, per viewer) ─────────────────
@@ -4776,6 +4786,15 @@ document.querySelectorAll('[data-nav]').forEach(button => {
 document.querySelectorAll('[data-nav-action]').forEach(button => {
   button.addEventListener('click', () => openQuickTool(button.dataset.navAction));
 });
+$('tab-tools-toggle').addEventListener('click', () => {
+  setMobileToolsMenu($('mobile-tools-menu').classList.contains('hidden'));
+});
+$('mobile-tools-menu').addEventListener('click', event => {
+  const button = event.target.closest('[data-mobile-tool]');
+  if (!button) return;
+  setMobileToolsMenu(false);
+  openQuickTool(button.dataset.mobileTool);
+});
 $('nav-logo').addEventListener('click', () => goNav('feed'));
 $('app-rail').addEventListener('click', event => {
   const trend = event.target.closest('[data-trend-film]');
@@ -4912,7 +4931,10 @@ $('menu-delete-data').addEventListener('click', () => {
   toggleProfileMenu(false);
   deleteMyData();
 });
-document.addEventListener('click', () => toggleProfileMenu(false));
+document.addEventListener('click', event => {
+  toggleProfileMenu(false);
+  if (!event.target.closest('#tab-tools-toggle, #mobile-tools-menu')) setMobileToolsMenu(false);
+});
 $('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadLetters());

@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260906.60"/>
+<link rel="stylesheet" href="/static/app.css?v=20260906.61"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -56,11 +56,22 @@
 <!-- ═══════════════  ALT SEKME ÇUBUĞU (mobil)  ═══════════════ -->
 <nav id="app-tabbar" class="hidden fixed bottom-0 inset-x-0 z-50 items-stretch justify-around border-t border-outline-variant/25 bg-surface/95 backdrop-blur-xl">
   <button type="button" data-nav="feed" class="tab-item"><span class="material-symbols-outlined">home</span></button>
-  <button type="button" data-nav-action="watch" class="tab-item" aria-label="Ne izlesem?"><span class="material-symbols-outlined">auto_awesome</span></button>
+  <button id="tab-tools-toggle" type="button" class="tab-item" aria-label="Sinema araçları" aria-expanded="false"><span class="material-symbols-outlined">movie_filter</span></button>
   <button type="button" data-nav="sinefil" class="tab-item"><span class="material-symbols-outlined">explore</span></button>
   <button type="button" data-nav="notifications" class="tab-item relative"><span class="material-symbols-outlined">notifications</span><span id="tab-badge-notifications" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
   <button type="button" data-nav="inbox" class="tab-item relative"><span class="material-symbols-outlined">mail</span><span id="tab-badge-inbox" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
 </nav>
+
+<div id="mobile-tools-menu" class="hidden fixed inset-x-4 bottom-24 z-50 rounded-2xl border border-outline-variant/30 bg-surface-container/95 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
+  <button type="button" data-mobile-tool="watch" class="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-on-surface hover:bg-primary-container/10 transition-colors">
+    <span class="material-symbols-outlined text-primary-container">auto_awesome</span>
+    <span><strong class="block font-label-md text-label-md uppercase tracking-wide">Ne izlesem?</strong><small class="mt-0.5 block font-body-md text-body-md text-on-surface-variant">Zevkine göre ya da rastgele bir film seç.</small></span>
+  </button>
+  <button type="button" data-mobile-tool="blend" class="mt-1 flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-on-surface hover:bg-secondary-container/10 transition-colors">
+    <span class="material-symbols-outlined text-secondary-container">join_inner</span>
+    <span><strong class="block font-label-md text-label-md uppercase tracking-wide">Blend yap</strong><small class="mt-0.5 block font-body-md text-body-md text-on-surface-variant">Karşılıklı takip ettiğin biriyle film zevkini buluştur.</small></span>
+  </button>
+</div>
 
 <button id="btn-compose-fab" class="hidden fixed bottom-20 right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-xl" type="button" aria-label="Not yaz">
   <span class="material-symbols-outlined">edit</span>
@@ -1328,6 +1339,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.61"></script>
+<script type="module" src="/static/js/app.js?v=20260906.62"></script>
 </body>
 </html>

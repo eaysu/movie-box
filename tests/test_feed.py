@@ -245,7 +245,8 @@ class ProfilePageTests(unittest.TestCase):
         for target in ("feed", "sinefil", "notifications", "inbox"):
             self.assertIn(f'data-nav="{target}"', sidebar, target)
             self.assertIn(f'data-nav="{target}"', tabbar, target)
-        self.assertIn('data-nav-action="watch"', tabbar)
+        self.assertIn('id="tab-tools-toggle"', tabbar)
+        self.assertIn('id="mobile-tools-menu"', self.html)
         self.assertNotIn('data-nav="profile"', tabbar)
         self.assertIn('id="btn-header-profile"', self.html)
 

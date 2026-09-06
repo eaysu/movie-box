@@ -380,8 +380,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "7ace8ec0843566fb915a27da4379f189d37805a53fb63b3c290f878bed7e5fce",
-        "static/app.css": "409bab350ba6b77d0f171fa3e0c8ecdd23b2a205e6fb82cfc02dcfb4f950926e",
+        "static/js/app.js": "fc5e24935453b99038e2b59e8fc190eedc258e516bc918eb4298a98918448dde",
+        "static/app.css": "436fbc0ae0edf4660e87997799edfb7db8cf628d730e599cf8f89deb50a04b04",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -413,9 +413,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.60"
+    css_version = "v=20260906.61"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.61" in html
+    assert "/static/js/app.js?v=20260906.62" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js
@@ -442,10 +442,15 @@ def test_mobile_navigation_keeps_recommendations_and_profile_discoverable():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
 
     tabbar = html.split('id="app-tabbar"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-nav-action="watch"' in tabbar
+    assert 'id="tab-tools-toggle"' in tabbar
+    assert 'id="mobile-tools-menu"' in html
     assert 'data-nav="profile"' not in tabbar
     assert 'id="btn-header-profile"' in html
     assert "headerProfile.classList.toggle('flex', showHeaderProfile);" in app_js
+    assert "function setMobileToolsMenu(open)" in app_js
+    assert "data-mobile-tool=\"blend\"" in html
+    assert "data-mobile-tool=\"watch\"" in html
+    assert "openQuickTool(button.dataset.mobileTool);" in app_js
     assert "if (_account?.username && username.toLowerCase() === _account.username.toLowerCase())" in app_js
 
 
