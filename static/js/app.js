@@ -28,6 +28,57 @@ function loadShareCardsModule() {
   return _shareCardsModule;
 }
 
+// Chrome exposes this one-shot event only for a valid, installable PWA. We
+// keep it until the signed-in shell is ready, then invite the user ourselves
+// instead of relying on Chrome to choose a moment for the browser infobar.
+let _deferredInstallPrompt = null;
+
+function isInstalledApp() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || Boolean(window.navigator.standalone);
+}
+
+function showInstallAppDialog() {
+  const dialog = $('dialog-install-app');
+  if (!_account || !_deferredInstallPrompt || isInstalledApp() || dialog.open) return;
+  dialog.showModal();
+}
+
+async function registerMovieboxdServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register('/push-sw.js');
+  } catch (_) {
+    return null;
+  }
+}
+
+async function requestMovieboxdInstall() {
+  if (!_deferredInstallPrompt) return;
+  const button = $('btn-install-app');
+  button.disabled = true;
+  try {
+    await _deferredInstallPrompt.prompt();
+    await _deferredInstallPrompt.userChoice;
+  } finally {
+    _deferredInstallPrompt = null;
+    button.disabled = false;
+    $('dialog-install-app').close();
+  }
+}
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  _deferredInstallPrompt = event;
+  showInstallAppDialog();
+});
+
+window.addEventListener('appinstalled', () => {
+  _deferredInstallPrompt = null;
+  $('dialog-install-app')?.close();
+});
+
+registerMovieboxdServiceWorker();
+
 // ── Cinema facts & quotes ──────────────────────────────────────────────────
 const CINEMA_ITEMS = [
   // Yönetmen sözleri
@@ -966,7 +1017,8 @@ async function enableBrowserNotifications() {
   if (permission !== 'granted') { profileActionNotice('Tarayıcı bildirimi için izin verilmedi.'); return; }
   try {
     const key = await apiJSON('/api/push/public-key');
-    const registration = await navigator.serviceWorker.register('/push-sw.js');
+    const registration = await registerMovieboxdServiceWorker();
+    if (!registration) throw new Error('Servis çalışanı kaydedilemedi.');
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
       const raw = String(key.public_key || '').replace(/-/g, '+').replace(/_/g, '/');
@@ -3293,6 +3345,7 @@ function enterApp(account, opts = {}) {
   // The feed is where the app opens now. The dashboard still prepares itself in
   // the background so switching to "Profil" is instant.
   openFeed().then(loadProfile);
+  showInstallAppDialog();
 }
 
 // ── Onboarding reveal ──────────────────────────────────────────────────
@@ -4810,7 +4863,7 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-letter-followers'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-letter-followers'), $('dialog-install-app'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
@@ -4827,6 +4880,7 @@ $('profile-follows-list').addEventListener('click', event => {
   $('dialog-profile-follows').close();
   openUserPage(user.dataset.profileFollowUser, { from: 'profile' });
 });
+$('btn-install-app').addEventListener('click', requestMovieboxdInstall);
 $('btn-letter-compose-fab').addEventListener('click', openFollowerLetterPicker);
 $('letter-followers-list').addEventListener('click', event => {
   const button = event.target.closest('[data-letter-follower]');

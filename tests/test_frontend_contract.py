@@ -356,6 +356,20 @@ def test_public_profiles_show_follow_counts_but_never_link_to_member_lists():
     assert "takipçi</span>" in header
 
 
+def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    manifest = (ROOT / "static" / "site.webmanifest").read_text()
+
+    assert 'id="dialog-install-app"' in html
+    assert 'href="/static/site.webmanifest?v=20260907.2"' in html
+    assert "beforeinstallprompt" in app_js
+    assert "requestMovieboxdInstall" in app_js
+    assert "register('/push-sw.js')" in app_js
+    assert '"192x192"' in manifest
+    assert '"512x512"' in manifest
+
+
 def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -449,8 +463,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "ca8e212f0fa2fd05a7355cfecb7a7ea5c5815ee746875fcc9d345711872ec4e2",
-        "static/app.css": "fb1789b07fddef80aab87144048042caab0def40dedea395a251810f76509c53",
+        "static/js/app.js": "492ce97fde5e7264eca74916e46cecbfb8b20f43e0829104520c3fcb4fd4d2f3",
+        "static/app.css": "4e34011a2907e5b525291cf73c087593216eedb459494999e94b90fd0ac5cb43",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -482,9 +496,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.66"
+    css_version = "v=20260907.67"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.71" in html
+    assert "/static/js/app.js?v=20260907.72" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js

@@ -22,10 +22,10 @@
 <meta name="theme-color" content="#0b0f11"/>
 <link rel="icon" type="image/png" href="/static/movieboxd-icon.png?v=20260907.1"/>
 <link rel="apple-touch-icon" href="/static/movieboxd-icon.png?v=20260907.1"/>
-<link rel="manifest" href="/static/site.webmanifest?v=20260907.1"/>
+<link rel="manifest" href="/static/site.webmanifest?v=20260907.2"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.66"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.67"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -306,6 +306,17 @@
       <button type="button" data-close-dialog="dialog-letter-followers" class="shrink-0 text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
     </div>
     <div id="letter-followers-list" class="mt-5 flex flex-col gap-2"></div>
+  </div>
+</dialog>
+
+<dialog id="dialog-install-app" class="auth-info-dialog">
+  <div class="glass-panel w-full max-w-[420px] rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start gap-4">
+      <img src="/static/movieboxd-icon-192.png" alt="Movieboxd" class="h-14 w-14 shrink-0 rounded-2xl object-cover shadow-lg"/>
+      <div class="min-w-0 flex-1"><span class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Movieboxd uygulaması</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Movieboxd’u yükle</h2><p class="mt-2 text-sm leading-relaxed text-on-surface-variant">Ana ekranından tek dokunuşla aç; daha uygulama gibi, daha hızlı kullan.</p></div>
+      <button type="button" data-close-dialog="dialog-install-app" class="-mt-1 shrink-0 text-on-surface-variant hover:text-primary" aria-label="Şimdi değil"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div class="mt-6 flex gap-3"><button id="btn-install-app" type="button" class="flex-1 rounded-xl bg-primary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-primary-container">Uygulamayı yükle</button><button type="button" data-close-dialog="dialog-install-app" class="rounded-xl border border-outline-variant/30 px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdi değil</button></div>
   </div>
 </dialog>
 
@@ -1359,6 +1370,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.71"></script>
+<script type="module" src="/static/js/app.js?v=20260907.72"></script>
 </body>
 </html>
