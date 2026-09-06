@@ -379,7 +379,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     """
     expected = {
         "static/js/app.js": "ddaa6e07f02c4b504679fcba7735306c6f2a8a0cc26a64e0cd611f6a47a5706f",
-        "static/app.css": "600b09d985751e4684a05eba796cd94813ef1255f60ea2b359e3301668d4436b",
+        "static/app.css": "544756e19b1a6dce8c34b4ecba02f693cd6fde47157152820fb238868ab43a0f",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -411,7 +411,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260905.47"
+    css_version = "v=20260906.59"
     assert f"/static/app.css?{css_version}" in html
     assert "/static/js/app.js?v=20260906.58" in html
     assert app_js.count(f"?{dependency_version}") == 5
@@ -422,6 +422,16 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     assert f"./dom.js?{dependency_version}" in recommendations_js
     assert f"./api.js?{dependency_version}" in share_js
     assert f"criterion-closet-bg.jpg?{dependency_version}" in source_css
+
+
+def test_editorial_body_font_is_loaded_without_changing_app_navigation_type():
+    html = (ROOT / "static" / "index.html").read_text()
+    config = (ROOT / "tailwind.config.cjs").read_text()
+
+    assert "family=Lora" in html
+    assert "'body-md': ['Lora', 'Georgia', 'serif']" in config
+    assert "'body-lg': ['Lora', 'Georgia', 'serif']" in config
+    assert "'label-md': ['Space Grotesk', 'Geist']" in config
 
 
 def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
