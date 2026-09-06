@@ -380,7 +380,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "6591c04a5a5deb7e92852843507997ecba9063a39eb9e0220ff993e8a73bde9c",
+        "static/js/app.js": "732ba4aaba82ef30805d4fa9999c1bd27de2193a8b3031cfc6e694df33322b33",
         "static/app.css": "544756e19b1a6dce8c34b4ecba02f693cd6fde47157152820fb238868ab43a0f",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
@@ -415,7 +415,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260906.59"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.59" in html
+    assert "/static/js/app.js?v=20260906.60" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js
@@ -431,9 +431,37 @@ def test_editorial_body_font_is_loaded_without_changing_app_navigation_type():
     config = (ROOT / "tailwind.config.cjs").read_text()
 
     assert "family=Lora" in html
+    assert "subset=latin-ext" in html
     assert "'body-md': ['Lora', 'Georgia', 'serif']" in config
     assert "'body-lg': ['Lora', 'Georgia', 'serif']" in config
     assert "'label-md': ['Space Grotesk', 'Geist']" in config
+
+
+def test_mobile_navigation_keeps_recommendations_and_profile_discoverable():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    tabbar = html.split('id="app-tabbar"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-nav-action="watch"' in tabbar
+    assert 'data-nav="profile"' not in tabbar
+    assert 'id="btn-header-profile"' in html
+    assert "headerProfile.classList.toggle('flex', showHeaderProfile);" in app_js
+    assert "if (_account?.username && username.toLowerCase() === _account.username.toLowerCase())" in app_js
+
+
+def test_blend_page_prioritizes_saved_blends_and_moves_blocks_to_settings():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    blends = html.split('id="view-blends"', 1)[1].split('id="view-sinefil"', 1)[0]
+
+    assert blends.index("Blendlerim") < blends.index("Gelen istekler")
+    assert "Tamamlanmış blendler" not in blends
+    assert "Sonuçlanan istekler" not in blends
+    assert 'id="blend-history"' not in html
+    assert 'id="blend-blocked"' not in html
+    assert 'id="menu-blocked-users"' in html
+    assert "async function openBlockedUsers()" in app_js
+    assert "function blendHistoryCard" not in app_js
 
 
 def test_png_share_renderer_is_lazy_loaded_on_first_share_action():

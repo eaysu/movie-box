@@ -234,18 +234,20 @@ class ProfilePageTests(unittest.TestCase):
         for view in ("'user'", "'follows'", "'notifications'"):
             self.assertIn(view, registry, view)
 
-    def test_the_shell_is_the_navigation_on_every_signed_in_screen(self):
-        """Left rail on desktop, tab bar on mobile — one set of destinations."""
+    def test_the_shell_keeps_mobile_navigation_compact_and_profile_in_header(self):
+        """Desktop keeps the full rail; mobile reserves its bar for four core areas."""
         for element in ("app-sidebar", "app-tabbar", "app-rail", "btn-compose-fab"):
             self.assertIn(f'id="{element}"', self.html, element)
         for target in ("feed", "sinefil", "notifications", "inbox", "blends", "profile"):
             self.assertIn(f'data-nav="{target}"', self.html, target)
-        # Both bars carry the same targets, so nothing is reachable on one only.
         sidebar = self.html.split('id="app-sidebar"', 1)[1].split("</nav>", 1)[0]
         tabbar = self.html.split('id="app-tabbar"', 1)[1].split("</nav>", 1)[0]
-        for target in ("feed", "sinefil", "notifications", "inbox", "profile"):
+        for target in ("feed", "sinefil", "notifications", "inbox"):
             self.assertIn(f'data-nav="{target}"', sidebar, target)
             self.assertIn(f'data-nav="{target}"', tabbar, target)
+        self.assertIn('data-nav-action="watch"', tabbar)
+        self.assertNotIn('data-nav="profile"', tabbar)
+        self.assertIn('id="btn-header-profile"', self.html)
 
     def test_the_feed_is_the_home_screen(self):
         home = self.js.split("function homeView()", 1)[1].split("}", 1)[0]
@@ -274,10 +276,13 @@ class ProfilePageTests(unittest.TestCase):
         inbox = self.html.split('id="view-inbox"', 1)[1].split('id="view-blends"', 1)[0]
         blends = self.html.split('id="view-blends"', 1)[1].split('id="view-sinefil"', 1)[0]
 
-        for section in ("blend-incoming", "blend-outgoing", "blends-list",
-                        "blend-history", "blend-blocked"):
+        for section in ("blend-incoming", "blend-outgoing", "blends-list"):
             self.assertIn(f'id="{section}"', blends, section)
             self.assertNotIn(f'id="{section}"', inbox, section)
+        self.assertNotIn('id="blend-history"', self.html)
+        self.assertNotIn('id="blend-blocked"', self.html)
+        self.assertIn('id="menu-blocked-users"', self.html)
+        self.assertIn('id="dialog-blocked-users"', self.html)
         # The tab strip that used to split the inbox is gone with it.
         self.assertNotIn("data-inbox-tab", self.html)
         self.assertNotIn("setInboxTab", self.js)

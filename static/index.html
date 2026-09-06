@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="Watchlist'indeki en uygun filmi bul. Yapay zeka, izleme geçmişini analiz ederek bu akşam için mükemmel filmi seçiyor."/>
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/app.css?v=20260906.59"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
@@ -56,10 +56,10 @@
 <!-- ═══════════════  ALT SEKME ÇUBUĞU (mobil)  ═══════════════ -->
 <nav id="app-tabbar" class="hidden fixed bottom-0 inset-x-0 z-50 items-stretch justify-around border-t border-outline-variant/25 bg-surface/95 backdrop-blur-xl">
   <button type="button" data-nav="feed" class="tab-item"><span class="material-symbols-outlined">home</span></button>
+  <button type="button" data-nav-action="watch" class="tab-item" aria-label="Ne izlesem?"><span class="material-symbols-outlined">auto_awesome</span></button>
   <button type="button" data-nav="sinefil" class="tab-item"><span class="material-symbols-outlined">explore</span></button>
   <button type="button" data-nav="notifications" class="tab-item relative"><span class="material-symbols-outlined">notifications</span><span id="tab-badge-notifications" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
   <button type="button" data-nav="inbox" class="tab-item relative"><span class="material-symbols-outlined">mail</span><span id="tab-badge-inbox" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
-  <button type="button" data-nav="profile" class="tab-item"><span class="material-symbols-outlined">person</span></button>
 </nav>
 
 <button id="btn-compose-fab" class="hidden fixed bottom-20 right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-xl" type="button" aria-label="Not yaz">
@@ -78,6 +78,9 @@
     <button id="btn-open-feed" class="hidden absolute right-margin-mobile md:right-margin-desktop items-center gap-1.5 rounded-full border border-primary-container/30 bg-primary-container/10 px-3 py-1.5 font-label-md text-[11px] sm:text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
       <span class="material-symbols-outlined text-[16px]">forum</span>Akış
       <span id="feed-notification-badge" class="hidden ml-1 rounded-full bg-secondary-container px-1.5 text-[10px] font-bold text-on-secondary-container"></span>
+    </button>
+    <button id="btn-header-profile" class="hidden absolute right-margin-mobile h-10 w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button" aria-label="Profilim">
+      <span class="material-symbols-outlined text-[22px]">person</span>
     </button>
     <button id="header-privacy" class="hidden absolute right-margin-mobile md:right-margin-desktop font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors" type="button">Gizlilik</button>
   </div>
@@ -272,6 +275,22 @@
   <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sana özel bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektubu yalnızca sen ve alıcısı görebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bu sinefile bugün bir mektup yazdıysan, yeniden yazmak için 24 saat beklemen gerekir. Başka bir sinefile ise hemen yazabilirsin. Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu gönder</button></form>
 </dialog>
 
+<dialog id="dialog-blocked-users" class="auth-info-dialog">
+  <div class="glass-panel w-full max-w-[560px] rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant">Ayarlar</span>
+        <h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Engellediğin kullanıcılar</h2>
+        <p class="mt-2 text-sm leading-relaxed text-on-surface-variant">Engeli kaldırdığında takip, Blend veya mektup ilişkisi otomatik olarak geri gelmez.</p>
+      </div>
+      <button type="button" data-close-dialog="dialog-blocked-users" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <p id="blocked-users-notice" class="hidden mt-4 rounded-xl border border-primary-container/25 bg-primary-container/10 px-4 py-3 text-sm text-primary-container"></p>
+    <p id="blocked-users-error" class="hidden mt-4 rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
+    <div id="blocked-users-list" class="mt-5 flex flex-col gap-3"></div>
+  </div>
+</dialog>
+
 <!-- ═══════════════════════════  VIEW: AUTH  ═══════════════════════════ -->
 <div id="view-auth" class="hidden flex-grow flex flex-col items-center justify-center relative px-margin-mobile md:px-margin-desktop pt-24 pb-16 overflow-hidden">
   <div class="absolute inset-0 z-[2] pointer-events-none" style="background:radial-gradient(circle at 30% 30%,rgba(0,224,84,.08),transparent 42%),radial-gradient(circle at 80% 75%,rgba(108,205,255,.05),transparent 38%)"></div>
@@ -414,6 +433,7 @@
                   <button id="profile-theme-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">contrast</span><span id="profile-theme-label">Görünüm: Koyu</span></button>
                   <button id="profile-private-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">lock</span><span id="profile-private-label">Hesap: Herkese açık</span></button>
                   <button id="profile-browser-notifications" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">notifications_active</span>Tarayıcı bildirimleri</button>
+                  <button id="menu-blocked-users" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">block</span>Engellediğin kullanıcılar</button>
                   <button id="menu-delete-data" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
                   <button id="btn-logout" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
                 </div>
@@ -1122,16 +1142,9 @@
   <div class="sticky top-0 z-30 border-b border-outline-variant/25 bg-surface/85 backdrop-blur-xl">
     <div class="flex items-center justify-between gap-3 px-4 py-4">
       <h1 class="font-headline-md text-headline-md text-on-surface">Akış</h1>
-      <div class="flex shrink-0 items-center gap-2 lg:hidden">
-        <button id="btn-feed-notifications" type="button" title="Bildirimler" class="relative rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors">
-          <span class="material-symbols-outlined text-[22px]">notifications</span>
-          <span id="feed-bell-badge" class="hidden absolute right-0 top-0 min-w-[18px] rounded-full bg-secondary-container px-1 text-center text-[10px] font-bold leading-[18px] text-on-secondary-container"></span>
-        </button>
+      <div class="flex shrink-0 items-center lg:hidden">
         <button id="btn-feed-mine" type="button" title="Profilim" class="rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors">
           <span class="material-symbols-outlined text-[22px]">person</span>
-        </button>
-        <button id="btn-feed-back" type="button" class="rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors" title="Panom">
-          <span class="material-symbols-outlined text-[22px]">dashboard</span>
         </button>
       </div>
     </div>
@@ -1226,7 +1239,7 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div class="flex items-center gap-2"><h2 class="font-headline-md text-headline-md text-on-surface">Sinefil Mektupları</h2><button id="btn-letter-help" type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-tertiary-container/40 text-[13px] font-bold text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
-            <p id="letters-status" class="mt-1 text-sm leading-relaxed text-on-surface-variant">Mektup kutun açık. Kapatırsan kimse sana yazamaz ve sen de mektup yollayamazsın.</p>
+            <p id="letters-status" class="hidden mt-1 text-sm leading-relaxed text-on-surface-variant"></p>
           </div>
           <button id="btn-letter-receiving" type="button" aria-pressed="false" class="shrink-0 rounded-xl border border-tertiary-container/40 px-4 py-2.5 font-label-sm text-label-sm text-tertiary-container">Mektuplara kapalı</button>
         </div>
@@ -1262,7 +1275,11 @@
     </div>
     <div id="blends-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
     <div id="blends-notice" class="hidden glass-panel rounded-lg px-4 py-3 text-primary-container font-body-md text-body-md"></div>
-    <!-- Karar bekleyen istekler önce; tamamlananlar ve arşiv altında. -->
+    <!-- Kayıtlı Blendler önce; karar bekleyen istekler ardından gelir. -->
+    <section>
+      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Blendlerim</h2>
+      <div id="blends-list" class="grid sm:grid-cols-2 gap-gutter"></div>
+    </section>
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gelen istekler</h2>
       <div id="blend-incoming" class="flex flex-col gap-3"></div>
@@ -1270,18 +1287,6 @@
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Gönderilenler</h2>
       <div id="blend-outgoing" class="flex flex-col gap-3"></div>
-    </section>
-    <section>
-      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Tamamlanmış blendler</h2>
-      <div id="blends-list" class="grid sm:grid-cols-2 gap-gutter"></div>
-    </section>
-    <section>
-      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Sonuçlanan istekler</h2>
-      <div id="blend-history" class="flex flex-col gap-3"></div>
-    </section>
-    <section>
-      <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Engellenen kullanıcılar</h2>
-      <div id="blend-blocked" class="flex flex-col gap-3"></div>
     </section>
   </div>
 </div>
@@ -1324,6 +1329,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.59"></script>
+<script type="module" src="/static/js/app.js?v=20260906.60"></script>
 </body>
 </html>

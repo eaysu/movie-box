@@ -690,6 +690,10 @@ function showView(name) {
   const showFeed = Boolean(_account) && !SHELL_VIEWS.includes(name);
   feedButton.classList.toggle('hidden', !showFeed);
   feedButton.classList.toggle('flex', showFeed);
+  const headerProfile = $('btn-header-profile');
+  const showHeaderProfile = Boolean(_account) && SHELL_VIEWS.includes(name) && !OWN_HEADER_VIEWS.includes(name);
+  headerProfile.classList.toggle('hidden', !showHeaderProfile);
+  headerProfile.classList.toggle('flex', showHeaderProfile);
   paintShell(name);
   if (name === 'profile') applyProfileTheme();
 }
@@ -1517,6 +1521,12 @@ function userFavoritesMarkup(favorites) {
 
 async function openUserPage(username, { from = 'feed' } = {}) {
   if (!username) return;
+  if (_account?.username && username.toLowerCase() === _account.username.toLowerCase()) {
+    showView('profile');
+    if (_persistedProfile) renderPersistedProfile(_persistedProfile);
+    else loadProfile();
+    return;
+  }
   _userPage = { username, cursor: '', from };
   showView('user');
   $('user-header').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
@@ -2374,9 +2384,9 @@ function renderLetterSettings() {
   renderProfileLetterSettings(open);
   $('btn-letter-receiving').setAttribute('aria-pressed', String(open));
   $('btn-letter-receiving').textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
-  $('letters-status').textContent = open
-    ? 'Her sinefil sana 24 saatte bir mektup gönderebilir.'
-    : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
+  const status = $('letters-status');
+  status.textContent = open ? '' : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
+  status.classList.toggle('hidden', open);
 }
 
 function letterFilmMarkup(film) {
@@ -2605,34 +2615,6 @@ function blendRequestCard(item, kind) {
   </article>`;
 }
 
-function blendHistoryCard(item) {
-  const peer = item.peer || {};
-  const result = item.blend_result;
-  const score = result ? `<div class="shrink-0 text-right"><strong class="text-primary-container text-2xl leading-none">${Number(result.score) || 0}</strong><span class="block text-[9px] uppercase tracking-wide text-on-surface-variant/60 mt-1">% uyum</span></div>` : '';
-  const labels = { accepted: 'Kabul edildi', rejected: 'Reddedildi', cancelled: 'İptal edildi', expired: 'Süresi doldu' };
-  const dateValue = result?.result?.generated_at || result?.created_at || item.decided_at || item.created_at;
-  const dateLabel = dateValue ? new Date(dateValue).toLocaleDateString('tr-TR') : '';
-  const acceptedActions = item.status === 'accepted'
-    ? `<button data-blend-action="refresh-result" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/30 text-on-surface-variant hover:text-primary text-xs uppercase">Yenile</button>
-       <button data-blend-action="delete-result" data-request-id="${escapeHTML(item.id)}" data-peer-username="${escapeHTML(peer.username || '')}" class="min-h-[42px] px-3 py-2 rounded-lg border border-error/30 text-error hover:bg-error/10 text-xs uppercase">Sil</button>`
-    : '';
-  const resultButton = result
-    ? `<button data-blend-action="view" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-surface-variant text-on-surface text-xs uppercase">Sonucu aç</button>`
-    : item.status === 'accepted'
-      ? `<button data-blend-action="retry" data-request-id="${escapeHTML(item.id)}" class="min-h-[42px] px-3 py-2 rounded-lg bg-primary-container text-black text-xs uppercase font-bold">Sonucu hazırla</button>`
-      : '';
-  const username = escapeHTML(peer.username || '');
-  const buttons = `<div class="inbox-card-actions"><button data-blend-action="report" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-secondary-container text-xs">Bildir</button><button data-blend-action="block" data-peer-username="${username}" class="min-h-[42px] px-3 py-2 rounded-lg border border-outline-variant/20 text-on-surface-variant hover:text-error text-xs">Engelle</button>${resultButton}${acceptedActions}</div>`;
-  return `<article class="glass-panel rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-4 overflow-safe">
-    <div class="flex items-center gap-3 min-w-0 flex-1">
-      ${peerAvatar(peer)}
-      <div class="min-w-0 flex-grow"><strong class="text-on-surface block truncate">${escapeHTML(peer.display_name || peer.username || 'Bilinmeyen')}</strong><span class="text-on-surface-variant text-sm block">${labels[item.status] || item.status}</span>${dateLabel ? `<time class="text-on-surface-variant/60 text-xs block mt-0.5">${escapeHTML(dateLabel)}</time>` : ''}</div>
-      ${score}
-    </div>
-    ${buttons}
-  </article>`;
-}
-
 function blendResultWithPeerAvatars(result, peer = {}) {
   if (!result) return result;
   const ownUsername = _account?.username || '';
@@ -2732,6 +2714,34 @@ function blockedUserCard(item) {
   </article>`;
 }
 
+async function loadBlockedUsers() {
+  const list = $('blocked-users-list');
+  const notice = $('blocked-users-notice');
+  const error = $('blocked-users-error');
+  if (!list) return;
+  notice.classList.add('hidden');
+  error.classList.add('hidden');
+  list.innerHTML = '<p class="py-6 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  try {
+    const data = await apiJSON('/api/blends');
+    _blendInbox = data;
+    list.innerHTML = data.blocked?.length
+      ? data.blocked.map(blockedUserCard).join('')
+      : emptyInbox('Engellediğin kullanıcı yok.');
+  } catch (requestError) {
+    list.innerHTML = '';
+    error.textContent = requestError.message || 'Engellenen kullanıcılar yüklenemedi.';
+    error.classList.remove('hidden');
+  }
+}
+
+async function openBlockedUsers() {
+  toggleProfileMenu(false);
+  const dialog = $('dialog-blocked-users');
+  if (!dialog.open) dialog.showModal();
+  await loadBlockedUsers();
+}
+
 function renderBlendInbox(data) {
   _blendInbox = data;
   $('blend-incoming').innerHTML = data.incoming?.length
@@ -2740,14 +2750,6 @@ function renderBlendInbox(data) {
   $('blend-outgoing').innerHTML = data.outgoing?.length
     ? data.outgoing.map(item => blendRequestCard(item, 'outgoing')).join('')
     : emptyInbox('Bekleyen gönderilmiş isteğin yok.');
-  // Kabul edilenler yukarıdaki kart ızgarasında; burada yalnız kalanlar.
-  const resolved = (data.history || []).filter(item => item.status !== 'accepted');
-  $('blend-history').innerHTML = resolved.length
-    ? resolved.map(blendHistoryCard).join('')
-    : emptyInbox('Reddedilen ya da süresi dolan istek yok.');
-  $('blend-blocked').innerHTML = data.blocked?.length
-    ? data.blocked.map(blockedUserCard).join('')
-    : emptyInbox('Engellediğin kullanıcı yok.');
   // The small polling endpoint owns the combined Blend + letter badge; do not
   // overwrite it here with only the incoming Blend count.
   refreshBlendBadge();
@@ -2891,12 +2893,12 @@ async function handleBlendInboxAction(event) {
       await apiJSON(`/api/users/${encodeURIComponent(peerUsername)}/block`, {
         method: 'DELETE', headers: csrfHeaders(),
       });
-      await loadBlendInbox(false);
-      $('blends-notice').textContent = `@${peerUsername} engeli kaldırıldı.`;
-      $('blends-notice').classList.remove('hidden');
+      await loadBlockedUsers();
+      $('blocked-users-notice').textContent = `@${peerUsername} engeli kaldırıldı.`;
+      $('blocked-users-notice').classList.remove('hidden');
     } catch (error) {
-      $('blends-error').textContent = error.message || 'Engel kaldırılamadı.';
-      $('blends-error').classList.remove('hidden');
+      $('blocked-users-error').textContent = error.message || 'Engel kaldırılamadı.';
+      $('blocked-users-error').classList.remove('hidden');
     } finally { button.disabled = false; }
     return;
   }
@@ -4616,13 +4618,13 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-blocked-users')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
 });
 $('profile-my-notes').addEventListener('click', () => {
-  if (_account?.username) openUserPage(_account.username, { from: 'profile' });
+  showView('profile');
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {
@@ -4632,6 +4634,7 @@ $('profile-sinefil-area').addEventListener('click', () => {
 $('profile-discovery-toggle').addEventListener('click', toggleDiscoveryVisibility);
 $('profile-private-toggle').addEventListener('click', togglePrivateAccount);
 $('profile-browser-notifications').addEventListener('click', enableBrowserNotifications);
+$('menu-blocked-users').addEventListener('click', openBlockedUsers);
 $('btn-sinefil-back').addEventListener('click', () => showView(homeView()));
 $('btn-sinefil-refresh').addEventListener('click', loadSinefilArea);
 $('sinefil-search').addEventListener('input', () => {
@@ -4661,7 +4664,6 @@ $('btn-share-personality').addEventListener('click', event => {
 });
 // Akış olayları. Film seçici mektuplardaki diyaloğun aynısı: yeni bileşen yok.
 $('btn-open-feed').addEventListener('click', openFeed);
-$('btn-feed-back').addEventListener('click', () => { showView('profile'); loadProfile(); });
 $('btn-thread-back').addEventListener('click', () => {
   if (_threadFrom === 'notifications') { openNotifications(); return; }
   if (_threadFrom === 'user' && _userPage.username) {
@@ -4786,12 +4788,12 @@ $('app-rail').addEventListener('click', event => {
   if (person && person.dataset.postAuthor) openUserPage(person.dataset.postAuthor, { from: 'feed' });
 });
 $('nav-account').addEventListener('click', () => {
-  if (_account?.username) openUserPage(_account.username, { from: 'feed' });
+  showView('profile');
+  if (!_persistedProfile) loadProfile();
 });
 $('nav-compose').addEventListener('click', () => { openFeed(); openFilmPicker(); });
 $('btn-compose-fab').addEventListener('click', () => { openFeed(); openFilmPicker(); });
 
-$('btn-feed-notifications').addEventListener('click', openNotifications);
 $('btn-notifications-back').addEventListener('click', () => (showView('feed'), loadFeed()));
 $('notifications-list').addEventListener('click', event => {
   const request = event.target.closest('[data-follow-request]');
@@ -4816,7 +4818,12 @@ $('notifications-list').addEventListener('click', event => {
 });
 
 $('btn-feed-mine').addEventListener('click', () => {
-  if (_account?.username) openUserPage(_account.username, { from: 'feed' });
+  showView('profile');
+  if (!_persistedProfile) loadProfile();
+});
+$('btn-header-profile').addEventListener('click', () => {
+  showView('profile');
+  if (!_persistedProfile) loadProfile();
 });
 $('btn-user-back').addEventListener('click', () => {
   const from = _userPage.from;
@@ -5051,6 +5058,7 @@ $('profile-blend-suggestions').addEventListener('click', event => {
 });
 $('view-inbox').addEventListener('click', handleBlendInboxAction);
 $('view-blends').addEventListener('click', handleBlendInboxAction);
+$('dialog-blocked-users').addEventListener('click', handleBlendInboxAction);
 $('view-blends').addEventListener('keydown', event => {
   if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('[data-blend-action]')) {
     event.preventDefault();
