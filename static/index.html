@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260906.64"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.65"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -282,7 +282,7 @@
 
 
 <dialog id="dialog-letter-compose" class="auth-info-dialog">
-  <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sana özel bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Bu mektubu yalnızca sen ve alıcısı görebilir.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bu sinefile bugün bir mektup yazdıysan, yeniden yazmak için 24 saat beklemen gerekir. Başka bir sinefile ise hemen yazabilirsin. Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu gönder</button></form>
+  <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sana özel bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Yeni mektupların hesabına bağlıdır: mobilde ve webde aynı konuşmayı açabilirsin. Bu mektubu yalnızca sen ve alıcısı görür.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bu sinefile bugün bir mektup yazdıysan, yeniden yazmak için 24 saat beklemen gerekir. Başka bir sinefile ise hemen yazabilirsin. Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu gönder</button></form>
 </dialog>
 
 <dialog id="dialog-blocked-users" class="auth-info-dialog">
@@ -1153,7 +1153,9 @@
     <div class="flex" role="tablist">
       <button type="button" data-feed-scope="community" class="feed-tab">Topluluk</button>
       <button type="button" data-feed-scope="following" class="feed-tab">Takip ettiklerin</button>
+      <button type="button" data-feed-scope="mine" class="feed-tab">Notların</button>
     </div>
+    <div id="feed-follow-filter" class="hidden border-t border-outline-variant/15 px-4 py-2"></div>
   </div>
 
   <!-- Yazma kutusu: sakin bir yüzey, film ve spoiler araçları tek akışta. -->
@@ -1184,7 +1186,7 @@
 
   <div id="feed-compose-body" class="hidden"></div>
 
-  <div id="feed-trending" class="px-4 pt-4 xl:hidden"></div>
+  <div id="feed-trending" class="hidden px-4 pt-4 lg:block xl:hidden"></div>
   <p id="feed-film-filter" class="hidden mx-4 mt-4 flex items-center rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2 text-sm"></p>
 
   <div id="feed-list" class="flex flex-col"></div>
@@ -1236,7 +1238,7 @@
     <div>
       <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Sosyal alan</span>
       <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Mektuplar <span id="inbox-letters-badge" class="hidden align-middle ml-1 rounded-full bg-secondary-container px-2 py-0.5 text-[11px] font-bold text-on-secondary-container"></span></h1>
-      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Yalnızca sana açılabilen sinefil mektupların burada. Blend istekleri Blend sekmesinde.</p>
+      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Yeni mektupların hesabına bağlıdır; mobilde ve webde aynı konuşmaları okuyabilirsin. Blend istekleri Blend sekmesinde.</p>
     </div>
     <div id="inbox-letters-panel" class="flex flex-col gap-gutter">
       <p id="letters-error" class="hidden rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
@@ -1325,6 +1327,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.66"></script>
+<script type="module" src="/static/js/app.js?v=20260907.67"></script>
 </body>
 </html>

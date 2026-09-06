@@ -841,6 +841,28 @@ class AuthService:
             "created_at": row["created_at"], "read_at": row.get("read_at"),
         } for row in rows]
 
+    def purge_legacy_letters(self, account: Account) -> int:
+        """Delete only unreadable device-key rows involving this account.
+
+        Modern letters have a server-side body and are intentionally left alone;
+        this is a narrow repair for rows that no device can decrypt anymore.
+        """
+        service = self._service_client()
+        rows = service.table("cinephile_letters").select("id,body,ciphertext").or_(
+            f"sender_user_id.eq.{account.id},recipient_user_id.eq.{account.id}"
+        ).execute().data or []
+        legacy_ids = [
+            str(row["id"]) for row in rows
+            if not (row.get("body") or "") and row.get("ciphertext")
+        ]
+        if not legacy_ids:
+            return 0
+        result = service.table("cinephile_letters").delete().in_("id", legacy_ids).execute()
+        # PostgREST may be configured to return a minimal delete response.
+        # The target IDs were already ownership-scoped above, so that is still
+        # the reliable count to report to the signed-in person.
+        return len(result.data or legacy_ids)
+
     def mark_letter_read(self, account: Account, letter_id: str) -> bool:
         result = self._service_client().table("cinephile_letters").update(
             {"read_at": datetime.now(timezone.utc).isoformat()}
@@ -1537,7 +1559,7 @@ class AuthService:
 
     def list_feed(
         self, account: Account, *, scope: str = "community",
-        cursor: str = "", limit: int = 20, film_slug: str = "",
+        cursor: str = "", limit: int = 20, film_slug: str = "", author_username: str = "",
     ) -> dict:
         service = self._service_client()
         following: list[int] | None = None
@@ -1547,6 +1569,23 @@ class AuthService:
                     "follower_id", account.id
                 ).eq("status", "accepted").execute().data or [])]
             following.append(account.id)
+        elif not film_slug and scope == "mine":
+            following = [account.id]
+        if not film_slug and author_username:
+            username = str(author_username).strip().lstrip("@").lower()
+            candidate = self._first(
+                service.table("users").select("id").eq("username", username).eq(
+                    "account_status", "active"
+                ).limit(1).execute()
+            )
+            candidate_id = int(candidate["id"]) if candidate else None
+            if scope == "following" and candidate_id is not None and candidate_id in (following or []):
+                following = [candidate_id]
+            elif scope == "mine" and candidate_id == account.id:
+                following = [account.id]
+            else:
+                # Never let a UI filter bypass the selected feed scope.
+                following = []
         scanned_cursor = cursor
         visible: list[dict] = []
         exhausted = False

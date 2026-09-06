@@ -149,6 +149,31 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn("watched_film_by_slug", create)
         self.assertIn("post_film_not_owned", create)
 
+    def test_feed_scopes_cannot_bypass_visibility_and_follow_filters(self):
+        """A named-person filter is a convenience, never an access path."""
+        feed = self.auth.split("def list_feed", 1)[1].split("\n    def ", 1)[0]
+        route = self.main.split('@app.get("/api/feed")', 1)[1].split("@app.", 1)[0]
+        visibility = self.auth.split("def _visible_author_ids", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn('scope == "mine"', feed)
+        self.assertIn("author_username", feed)
+        self.assertIn("candidate_id in (following or [])", feed)
+        self.assertIn('("community", "following", "mine")', route)
+        # Public accounts always remain in the community timeline; locked
+        # accounts only join after an accepted relationship.
+        self.assertIn("if not private or user_id == account.id", visibility)
+        self.assertIn('eq("status", "accepted")', visibility)
+
+    def test_legacy_letter_cleanup_is_csrf_protected_and_account_scoped(self):
+        route = self.main.split('@app.delete("/api/letters/legacy")', 1)[1].split("@app.", 1)[0]
+        cleanup = self.auth.split("def purge_legacy_letters", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn("_require_csrf(request)", route)
+        self.assertIn("_require_account(request)", route)
+        self.assertIn("sender_user_id.eq.{account.id}", cleanup)
+        self.assertIn("recipient_user_id.eq.{account.id}", cleanup)
+        self.assertIn("row.get(\"ciphertext\")", cleanup)
+
     def test_follow_requests_and_post_reports_have_dedicated_write_paths(self):
         self.assertIn("def decide_follow_request", self.auth)
         self.assertIn("def report_post", self.auth)

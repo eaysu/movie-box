@@ -1118,6 +1118,8 @@ function renderPersistedProfile(data) {
 let _feedScope = 'community';
 let _feedCursor = '';
 let _feedPickedFilm = null;
+let _feedAuthor = '';
+let _feedFollowingUsers = [];
 // When set, the feed is narrowed to one film — the trend behaves like a
 // destination rather than a decoration.
 let _feedFilm = { slug: '', title: '' };
@@ -1197,7 +1199,7 @@ function feedPostCard(post, { compact = false } = {}) {
     : `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`;
   return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
     <div class="flex min-h-[128px] items-start gap-3">
-      <div class="min-w-0 flex-1 pt-0.5">
+      <div class="flex min-h-[132px] min-w-0 flex-1 flex-col pt-0.5">
         <div class="flex min-w-0 items-center gap-2.5">
           <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
           <div class="min-w-0 flex-1 leading-tight">
@@ -1206,7 +1208,7 @@ function feedPostCard(post, { compact = false } = {}) {
           </div>
         </div>
         ${text}
-        <div class="mt-4 flex items-center gap-4 text-sm text-on-surface-variant">
+        <div class="mt-auto flex items-center gap-4 pt-4 text-sm text-on-surface-variant">
           <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
             <span class="material-symbols-outlined text-[18px]" style="${post.liked ? "font-variation-settings:'FILL' 1" : ''}">favorite</span>
             <span data-like-count>${post.like_count || 0}</span>
@@ -1279,7 +1281,7 @@ async function loadFeed({ append = false } = {}) {
   if (!_account) return;
   if (!append) { _feedCursor = ''; $('feed-list').innerHTML = '<p class="px-4 py-10 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>'; }
   try {
-    const data = await apiJSON(`/api/feed?scope=${_feedScope}&cursor=${encodeURIComponent(_feedCursor)}&film=${encodeURIComponent(_feedFilm.slug || '')}`);
+    const data = await apiJSON(`/api/feed?scope=${_feedScope}&cursor=${encodeURIComponent(_feedCursor)}&film=${encodeURIComponent(_feedFilm.slug || '')}&author=${encodeURIComponent(_feedAuthor)}`);
     const cards = (data.posts || []).map(post => feedPostCard(post)).join('');
     if (append) $('feed-list').insertAdjacentHTML('beforeend', cards);
     else if (cards) $('feed-list').innerHTML = cards;
@@ -1341,11 +1343,32 @@ function openFilmFeed(slug, title) {
   loadFeed();
 }
 
-function setFeedScope(scope) {
+function renderFeedFollowingFilter() {
+  const filter = $('feed-follow-filter');
+  const show = _feedScope === 'following';
+  filter.classList.toggle('hidden', !show);
+  if (!show) return;
+  const pill = (label, username = '') => `<button type="button" data-feed-author="${escapeHTML(username)}" class="shrink-0 rounded-full border px-3 py-1.5 text-xs transition-colors ${_feedAuthor === username ? 'border-primary-container/50 bg-primary-container/15 text-primary-container' : 'border-outline-variant/30 text-on-surface-variant hover:border-outline-variant/60 hover:text-on-surface'}">${label}</button>`;
+  filter.innerHTML = `<div class="flex gap-2 overflow-x-auto pb-1">${pill('Tümü')}${_feedFollowingUsers.map(person => pill(`@${escapeHTML(person.username)}`, person.username)).join('')}</div>`;
+}
+
+async function loadFeedFollowingUsers() {
+  if (!_account?.username) return;
+  try {
+    const data = await apiJSON(`/api/users/${encodeURIComponent(_account.username)}/following`);
+    _feedFollowingUsers = (data.users || []).filter(user => user.username);
+  } catch (_) { _feedFollowingUsers = []; }
+  renderFeedFollowingFilter();
+}
+
+async function setFeedScope(scope) {
   _feedScope = scope;
+  _feedAuthor = '';
   document.querySelectorAll('[data-feed-scope]').forEach(button => {
     button.classList.toggle('is-active', button.dataset.feedScope === scope);
   });
+  if (scope === 'following') await loadFeedFollowingUsers();
+  else renderFeedFollowingFilter();
   return loadFeed();
 }
 
@@ -2504,14 +2527,32 @@ async function loadLetters() {
     // before it renders rather than only when the composer opens. Not knowing
     // it is survivable: the composer says so on open.
     const unreadData = await apiJSON('/api/letters/unread-count');
-    const unreadCount = Math.max(0, Number(unreadData.count) || 0);
+    let unreadCount = Math.max(0, Number(unreadData.count) || 0);
+    const data = await apiJSON('/api/letters');
+    const legacyLetters = (data.letters || []).filter(item => item.legacy_encrypted);
+    if (legacyLetters.length) {
+      try {
+        const purge = await apiJSON('/api/letters/legacy', {
+          method: 'DELETE', headers: csrfHeaders(),
+        });
+        if (purge.deleted) {
+          unreadCount = Math.max(0, unreadCount - legacyLetters.filter(
+            item => item.direction === 'received' && !item.read_at,
+          ).length);
+          letterMessage('notice', `${purge.deleted} eski, cihaz-anahtarlı mektup kaldırıldı. Yeni mektupların mobilde ve webde açılır.`);
+        }
+      } catch (_) {
+        // A retry on the next inbox visit is safer than letting an old broken
+        // row hide every current conversation.
+      }
+    }
     $('inbox-letters-badge').textContent = unreadCount > 9 ? '9+' : String(unreadCount);
     $('inbox-letters-badge').classList.toggle('hidden', unreadCount === 0);
-    const data = await apiJSON('/api/letters');
-    const decoded = (data.letters || []).map(item => ({
+    const decoded = (data.letters || []).filter(item => !item.legacy_encrypted).map(item => ({
       item,
-      // Rows from the retired device-key design cannot be opened by anyone.
-      payload: item.legacy_encrypted ? null : { body: item.body || '', film: item.film || null },
+      // New rows are account-bound, so a user can continue the same letter
+      // thread on mobile and web without carrying a device-specific key.
+      payload: { body: item.body || '', film: item.film || null },
     }));
     const unread = decoded.filter(({ item, payload }) => item.direction === 'received' && !item.read_at && payload).map(({ item }) => item.id);
     await Promise.all(unread.map(async id => {
@@ -4733,6 +4774,13 @@ $('feed-compose-text').addEventListener('input', event => {
 startFeedComposerPromptFlow();
 document.querySelectorAll('[data-feed-scope]').forEach(button => {
   button.addEventListener('click', () => setFeedScope(button.dataset.feedScope));
+});
+$('feed-follow-filter').addEventListener('click', event => {
+  const button = event.target.closest('[data-feed-author]');
+  if (!button) return;
+  _feedAuthor = button.dataset.feedAuthor || '';
+  renderFeedFollowingFilter();
+  loadFeed();
 });
 function openFilmPicker() {
   $('feed-film-search').value = '';

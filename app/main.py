@@ -1696,6 +1696,16 @@ async def list_letters(request: Request) -> dict:
     return {"letters": letters}
 
 
+@app.delete("/api/letters/legacy")
+async def purge_legacy_letters(request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    deleted = await asyncio.to_thread(_auth_service().purge_legacy_letters, account)
+    if deleted:
+        await _record_activity_event(_auth_service(), account, "legacy_letters_purged", {"count": deleted})
+    return {"ok": True, "deleted": deleted}
+
+
 @app.get("/api/letters/unread-count")
 async def unread_letter_count(request: Request) -> dict:
     account = await _require_account(request)
@@ -3224,15 +3234,15 @@ def _raise_post_http(exc: BlendServiceError) -> None:
 
 @app.get("/api/feed")
 async def read_feed(
-    request: Request, scope: str = "community", cursor: str = "", film: str = "",
+    request: Request, scope: str = "community", cursor: str = "", film: str = "", author: str = "",
 ) -> dict:
     account = await _require_account(request)
     service = _auth_service()
-    scope = scope if scope in ("community", "following") else "community"
+    scope = scope if scope in ("community", "following", "mine") else "community"
     try:
         feed = await asyncio.to_thread(
             service.list_feed, account, scope=scope, cursor=cursor, limit=20,
-            film_slug=film.strip()[:120],
+            film_slug=film.strip()[:120], author_username=author.strip()[:80],
         )
     except BlendServiceError as exc:
         _raise_post_http(exc)
@@ -3245,6 +3255,7 @@ async def read_feed(
     return {
         "scope": scope,
         "film": film.strip()[:120],
+        "author": author.strip()[:80],
         "posts": feed["posts"],
         # Composite keyset: timestamp ties never duplicate or hide a note.
         "next_cursor": feed["next_cursor"],

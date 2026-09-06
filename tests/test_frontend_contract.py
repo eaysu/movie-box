@@ -314,6 +314,27 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     # And the UI must not promise encryption it no longer performs.
     assert "cihazında şifrelenir" not in html
     assert "yalnızca alıcısının cihazında" not in html
+    # Broken rows from the retired browser-key system are hidden and then
+    # deleted only through the signed-in, CSRF-protected repair route.
+    assert "legacyLetters" in app_js
+    assert "apiJSON('/api/letters/legacy'" in app_js
+    assert "mobilde ve webde" in html
+
+
+def test_feed_has_own_notes_and_a_following_person_filter_without_mobile_trends():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'data-feed-scope="mine"' in html
+    assert 'id="feed-follow-filter"' in html
+    assert "function renderFeedFollowingFilter" in app_js
+    assert "author=${encodeURIComponent(_feedAuthor)}" in app_js
+    # The inline trend rail is desktop/tablet-only; phone has the compact feed.
+    trend = html.split('id="feed-trending" class="', 1)[1].split('"', 1)[0]
+    assert "hidden" in trend
+    assert "lg:block" in trend
+    card = app_js.split("function feedPostCard", 1)[1].split("\nfunction ", 1)[0]
+    assert "mt-auto flex items-center" in card
 
 
 def test_a_correspondence_continues_from_the_inbox():
@@ -382,8 +403,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "c1d2958778f5f800c08a4aaeae42a6c91bde5cf1ef1295a85d1cc88ef277559f",
-        "static/app.css": "de5b57dbb4510e21999d7be5e60318831e32076b4e61f0fb8d801784799f2f50",
+        "static/js/app.js": "7cd85f66e4132e3f2cbda17885e3acbc679cbc06c323321e81cb36048d746d71",
+        "static/app.css": "06879600eaba621084a9a907a2be46fa8aea4439e4b896530b6c6e9dd447b26f",
         "static/js/share-cards.js": "b71b90a0754dad295f7a5de587cacf660dc63b898666de51139ab8f2d45ce140",
     }
     for path, digest in expected.items():
@@ -415,9 +436,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.64"
+    css_version = "v=20260907.65"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.66" in html
+    assert "/static/js/app.js?v=20260907.67" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260906.39" in app_js
     assert "./auth.js?v=20260902.16" in app_js
