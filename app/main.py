@@ -1590,6 +1590,13 @@ async def profile_me(request: Request) -> dict:
     return profile
 
 
+@app.get("/api/profile/social-stats")
+async def profile_social_stats(request: Request) -> dict:
+    """Keep profile follow counts cheap; loading the full public page is unnecessary."""
+    account = await _require_account(request)
+    return await asyncio.to_thread(_auth_service().social_stats, account)
+
+
 @app.get("/api/profile/sync-status")
 async def profile_sync_status(request: Request) -> dict:
     """Small polling payload; the full profile is fetched only after completion."""
@@ -1673,6 +1680,16 @@ async def update_letter_receiving(req: LetterReceivingRequest, request: Request)
     account.letter_receiving_enabled = enabled
     await _record_activity_event(_auth_service(), account, "letter_receiving_changed", {"enabled": enabled})
     return {"ok": True, "letter_receiving_enabled": enabled}
+
+
+@app.get("/api/letters/followers")
+async def list_letterable_followers(request: Request) -> dict:
+    """Followers with an open letterbox, for the mobile compose shortcut."""
+    account = await _require_account(request)
+    followers = await asyncio.to_thread(
+        _auth_service().list_letterable_followers, account
+    )
+    return {"followers": followers}
 
 
 @app.get("/api/letters/recipients/{username}")

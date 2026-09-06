@@ -440,7 +440,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "40c43915367f4e71ef6bf1691b7ed0721c808db4dbc455854eb12ed2b5214736",
+        "static/js/app.js": "742f858ff5edf92f3eabb258eb93c9a8fdf441330f0225597b353332ddb0fa09",
         "static/app.css": "fb1789b07fddef80aab87144048042caab0def40dedea395a251810f76509c53",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -475,7 +475,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260907.66"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.68" in html
+    assert "/static/js/app.js?v=20260907.70" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js

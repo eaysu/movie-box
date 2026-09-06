@@ -668,7 +668,7 @@ async function refreshFeedBadge() {
       && Notification.permission === 'granted') {
       new Notification('Movieboxd', {
         body: `${count - _lastUnreadNotificationCount} yeni bildirimin var.`,
-        icon: '/favicon.ico',
+        icon: '/static/movieboxd-icon.png?v=20260907.1',
       });
     }
     _lastUnreadNotificationCount = count;
@@ -706,6 +706,12 @@ function showView(name) {
   const showHeaderProfile = Boolean(_account) && SHELL_VIEWS.includes(name) && !OWN_HEADER_VIEWS.includes(name);
   headerProfile.classList.toggle('hidden', !showHeaderProfile);
   headerProfile.classList.toggle('flex', showHeaderProfile);
+  const letterComposeFab = $('btn-letter-compose-fab');
+  if (letterComposeFab) {
+    const showLetterComposeFab = name === 'inbox';
+    letterComposeFab.classList.toggle('hidden', !showLetterComposeFab);
+    letterComposeFab.classList.toggle('flex', showLetterComposeFab);
+  }
   paintShell(name);
   applyProfileTheme();
 }
@@ -912,6 +918,24 @@ function applyAccount(account) {
   renderDiscoveryVisibility(Boolean(account.discoverable));
   renderProfileLetterSettings(Boolean(account.letter_receiving_enabled));
   renderPrivateAccount(Boolean(account.private_account));
+  loadProfileSocialStats();
+}
+
+function renderProfileSocialStats(stats = {}) {
+  const followers = Math.max(0, Number(stats.followers) || 0);
+  const following = Math.max(0, Number(stats.following) || 0);
+  $('profile-followers-count').textContent = String(followers);
+  $('profile-following-count').textContent = String(following);
+}
+
+async function loadProfileSocialStats() {
+  if (!_account) return;
+  try {
+    renderProfileSocialStats(await apiJSON('/api/profile/social-stats'));
+  } catch (_) {
+    // The static zero state remains visible even if a transient request fails.
+    renderProfileSocialStats();
+  }
 }
 
 function renderPrivateAccount(privateAccount) {
@@ -2918,6 +2942,23 @@ async function openLetterInbox() {
   await loadLetters();
 }
 
+async function openFollowerLetterPicker() {
+  const dialog = $('dialog-letter-followers');
+  const list = $('letter-followers-list');
+  if (!dialog || !list) return;
+  list.innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Takipçilerin yükleniyor…</p>';
+  if (!dialog.open) dialog.showModal();
+  try {
+    const data = await apiJSON('/api/letters/followers');
+    const followers = data.followers || [];
+    list.innerHTML = followers.length
+      ? followers.map(person => `<button type="button" data-letter-follower="${escapeHTML(person.username)}" class="flex w-full items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container/45 p-3 text-left transition-colors hover:border-tertiary-container/40 hover:bg-tertiary-container/10"><span class="shrink-0">${peerAvatar(person)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-on-surface">${escapeHTML(person.display_name || person.username)}</strong><span class="block truncate text-xs text-on-surface-variant/60">@${escapeHTML(person.username)}</span></span><span class="material-symbols-outlined text-tertiary-container">edit</span></button>`).join('')
+      : '<div class="rounded-xl border border-outline-variant/20 bg-surface-container/35 px-4 py-7 text-center text-sm leading-relaxed text-on-surface-variant">Mektup kutusu açık bir takipçin henüz yok.</div>';
+  } catch (error) {
+    list.innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Takipçilerin şu an yüklenemedi.')}</p>`;
+  }
+}
+
 async function openLetterSendingArea() {
   showView('sinefil');
   await loadSinefilArea();
@@ -4769,7 +4810,7 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-letter-followers'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
@@ -4785,6 +4826,13 @@ $('profile-follows-list').addEventListener('click', event => {
   if (!user) return;
   $('dialog-profile-follows').close();
   openUserPage(user.dataset.profileFollowUser, { from: 'profile' });
+});
+$('btn-letter-compose-fab').addEventListener('click', openFollowerLetterPicker);
+$('letter-followers-list').addEventListener('click', event => {
+  const button = event.target.closest('[data-letter-follower]');
+  if (!button) return;
+  $('dialog-letter-followers').close();
+  openLetterCompose(button.dataset.letterFollower);
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {

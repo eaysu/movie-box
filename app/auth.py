@@ -764,6 +764,49 @@ class AuthService:
         return {"username": recipient["username"], "display_name": recipient.get("display_name") or recipient["username"],
                 "avatar_url": recipient.get("avatar_url") or ""}
 
+    def list_letterable_followers(self, account: Account, *, limit: int = 100) -> list[dict]:
+        """Return followers who currently accept letters.
+
+        This is deliberately a small, relationship-scoped directory rather
+        than a general people search: the mobile compose shortcut should not
+        turn the letter inbox into another public discovery surface.
+        """
+        service = self._service_client()
+        try:
+            rows = service.table("follows").select("follower_id").eq(
+                "followee_id", account.id
+            ).eq("status", "accepted").order("created_at", desc=True).limit(limit).execute().data or []
+        except Exception:
+            return []
+        ids = {int(row["follower_id"]) for row in rows} - self._blocked_ids(account.id)
+        if not ids:
+            return []
+        try:
+            users = service.table("users").select(
+                "id,username,display_name,avatar_url,letter_receiving_enabled,account_status"
+            ).in_("id", list(ids)).eq("account_status", "active").eq(
+                "letter_receiving_enabled", True
+            ).execute().data or []
+        except Exception:
+            return []
+        by_id = {int(user["id"]): user for user in users}
+        return [
+            {
+                "username": user["username"],
+                "display_name": user.get("display_name") or user["username"],
+                "avatar_url": user.get("avatar_url") or "",
+            }
+            for row in rows
+            if (user := by_id.get(int(row["follower_id"])))
+        ]
+
+    def social_stats(self, account: Account) -> dict:
+        """Small own-profile payload used by the profile's social counters."""
+        return {
+            "followers": self._accepted_follow_count("followee_id", account.id),
+            "following": self._accepted_follow_count("follower_id", account.id),
+        }
+
     def send_letter(
         self, account: Account, recipient_username: str, body: str, film: dict | None = None
     ) -> str:

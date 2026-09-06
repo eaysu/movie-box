@@ -19,6 +19,10 @@
 <meta name="twitter:title"       content="Movieboxd"/>
 <meta name="twitter:description" content="Watchlist'indeki en uygun filmi bul. Yapay zeka, izleme geçmişini analiz ederek bu akşam için mükemmel filmi seçiyor."/>
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v4.png"/>
+<meta name="theme-color" content="#0b0f11"/>
+<link rel="icon" type="image/png" href="/static/movieboxd-icon.png?v=20260907.1"/>
+<link rel="apple-touch-icon" href="/static/movieboxd-icon.png?v=20260907.1"/>
+<link rel="manifest" href="/static/site.webmanifest?v=20260907.1"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/app.css?v=20260907.66"/>
@@ -295,6 +299,16 @@
   <form id="letter-compose-form" class="glass-panel rounded-2xl p-6 md:p-7 shadow-2xl"><div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sana özel bir mektup</span><h2 id="letter-compose-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Mektup yaz</h2></div><button type="button" data-close-dialog="dialog-letter-compose" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div><p class="mt-3 text-sm text-on-surface-variant">Yeni mektupların hesabına bağlıdır: mobilde ve webde aynı konuşmayı açabilirsin. Bu mektubu yalnızca sen ve alıcısı görür.</p><textarea id="letter-compose-body" maxlength="600" rows="6" placeholder="Bu sinefile bugün bir mektup yazdıysan, yeniden yazmak için 24 saat beklemen gerekir. Başka bir sinefile ise hemen yazabilirsin. Bir film, bir sahne ya da sende bıraktığı bir düşünce…" class="mt-5 w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none placeholder:text-on-surface-variant/60" required></textarea><div class="mt-2 flex items-center justify-between text-xs text-on-surface-variant"><span>İstersen izlediğin bir filmi de hediye edebilirsin.</span><span id="letter-compose-count" aria-live="polite">600 karakter kaldı</span></div><input id="letter-film-search" type="search" autocomplete="off" placeholder="İzlediğin filmlerde ara (isteğe bağlı)" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-sm text-on-surface outline-none"/><div id="letter-film-results" class="mt-2 max-h-36 overflow-y-auto rounded-xl"></div><div id="letter-film-picked" class="hidden mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"></div><p id="letter-compose-cooldown" class="hidden mt-3 rounded-xl border border-secondary-container/25 bg-secondary-container/10 px-3 py-2 text-sm text-secondary-container"></p><p id="letter-compose-error" class="hidden mt-3 text-sm text-error"></p><button id="btn-letter-send" type="submit" class="mt-5 w-full rounded-xl bg-tertiary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container">Mektubu gönder</button></form>
 </dialog>
 
+<dialog id="dialog-letter-followers" class="auth-info-dialog">
+  <div class="glass-panel max-h-[82vh] w-full max-w-[560px] overflow-y-auto rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Mektuplar</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Takipçine mektup yaz</h2><p class="mt-2 text-sm leading-relaxed text-on-surface-variant">Yalnızca seni takip eden ve mektup kutusu açık sinefiller burada görünür.</p></div>
+      <button type="button" data-close-dialog="dialog-letter-followers" class="shrink-0 text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div id="letter-followers-list" class="mt-5 flex flex-col gap-2"></div>
+  </div>
+</dialog>
+
 <dialog id="dialog-blocked-users" class="auth-info-dialog">
   <div class="glass-panel w-full max-w-[560px] rounded-2xl p-6 md:p-7 shadow-2xl">
     <div class="flex items-start justify-between gap-4">
@@ -449,8 +463,8 @@
           </div>
 
           <div class="mt-4 grid grid-cols-2 gap-2 border-t border-outline-variant/15 pt-4">
-            <button type="button" data-profile-follows="followers" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="block text-sm text-on-surface">Takipçiler</strong><span class="mt-0.5 block text-xs text-on-surface-variant">Seni takip edenler</span></button>
-            <button type="button" data-profile-follows="following" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="block text-sm text-on-surface">Takip</strong><span class="mt-0.5 block text-xs text-on-surface-variant">Takip ettiklerin</span></button>
+            <button type="button" data-profile-follows="followers" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="flex items-baseline justify-between gap-2 text-sm text-on-surface">Takipçiler <span id="profile-followers-count" class="text-primary-container">0</span></strong><span class="mt-0.5 block text-xs text-on-surface-variant">Seni takip edenler</span></button>
+            <button type="button" data-profile-follows="following" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="flex items-baseline justify-between gap-2 text-sm text-on-surface">Takip <span id="profile-following-count" class="text-primary-container">0</span></strong><span class="mt-0.5 block text-xs text-on-surface-variant">Takip ettiklerin</span></button>
           </div>
 
           <div class="mt-4 border-t border-outline-variant/15 pt-3">
@@ -1269,6 +1283,7 @@
       </section>
     </div>
   </div>
+  <button id="btn-letter-compose-fab" type="button" class="hidden fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-tertiary-container text-on-tertiary-container shadow-[0_12px_30px_rgba(255,128,0,.34)] transition-transform hover:scale-105 active:scale-95 md:hidden" aria-label="Takipçine mektup yaz" title="Takipçine mektup yaz"><span class="material-symbols-outlined text-[24px]">edit_square</span></button>
 </div>
 
 <!-- ═══════════════════════════  VIEW: BLENDLERİM  ═══════════════════════════ -->
@@ -1344,6 +1359,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.68"></script>
+<script type="module" src="/static/js/app.js?v=20260907.70"></script>
 </body>
 </html>
