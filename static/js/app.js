@@ -2504,6 +2504,16 @@ let _letterSearchTimer = null;
 let _letterSendStatus = { can_send: true, seconds_remaining: 0 };
 let _letterCooldownTimer = null;
 
+async function refreshLiveLetterSettings() {
+  if (!_account) return false;
+  const data = await apiJSON('/api/letters/settings');
+  const enabled = Boolean(data.letter_receiving_enabled);
+  _account.letter_receiving_enabled = enabled;
+  renderLetterSettings();
+  renderProfileLetterSettings(enabled);
+  return enabled;
+}
+
 function letterMessage(kind, message = '') {
   const node = $(`letters-${kind}`);
   if (!node) return;
@@ -2725,9 +2735,13 @@ async function toggleLetterReceiving(trigger = null) {
   finally { if (button) button.disabled = false; }
 }
 
-function openLetterCompose(username) {
+async function openLetterCompose(username) {
   // Writing requires an open letterbox of your own, so the recipient can answer.
-  if (!_account?.letter_receiving_enabled) {
+  let receivingEnabled = Boolean(_account?.letter_receiving_enabled);
+  if (!receivingEnabled) {
+    try { receivingEnabled = await refreshLiveLetterSettings(); } catch (_) {}
+  }
+  if (!receivingEnabled) {
     _letterEnablePendingRecipient = username;
     $('letter-enable-username').textContent = `@${username}`;
     $('letter-enable-error').classList.add('hidden');
@@ -3323,6 +3337,9 @@ function _onboardKey(account) {
 
 function enterApp(account, opts = {}) {
   applyAccount(account);
+  // Authentication intentionally keeps social preference columns optional for
+  // migration safety. Hydrate the live letter setting after the session is in.
+  refreshLiveLetterSettings().catch(() => {});
   // İlk ekranda yalnız küçük badge sayısını al. Büyük Blend geçmişi ve kayıtlı
   // sonuç payload'ları inbox / Blendlerim gerçekten açıldığında lazy-load edilir.
   refreshBlendBadge();

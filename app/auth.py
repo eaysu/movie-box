@@ -746,6 +746,19 @@ class AuthService:
         ).eq("id", account.id).execute()
         return bool(enabled)
 
+    def letter_receiving_status(self, account: Account) -> bool:
+        """Read the live setting without making session identity depend on a migration."""
+        try:
+            row = self._first(
+                self._service_client().table("users").select(
+                    "letter_receiving_enabled"
+                ).eq("id", account.id).limit(1).execute()
+            ) or {}
+            return bool(row.get("letter_receiving_enabled", False))
+        except Exception:
+            # The caller still has the account snapshot as a safe fallback.
+            return bool(account.letter_receiving_enabled)
+
     def get_letter_recipient(self, account: Account, username: str) -> dict:
         service = self._service_client()
         recipient = self._first(

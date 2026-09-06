@@ -319,6 +319,10 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "legacyLetters" in app_js
     assert "apiJSON('/api/letters/legacy'" in app_js
     assert "mobilde ve webde" in html
+    # A newly restored session hydrates the live letterbox preference before
+    # choosing whether to show the "open your box" dialog.
+    assert "refreshLiveLetterSettings" in app_js
+    assert "'/api/letters/settings'" in app_js
 
 
 def test_letter_workspace_is_a_mobile_thread_view_and_sent_letters_can_be_recalled():
@@ -463,7 +467,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "492ce97fde5e7264eca74916e46cecbfb8b20f43e0829104520c3fcb4fd4d2f3",
+        "static/js/app.js": "959ab4888d73bd4e5ef63d971d3099952ed08bf02645b55d89c57835e0dde59d",
         "static/app.css": "a977094479ec8e7c40019678b5fcac4a3e2197650262f34e92c7bbe811a4d114",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -498,7 +502,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260907.68"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.72" in html
+    assert "/static/js/app.js?v=20260907.73" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js

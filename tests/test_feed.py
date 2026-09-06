@@ -211,6 +211,13 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn('event_key=f"blend-request:{request_id}"', blend)
         self.assertIn('event_key=f"letter:{letter_id}"', letters)
 
+    def test_live_letter_setting_is_read_separately_from_migration_safe_login(self):
+        route = self.main.split('@app.get("/api/letters/settings")', 1)[1].split("@app.", 1)[0]
+        status = self.auth.split("def letter_receiving_status", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn("letter_receiving_status", route)
+        self.assertIn('"letter_receiving_enabled"', status)
+
     def test_background_push_uses_a_subscription_not_notification_content(self):
         schema = (ROOT / "supabase" / "schema.sql").read_text()
         self.assertIn("web_push_subscriptions", schema)

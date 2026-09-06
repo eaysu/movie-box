@@ -1682,6 +1682,16 @@ async def update_letter_receiving(req: LetterReceivingRequest, request: Request)
     return {"ok": True, "letter_receiving_enabled": enabled}
 
 
+@app.get("/api/letters/settings")
+async def letter_settings(request: Request) -> dict:
+    """Live letterbox state for a newly restored browser session."""
+    account = await _require_account(request)
+    enabled = await asyncio.to_thread(
+        _auth_service().letter_receiving_status, account
+    )
+    return {"letter_receiving_enabled": enabled}
+
+
 @app.get("/api/letters/followers")
 async def list_letterable_followers(request: Request) -> dict:
     """Followers with an open letterbox, for the mobile compose shortcut."""
