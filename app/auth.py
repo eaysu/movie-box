@@ -251,32 +251,22 @@ class AuthService:
         return (result.data or [None])[0]
 
     def _account_row_by_username(self, client, username: str) -> dict | None:
-        standard_columns = (
+        # Authentication only needs durable identity fields. Social-preference
+        # migrations must never turn a valid password into a server error.
+        identity_columns = (
             "id,auth_user_id,username,display_name,avatar_url,"
-            "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
-            "discoverable,letter_receiving_enabled,private_account"
+            "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
         )
 
         def read():
             return (
                 client.table("users")
-                .select(standard_columns)
+                .select(identity_columns)
                 .eq("username", username)
                 .limit(1)
                 .execute()
             )
-        try:
-            result = self._retry_storage_read(read)
-        except Exception as exc:
-            # A deploy must not lock every member out while its companion SQL
-            # migration is waiting in Supabase Studio. The privacy switch then
-            # safely behaves as false until `private_account` is added.
-            if "private_account" not in str(exc).lower():
-                raise
-            result = self._retry_storage_read(lambda: (
-                client.table("users").select(standard_columns.rsplit(",", 1)[0])
-                .eq("username", username).limit(1).execute()
-            ))
+        result = self._retry_storage_read(read)
         return self._first(result)
 
     def _audit(self, client, user_id: int | None, event: str, ip_hash: str = "") -> None:
@@ -593,20 +583,11 @@ class AuthService:
             service = self._service_client()
             columns = (
                 "id,auth_user_id,username,display_name,avatar_url,"
-                "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
-                "discoverable,letter_receiving_enabled,private_account"
+                "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats"
             )
-            query = service.table("users").select(columns).eq(
+            result = service.table("users").select(columns).eq(
                 "auth_user_id", auth_user_id
-            ).eq("account_status", "active").limit(1)
-            try:
-                result = query.execute()
-            except Exception as exc:
-                if "private_account" not in str(exc).lower():
-                    raise
-                result = service.table("users").select(columns.rsplit(",", 1)[0]).eq(
-                    "auth_user_id", auth_user_id
-                ).eq("account_status", "active").limit(1).execute()
+            ).eq("account_status", "active").limit(1).execute()
             row = self._first(result)
             if row is None:
                 raise InvalidCredentialsError("Oturum geçersiz.")
