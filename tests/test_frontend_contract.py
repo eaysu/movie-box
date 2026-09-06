@@ -149,14 +149,15 @@ def test_profile_decks_are_fixed_height_with_scrollable_overviews():
     assert "overflow-y: auto" in css
 
 
-def test_blend_films_link_out_and_blend_library_has_create_action():
+def test_blend_films_link_out_and_blend_library_opens_its_full_hub():
     html = (ROOT / "static" / "index.html").read_text()
     js = (ROOT / "static" / "js" / "app.js").read_text()
 
-    assert 'id="btn-blends-create"' in html
+    assert 'id="btn-blends-create"' not in html
+    assert 'id="blend-tools-host"' in html
     assert "const href = letterboxdFilmURL(film.slug)" in js
     assert 'target="_blank" rel="noopener"' in js
-    assert "$('btn-blends-create').addEventListener" in js
+    assert "case 'blends': openQuickTool('blend'); break;" in js
     assert "openQuickTool('blend')" in js
 
 
@@ -381,9 +382,9 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "b76e7e324089a43d595455d080035284d95a013abc0e76f2b268500f90e3217a",
-        "static/app.css": "ca79a637b4278ee42bb6b1eb97e72a7d8c83976e95019491dad28a188ef98310",
-        "static/js/share-cards.js": "b047cfa36b8d216a334471a1642172b2b07548e7f423659c852a9a73978dcdb6",
+        "static/js/app.js": "fff104819e559896ce18122485874a49edf4397757b6ff85ab623d1f9a83def7",
+        "static/app.css": "caab837420e68f9ee629a1906e82bc8680c4315f87815240d75e44b8d2592304",
+        "static/js/share-cards.js": "b71b90a0754dad295f7a5de587cacf660dc63b898666de51139ab8f2d45ce140",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -414,11 +415,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.62"
+    css_version = "v=20260906.63"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.64" in html
+    assert "/static/js/app.js?v=20260906.65" in html
     assert app_js.count(f"?{dependency_version}") == 5
-    assert "./share-cards.js?v=20260906.37" in app_js
+    assert "./share-cards.js?v=20260906.38" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -492,7 +493,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260906.37')" in imports
+    assert "import('./share-cards.js?v=20260906.38')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 

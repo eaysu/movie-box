@@ -441,14 +441,14 @@ export async function renderProfileShareCard(profile) {
 
   font(ctx, 17, 700);
   drawLines(ctx, ['FAV 4'], 72, 612, 22, accent);
-  await drawPosterStrip(ctx, favorites, 646, accent, { limit: 4, maxPosterWidth: 155 });
+  await drawPosterStrip(ctx, favorites, 646, accent, { limit: 4, maxPosterWidth: 130 });
 
-  fillRounded(ctx, 72, 920, 936, 244, 30, 'rgba(29,32,35,.9)');
+  fillRounded(ctx, 72, 970, 936, 232, 30, 'rgba(29,32,35,.9)');
   font(ctx, 17, 700);
-  drawLines(ctx, ['HESABININ SÖYLEDİĞİ'], 112, 958, 22, accent);
-  const fitted = fitWrappedBlock(ctx, summary, 856, 140, { maxSize: 28, minSize: 20, weight: 600 });
+  drawLines(ctx, ['HESABININ SÖYLEDİĞİ'], 112, 1008, 22, accent);
+  const fitted = fitWrappedBlock(ctx, summary, 856, 122, { maxSize: 25, minSize: 18, weight: 600 });
   font(ctx, fitted.size, 600);
-  drawLines(ctx, fitted.lines, 112, 996, fitted.lineHeight, '#e0e2e6');
+  drawLines(ctx, fitted.lines, 112, 1046, fitted.lineHeight, '#e0e2e6');
   drawFooter(ctx, `@${username} · Movieboxd profil kartı`);
 
   return {

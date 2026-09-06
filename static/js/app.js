@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260906.37');
+    _shareCardsModule = import('./share-cards.js?v=20260906.38');
   }
   return _shareCardsModule;
 }
@@ -766,7 +766,7 @@ function goNav(target) {
     case 'feed': openFeed(); break;
     case 'notifications': openNotifications(); break;
     case 'inbox': openLetterInbox(); break;
-    case 'blends': loadMyBlends(true); break;
+    case 'blends': openQuickTool('blend'); break;
     case 'sinefil': showView('sinefil'); loadSinefilArea(); break;
     case 'profile': showView('profile'); break;
     default: openFeed();
@@ -1138,15 +1138,16 @@ function feedPostCard(post, { compact = false } = {}) {
   const username = escapeHTML(author.username || '');
   const body = escapeHTML(post.body || '');
   const poster = film ? safeImageURL(film.poster_url) : '';
-  const filmChip = film
-    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" class="mt-3 flex items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container/50 p-2 hover:border-primary-container/40 transition-colors">
-        ${poster
-          ? `<img src="${poster}" alt="" onerror="posterErr(this)" loading="lazy" class="w-10 shrink-0 aspect-[2/3] rounded-md object-cover bg-surface-container"/>`
-          : `<div class="w-10 shrink-0 aspect-[2/3] rounded-md bg-surface-container"></div>`}
-        <span class="min-w-0">
-          <strong class="block truncate text-sm text-on-surface">${escapeHTML(film.title || '')}</strong>
-          <span class="text-xs text-on-surface-variant/60">${[film.year, film.director].filter(Boolean).map(escapeHTML).join(' · ')}</span>
+  const filmRail = film
+    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" title="${escapeHTML(film.title || 'Film')} — Letterboxd" class="group w-24 shrink-0 text-left sm:w-28">
+        <span class="block overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-[0_16px_34px_-22px_rgba(0,0,0,.95)] transition-transform duration-300 group-hover:-translate-y-1 group-hover:border-primary-container/50">
+          ${poster
+            ? `<img src="${poster}" alt="${escapeHTML(film.title || '')}" onerror="posterErr(this)" loading="lazy" class="aspect-[2/3] w-full object-cover bg-surface-container"/>`
+            : `<span class="flex aspect-[2/3] items-center justify-center bg-surface-container text-on-surface-variant/35"><span class="material-symbols-outlined text-[28px]">movie</span></span>`}
         </span>
+        <strong class="mt-2 block line-clamp-2 text-[12px] leading-snug text-on-surface group-hover:text-primary-container sm:text-[13px]">${escapeHTML(film.title || 'Film')}</strong>
+        <span class="mt-1 block text-[11px] text-on-surface-variant/60">${escapeHTML(String(film.year || ''))}</span>
+        <span class="mt-0.5 block line-clamp-2 text-[11px] leading-snug text-on-surface-variant">${escapeHTML(film.director || '')}</span>
       </a>`
     : '';
   // A spoiler stays covered until the reader asks for it — in a film community
@@ -1154,17 +1155,19 @@ function feedPostCard(post, { compact = false } = {}) {
   const text = post.spoiler
     ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
     : `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`;
-  return `<article class="border-b border-outline-variant/20 px-4 py-3 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
-    <div class="flex items-start gap-3">
-      <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
-      <div class="min-w-0 flex-1">
-        <div class="flex items-baseline gap-2">
-          <button type="button" data-post-author="${username}" class="min-w-0 truncate text-left text-sm font-bold text-on-surface hover:underline">${name}</button>
-          <span class="truncate text-xs text-on-surface-variant/60">@${username}</span>
-          <span class="ml-auto shrink-0 text-xs text-on-surface-variant/50">${escapeHTML(feedRelativeTime(post.created_at))}</span>
+  return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
+    <div class="flex items-start gap-4">
+      ${filmRail}
+      <div class="min-w-0 flex-1 pt-0.5">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
+          <div class="min-w-0 flex-1 leading-tight">
+            <button type="button" data-post-author="${username}" class="block max-w-full truncate text-left text-sm font-bold text-on-surface hover:underline">${name}</button>
+            <span class="mt-0.5 block truncate text-xs text-on-surface-variant/60">@${username}</span>
+          </div>
+          <span class="shrink-0 self-start text-xs text-on-surface-variant/50">${escapeHTML(feedRelativeTime(post.created_at))}</span>
         </div>
         ${text}
-        ${filmChip}
         <div class="mt-3 flex items-center gap-4 text-sm text-on-surface-variant">
           <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
             <span class="material-symbols-outlined text-[18px]" style="${post.liked ? "font-variation-settings:'FILL' 1" : ''}">favorite</span>
@@ -4963,10 +4966,6 @@ $('letter-film-results').addEventListener('click', event => {
 $('letter-film-picked').addEventListener('click', event => { if (event.target.closest('[data-letter-film-clear]')) { _letterPickedFilm = null; renderPickedLetterFilm(); } });
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
 $('btn-blends-back').addEventListener('click', () => showView(homeView()));
-$('btn-blends-create').addEventListener('click', () => {
-  if (_account) openQuickTool('blend');
-  else setMode('blend');
-});
 
 $('profile-top-films').addEventListener('click', handleFilmDeck);
 $('profile-recent-films').addEventListener('click', handleFilmDeck);
