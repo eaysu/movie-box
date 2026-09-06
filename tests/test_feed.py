@@ -168,6 +168,11 @@ class FeedApiTests(unittest.TestCase):
         profile = self.auth.split("def public_profile", 1)[1].split("\n    def ", 1)[0]
         self.assertIn('"letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {}', profile)
 
+    def test_login_has_a_safe_bridge_while_privacy_column_is_being_migrated(self):
+        lookup = self.auth.split("def _account_row_by_username", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn('if "private_account" not in str(exc).lower()', lookup)
+        self.assertIn("standard_columns.rsplit(\",\", 1)[0]", lookup)
+
 
 class ProfilePageTests(unittest.TestCase):
     """The Twitter-shaped part: a member's page, their people, their alerts."""
