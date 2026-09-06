@@ -267,6 +267,20 @@ def test_sinefil_area_uses_compact_cards_and_profile_modal():
     assert "def sinefil_personality" in auth_py
 
 
+def test_recommendation_and_blend_tools_live_outside_the_profile_screen():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'data-nav-action="watch"' in html
+    assert 'data-nav-action="blend"' in html
+    assert 'id="view-tools"' in html
+    assert 'id="quick-tools-host"' in html
+    assert 'data-rail-action=' not in html
+    assert "showView('tools');" in app_js
+    assert "function mountQuickTools()" in app_js
+    assert "$('profile-quick-tools')?.classList.remove('hidden');" not in app_js.split('function openProfilePanel', 1)[1].split('function mountQuickTools', 1)[0]
+
+
 def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -364,7 +378,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "e726c1c94fcd39e629bbfa37ff6fa011880a491019422ec0f1f468fc0914ec65",
+        "static/js/app.js": "ddaa6e07f02c4b504679fcba7735306c6f2a8a0cc26a64e0cd611f6a47a5706f",
         "static/app.css": "600b09d985751e4684a05eba796cd94813ef1255f60ea2b359e3301668d4436b",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
@@ -399,7 +413,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260905.47"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.57" in html
+    assert "/static/js/app.js?v=20260906.58" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js

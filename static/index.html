@@ -30,10 +30,12 @@
   <button id="nav-logo" type="button" class="mb-4 px-3 py-2 text-left font-headline-md text-headline-md tracking-tighter text-gradient-green">MOVIEBOXD</button>
   <div class="flex flex-col gap-1">
     <button type="button" data-nav="feed" class="nav-item"><span class="material-symbols-outlined">home</span>Akış</button>
-    <button type="button" data-nav="sinefil" class="nav-item"><span class="material-symbols-outlined">explore</span>Keşfet</button>
+    <button type="button" data-nav-action="watch" class="nav-item"><span class="material-symbols-outlined">auto_awesome</span>Ne izlesem?</button>
+    <button type="button" data-nav-action="blend" class="nav-item"><span class="material-symbols-outlined">join_inner</span>Blend yap</button>
+    <button type="button" data-nav="sinefil" class="nav-item"><span class="material-symbols-outlined">explore</span>Sinefil Sineması</button>
     <button type="button" data-nav="notifications" class="nav-item"><span class="material-symbols-outlined">notifications</span>Bildirimler<span id="nav-badge-notifications" class="hidden ml-auto rounded-full bg-secondary-container px-2 text-[11px] font-bold leading-5 text-on-secondary-container"></span></button>
     <button type="button" data-nav="inbox" class="nav-item"><span class="material-symbols-outlined">mail</span>Mektuplar<span id="nav-badge-inbox" class="hidden ml-auto rounded-full bg-secondary-container px-2 text-[11px] font-bold leading-5 text-on-secondary-container"></span></button>
-    <button type="button" data-nav="blends" class="nav-item"><span class="material-symbols-outlined">join_inner</span>Blend</button>
+    <button type="button" data-nav="blends" class="nav-item"><span class="material-symbols-outlined">grid_view</span>Blendlerim</button>
     <button type="button" data-nav="profile" class="nav-item"><span class="material-symbols-outlined">person</span>Profil</button>
   </div>
   <button id="nav-compose" type="button" class="mt-5 rounded-full bg-primary-container py-3 font-label-md text-label-md uppercase tracking-wide text-on-primary-container hover:opacity-90 transition-opacity">Not yaz</button>
@@ -48,13 +50,6 @@
 
 <!-- ═══════════════  SAĞ RAF (geniş ekran)  ═══════════════ -->
 <aside id="app-rail" class="hidden fixed inset-y-0 right-0 z-40 w-[320px] overflow-y-auto border-l border-outline-variant/20 px-5 py-8">
-  <div class="rounded-2xl border border-outline-variant/25 bg-surface-container/40 p-3">
-    <p class="px-2 pb-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-on-surface-variant/60">Hızlı işlemler</p>
-    <button type="button" data-rail-action="watch" class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-on-surface hover:bg-primary-container/10"><span class="material-symbols-outlined text-primary-container">auto_awesome</span><span><strong class="block text-sm">Ne izlesem?</strong><small class="text-xs text-on-surface-variant">Watchlist'inden seç</small></span></button>
-    <button type="button" data-rail-action="blend" class="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-on-surface hover:bg-secondary-container/10"><span class="material-symbols-outlined text-secondary-container">join_inner</span><span><strong class="block text-sm">Blend yap</strong><small class="text-xs text-on-surface-variant">Karşılıklı takiplerinle</small></span></button>
-    <button type="button" data-nav="blends" class="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-on-surface hover:bg-surface-container"><span class="material-symbols-outlined text-on-surface-variant">grid_view</span><span class="text-sm">Blendlerim</span></button>
-    <button type="button" data-nav="inbox" class="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-on-surface hover:bg-[#ff8000]/10"><span class="material-symbols-outlined text-[#ff9a42]">mail</span><span class="text-sm">Mektuplar</span></button>
-  </div>
   <div id="rail-trending"></div>
   <div id="rail-suggestions" class="mt-6"></div>
 </aside>
@@ -666,6 +661,11 @@
       </section>
     </div>
   </main>
+</div>
+
+<!-- ═══════════════════════════  VIEW: ARAÇLAR  ═══════════════════════════ -->
+<div id="view-tools" class="hidden flex-grow pt-20 pb-24">
+  <main id="quick-tools-host" class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop"></main>
 </div>
 
 <!-- ═══════════════════════════  VIEW: ONBOARDING  ═══════════════════════════ -->
@@ -1338,6 +1338,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.57"></script>
+<script type="module" src="/static/js/app.js?v=20260906.58"></script>
 </body>
 </html>

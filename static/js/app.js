@@ -231,7 +231,6 @@ function showActionError(msg) {
 }
 
 function openProfilePanel(which) {
-  $('profile-quick-tools')?.classList.remove('hidden');
   const watch = which === 'watch';
   const blend = which === 'blend';
   $('profile-watch-panel').classList.toggle('open', watch);
@@ -254,10 +253,18 @@ function openProfilePanel(which) {
   if (blend) setTimeout(() => $('profile-blend-username').focus(), 40);
 }
 
+function mountQuickTools() {
+  const host = $('quick-tools-host');
+  const tools = $('profile-quick-tools');
+  if (host && tools && tools.parentElement !== host) host.appendChild(tools);
+}
+
 function openQuickTool(which) {
-  showView('profile');
+  mountQuickTools();
+  showView('tools');
+  $('profile-quick-tools')?.classList.remove('hidden');
   openProfilePanel(which);
-  setTimeout(() => $('profile-quick-tools')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 40);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function setProfileWatchMode(mode) {
@@ -670,7 +677,7 @@ function stopFeedNotificationPolling() {
 }
 
 function showView(name) {
-  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'tools', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', NO_FOOTER_VIEWS.includes(name));
@@ -693,7 +700,7 @@ function showView(name) {
 // sütun alta iner, sağ raf kaybolur — aynı bilgi mimarisi, dar ekran hâli.
 const SHELL_VIEWS = [
   'feed', 'thread', 'user', 'follows', 'notifications',
-  'profile', 'inbox', 'blends', 'sinefil',
+  'profile', 'tools', 'inbox', 'blends', 'sinefil',
 ];
 // The feed family carries its own column header, so the global logo bar would
 // be a second, redundant band above it — Twitter has one.
@@ -706,7 +713,7 @@ const NO_FOOTER_VIEWS = [
 const NAV_OF_VIEW = {
   feed: 'feed', thread: 'feed', user: 'feed', follows: 'feed',
   notifications: 'notifications', inbox: 'inbox', blends: 'blends',
-  sinefil: 'sinefil', profile: 'profile',
+  sinefil: 'sinefil', profile: 'profile', tools: '',
 };
 
 function paintShell(name) {
@@ -3092,7 +3099,6 @@ function enterApp(account, opts = {}) {
   }
   // The feed is where the app opens now. The dashboard still prepares itself in
   // the background so switching to "Profil" is instant.
-  openProfilePanel('watch');
   openFeed().then(loadProfile);
 }
 
@@ -3155,7 +3161,6 @@ function finishOnboarding() {
   $('ob-prev').classList.add('hidden');
   $('ob-next').classList.add('hidden');
   showView('profile');
-  openProfilePanel('watch');
   if (_persistedProfile) renderPersistedProfile(_persistedProfile);
   else loadProfile();
 }
@@ -4769,10 +4774,11 @@ $('feed-film-filter').addEventListener('click', event => {
 document.querySelectorAll('[data-nav]').forEach(button => {
   button.addEventListener('click', () => goNav(button.dataset.nav));
 });
+document.querySelectorAll('[data-nav-action]').forEach(button => {
+  button.addEventListener('click', () => openQuickTool(button.dataset.navAction));
+});
 $('nav-logo').addEventListener('click', () => goNav('feed'));
 $('app-rail').addEventListener('click', event => {
-  const action = event.target.closest('[data-rail-action]');
-  if (action) { openQuickTool(action.dataset.railAction); return; }
   const trend = event.target.closest('[data-trend-film]');
   if (trend) { openFeed(); openFilmFeed(trend.dataset.trendFilm, trend.dataset.trendTitle); return; }
   const follow = event.target.closest('[data-follow]');
@@ -4946,8 +4952,7 @@ $('letter-film-picked').addEventListener('click', event => { if (event.target.cl
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
 $('btn-blends-back').addEventListener('click', () => showView(homeView()));
 $('btn-blends-create').addEventListener('click', () => {
-  showView(dashboardView());
-  if (_account) openProfilePanel('blend');
+  if (_account) openQuickTool('blend');
   else setMode('blend');
 });
 
