@@ -1584,11 +1584,16 @@ function notificationRow(item) {
     follow: 'seni takip etmeye başladı',
     follow_request: 'sana takip isteği gönderdi',
     follow_accepted: 'takip isteğini kabul etti',
+    letter: 'sana bir mektup gönderdi',
+    blend_request: 'sana Blend isteği gönderdi',
+    blend_accepted: 'Blend isteğini kabul etti',
+    blend_rejected: 'Blend isteğini reddetti',
   }[item.kind] || 'bir şey yaptı';
-  const icon = { like: 'favorite', reply: 'chat_bubble', follow: 'person_add', follow_request: 'person_add', follow_accepted: 'how_to_reg' }[item.kind] || 'notifications';
+  const icon = { like: 'favorite', reply: 'chat_bubble', follow: 'person_add', follow_request: 'person_add', follow_accepted: 'how_to_reg', letter: 'mail', blend_request: 'join_inner', blend_accepted: 'handshake', blend_rejected: 'close' }[item.kind] || 'notifications';
+  const destination = item.kind === 'letter' ? 'inbox' : (item.kind.startsWith('blend_') ? 'blends' : '');
   const unread = !item.read_at;
   return `<div class="flex items-start gap-3 rounded-xl border p-3 transition-colors ${unread ? 'border-primary-container/35 bg-primary-container/10' : 'border-outline-variant/25 bg-surface-container/40'}"
-      ${post ? `data-notification-thread="${escapeHTML(post.thread_id)}"` : ''} role="button" tabindex="0">
+      ${post ? `data-notification-thread="${escapeHTML(post.thread_id)}"` : ''} ${destination ? `data-notification-destination="${destination}"` : ''} role="button" tabindex="0">
     <span class="material-symbols-outlined mt-0.5 text-[18px] text-primary-container">${icon}</span>
     <div class="min-w-0 flex-1">
       <p class="text-sm text-on-surface"><button type="button" data-post-author="${escapeHTML(actor.username || '')}" class="font-bold hover:underline">${who}</button> ${what}</p>
@@ -4785,6 +4790,8 @@ $('notifications-list').addEventListener('click', event => {
   }
   const row = event.target.closest('[data-notification-thread]');
   if (row) openThread(row.dataset.notificationThread);
+  const destination = event.target.closest('[data-notification-destination]');
+  if (destination) goNav(destination.dataset.notificationDestination);
 });
 
 $('btn-feed-mine').addEventListener('click', () => {

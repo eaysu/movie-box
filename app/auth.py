@@ -768,13 +768,23 @@ class AuthService:
             raise BlendServiceError("invalid_letter_body")
         gift = self._letter_film_payload(film)
         try:
-            result = self._service_client().rpc("send_cinephile_letter", {
+            service = self._service_client()
+            result = service.rpc("send_cinephile_letter", {
                 "p_sender_user_id": account.id,
                 "p_recipient_username": recipient_username,
                 "p_body": text,
                 "p_film": gift,
             }).execute()
-            return str(self._rpc_value(result))
+            letter_id = str(self._rpc_value(result))
+            recipient = self._first(service.table("users").select("id").eq(
+                "username", recipient_username
+            ).limit(1).execute()) or {}
+            if recipient.get("id"):
+                self.notify(
+                    int(recipient["id"]), "letter", account.id,
+                    event_key=f"letter:{letter_id}",
+                )
+            return letter_id
         except Exception as exc:
             message = str(exc)
             known = (
@@ -2288,6 +2298,10 @@ class AuthService:
                 },
             ).execute()
             request_id = str(self._rpc_value(result))
+            self.notify(
+                recipient_id, "blend_request", account.id,
+                event_key=f"blend-request:{request_id}",
+            )
             self._audit(service, account.id, "blend_request_created", ip_hash)
             return request_id
         except Exception as exc:
@@ -2380,6 +2394,9 @@ class AuthService:
     ) -> dict:
         service = self._service_client()
         try:
+            request = self._first(service.table("blend_requests").select(
+                "requester_user_id,recipient_user_id"
+            ).eq("id", request_id).limit(1).execute()) or {}
             result = service.rpc(
                 "decide_blend_request",
                 {
@@ -2389,6 +2406,13 @@ class AuthService:
                 },
             ).execute()
             row = self._rpc_value(result) or {}
+            requester_id = int(request.get("requester_user_id") or 0)
+            if requester_id:
+                kind = "blend_accepted" if decision == "accepted" else "blend_rejected"
+                self.notify(
+                    requester_id, kind, account.id,
+                    event_key=f"blend-{decision}:{request_id}",
+                )
             self._audit(service, account.id, f"blend_request_{decision}", ip_hash)
             return row
         except Exception as exc:

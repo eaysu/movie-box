@@ -1638,7 +1638,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_reports_one_post_per_reporter
 CREATE TABLE IF NOT EXISTS public.notifications (
   id         BIGSERIAL PRIMARY KEY,
   user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted')),
+  kind       TEXT NOT NULL CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted', 'letter', 'blend_request', 'blend_accepted', 'blend_rejected')),
   actor_id   BIGINT REFERENCES public.users(id) ON DELETE CASCADE,
   post_id    UUID REFERENCES public.posts(id) ON DELETE CASCADE,
   event_key  TEXT,
@@ -1650,7 +1650,7 @@ ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS event_key TEXT;
 ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
 DO $$ BEGIN
   ALTER TABLE public.notifications ADD CONSTRAINT notifications_kind_check
-    CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted'));
+    CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted', 'letter', 'blend_request', 'blend_accepted', 'blend_rejected'));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

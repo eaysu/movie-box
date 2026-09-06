@@ -155,6 +155,15 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn('@app.post("/api/users/{username}/follow-request")', self.main)
         self.assertIn('@app.post("/api/posts/{post_id}/report")', self.main)
 
+    def test_letters_and_blends_notify_their_recipient_once(self):
+        schema = (ROOT / "supabase" / "schema.sql").read_text()
+        self.assertIn("'blend_request'", schema)
+        self.assertIn("'letter'", schema)
+        blend = self.auth.split("def create_blend_request", 1)[1].split("\n    def ", 1)[0]
+        letters = self.auth.split("def send_letter", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn('event_key=f"blend-request:{request_id}"', blend)
+        self.assertIn('event_key=f"letter:{letter_id}"', letters)
+
     def test_locked_profile_payload_does_not_expose_viewing_totals(self):
         profile = self.auth.split("def public_profile", 1)[1].split("\n    def ", 1)[0]
         self.assertIn('"letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {}', profile)
