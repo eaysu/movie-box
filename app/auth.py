@@ -1608,9 +1608,9 @@ class AuthService:
     def public_profile(self, account: Account, username: str) -> dict | None:
         """Someone's page: who they are, their tallies, and where the viewer stands.
 
-        Returns None for a stranger the viewer cannot see — no account, closed,
-        or a block in either direction — so the route can answer a flat 404
-        rather than leak that the name exists.
+        Blocks and unknown accounts return None. A locked account still returns
+        its small directory identity (so a member can send a follow request),
+        but not its personal viewing data.
         """
         service = self._service_client()
         row = self._first(
@@ -1652,7 +1652,7 @@ class AuthService:
             "display_name": row.get("display_name") or row["username"],
             "avatar_url": row.get("avatar_url") or "",
             "joined_at": row.get("created_at"),
-            "letterboxd_stats": row.get("letterboxd_stats") or {},
+            "letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {},
             "favorites": favorites,
             "note_count": note_count,
             "follower_count": self._accepted_follow_count("followee_id", user_id) if can_view else None,

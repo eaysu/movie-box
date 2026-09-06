@@ -1470,12 +1470,12 @@ function userHeaderMarkup(profile) {
         ${locked ? '<span class="mt-2 inline-flex items-center gap-1 rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">lock</span>Kilitli hesap</span>' : (profile.follows_you ? '<span class="mt-2 inline-block rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant">Seni takip ediyor</span>' : '')}
       </div>
     </div>
-    <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+    ${locked ? '<p class="mt-4 text-sm text-on-surface-variant">Bu hesabın notları, zevk profili ve takip listeleri kilitli.</p>' : `<div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
       <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.note_count}</strong> not</span>
       <button type="button" data-follows="followers" class="text-on-surface-variant hover:text-on-surface transition-colors"><strong class="text-on-surface">${profile.follower_count}</strong> takipçi</button>
       <button type="button" data-follows="following" class="text-on-surface-variant hover:text-on-surface transition-colors"><strong class="text-on-surface">${profile.following_count}</strong> takip</button>
       ${watched ? `<span class="text-on-surface-variant"><strong class="text-on-surface">${watched}</strong> film izlemiş</span>` : ''}
-    </div>
+    </div>`}
   </div>`;
 }
 

@@ -155,6 +155,10 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn('@app.post("/api/users/{username}/follow-request")', self.main)
         self.assertIn('@app.post("/api/posts/{post_id}/report")', self.main)
 
+    def test_locked_profile_payload_does_not_expose_viewing_totals(self):
+        profile = self.auth.split("def public_profile", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn('"letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {}', profile)
+
 
 class ProfilePageTests(unittest.TestCase):
     """The Twitter-shaped part: a member's page, their people, their alerts."""
