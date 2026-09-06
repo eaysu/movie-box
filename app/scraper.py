@@ -849,6 +849,52 @@ async def scrape_diary(
     )
 
 
+async def scrape_following(username: str, *, max_pages: int = 5) -> list[str] | None:
+    """Usernames this member follows on Letterboxd, for seeding the app graph.
+
+    Person cards, not film cards, so the list parser does not apply: each entry
+    is `div.person-summary > a.name` with the profile path as its href. Returns
+    lowercase usernames.
+
+    `None` means the page could not be read (403, private, network); an empty
+    list means it was read and the member follows nobody. Seeding must tell
+    those apart, otherwise a rate-limited run silently records "follows no one"
+    for everybody and looks like a success.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    first_page_ok = False
+    try:
+        async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+            for page in range(1, max(1, max_pages) + 1):
+                path = f"{username}/following/" if page == 1 else f"{username}/following/page/{page}/"
+                response, _ = await _fetch_with_retry(
+                    session,
+                    f"{BASE_URL}/{path}",
+                    f"{BASE_URL}/{username}/",
+                    max_retries=2,
+                )
+                first_page_ok = True
+                soup = BeautifulSoup(response.text, "lxml")
+                names = [
+                    anchor.get("href", "").strip("/").lower()
+                    for anchor in soup.select("div.person-summary a.name")
+                ]
+                names = [name for name in names if name and "/" not in name]
+                if not names:
+                    break
+                for name in names:
+                    if name not in seen:
+                        seen.add(name)
+                        out.append(name)
+                await _human_pause(0.6)
+    except Exception as exc:  # noqa: BLE001 - seeding must never break a caller
+        log.warning("following scrape failed user=%s: %s", username, exc)
+        if not first_page_ok:
+            return None
+    return out
+
+
 async def _scrape_watched_rss(username: str) -> list[ScrapedFilm]:
     """RSS feed'den en son ~50 izlenen filmi çeker (rating dahil).
 

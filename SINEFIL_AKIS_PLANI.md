@@ -2,7 +2,11 @@
 
 **Tarih:** 6 Eylül 2026
 **Soru:** Bu uygulamayı sinefil Twitter'ına çevirmek istesem ne yapmalıyım?
-**Kısıt:** Repost ve bookmark yok. Minimal Twitter özellikleri esas alınacak.
+**Kısıt:** Repost, alıntı, bookmark yok. Minimal Twitter özellikleri esas alınacak.
+**Güncelleme (6 Eylül 2026):** Ürün sahibinin kararlarıyla revize edildi — gönderi
+artık **zorunlu olarak bir filme** bağlı, DM yerine mevcut Mektuplar korunuyor,
+hashtag yerine "en çok konuşulan filmler" trendi geliyor ve takip grafiği
+Letterboxd'daki mevcut takip listelerinden tohumlanıyor.
 
 ---
 
@@ -35,22 +39,27 @@ kimsenin iznine ihtiyacı olmamalı.
 
 ## 1. Ürünün atomu: "not"
 
-Twitter'ın atomu serbest metindir. Bizimki **filme çapalanmış** bir not olmalı —
-yoksa Twitter'ın zayıf bir kopyası oluruz.
+Twitter'ın atomu serbest metindir. Bizimki **filme çapalanmış** bir not — ve çapa
+**zorunlu**. Film seçmeden gönderi atılamaz.
 
 ```
-Not = 280 karakter metin
-    + isteğe bağlı film çapası (slug + tmdb_id)
+Not = seçilen film (zorunlu)
+    + 280 karakter tespit/yorum
     + spoiler bayrağı
 ```
 
-Film çapası neden zorunlu değil ama merkezi:
+Kart şöyle görünür: **filmin posteri** · kullanıcının profil fotoğrafı ·
+kullanıcı adı · filme dair yorumu. Diğerleri beğenir ya da altına not yazar.
 
-- Çapalı notlar **film sayfasında** toplanır (§5). Bir filme dair her şeyin tek
-  yerde birikmesi, genel amaçlı bir mikroblogun asla yapamayacağı şey.
-- Poster, yıl ve yönetmen bilgisi `film_posters` kataloğundan bedava gelir.
-  Kullanıcı hiçbir şey yüklemez; medya yükleme yok (maliyet + moderasyon).
-- Çapasız not da serbesttir: "bu akşam ne izlesem" sorusu da bu akışa ait.
+Zorunlu çapa, ürünün en önemli kuralı. Sebepleri:
+
+- Her not **film sayfasında** birikir (§5). Bir filme dair her şeyin tek yerde
+  toplanması, genel amaçlı bir mikroblogun asla yapamayacağı şey.
+- Poster katalogdan gelir; kullanıcı hiçbir görsel yüklemez. Dış görsel yükleme
+  yok — depolama ve moderasyon maliyeti, kazandıracağından fazla.
+- Çapa zorunlu olduğu için akış konudan sapamaz. "Bugün ne yedim" notu yazmanın
+  yolu yok; bu, moderasyonun yarısını tasarımla halleder.
+- Trend hesabı bedava gelir: en çok not alan filmler (§6).
 
 **Spoiler bayrağı** pazarlık konusu değil. Sinefil topluluğunda spoiler, genel
 Twitter'daki küfürden daha büyük bir güven sorunudur. İşaretli not bulanık
@@ -64,6 +73,7 @@ gelir, dokununca açılır.
 | Beğeni | Repost | Talep dışı; ayrıca repost, moderasyonu kontrolümüz dışına taşır |
 | Silme (kendi notu) | Bookmark | Talep dışı; "sonra oku" ihtiyacını watchlist zaten karşılıyor |
 | Bildirme / engelleme | Alıntı not | Alıntı, repost'un kılık değiştirmiş hâli — aynı sebeple yok |
+| — | DM | Mektuplar bu işi görüyor; ellenmiyor |
 
 ---
 
@@ -100,7 +110,7 @@ posts(
   author_id     BIGINT → users ON DELETE CASCADE,
   kind          TEXT CHECK (kind IN ('note','log')),
   body          TEXT CHECK (char_length(body) <= 280),
-  film_slug     TEXT,           -- film_posters ile eşleşir
+  film_slug     TEXT,           -- üst notta ZORUNLU, cevapta boş
   tmdb_id       INTEGER,
   payload       JSONB,          -- log kartındaki film listesi
   spoiler       BOOLEAN DEFAULT FALSE,
@@ -114,6 +124,9 @@ posts(
 post_likes(post_id, user_id, created_at)          PK (post_id, user_id)
 follows(follower_id, followee_id, created_at)     PK (follower_id, followee_id)
 notifications(id, user_id, kind, actor_id, post_id, read_at, created_at)
+
+-- Üst not filmsiz olamaz; cevabın filmi zaten üstündeki nottan gelir.
+CHECK ((reply_to IS NULL AND film_slug IS NOT NULL) OR reply_to IS NOT NULL)
 ```
 
 **İndeksler** (hepsi keyset sayfalama için `(created_at DESC, id DESC)` ile):
@@ -221,19 +234,48 @@ gönderiler akıp gider, film sayfası birikir.
 
 ---
 
-## 6. Takip grafiği ve keşif
+## 6. Takip grafiği: Letterboxd'dan tohumlama
 
-126 kişide takip özelliği tek başına işe yaramaz — kimse kimseyi tanımıyor.
-Ama bizde takip önerisi için **kimsede olmayan bir sinyal** var: zevk vektörü.
+126 kişide sıfırdan takip grafiği kurulmaz — kimse kimseyi aramaz. Ama bu
+insanların **zaten** bir takip grafiği var: Letterboxd'daki kendi takip
+listeleri.
 
-- "Zevkin %78 örtüşen 5 sinefil" — Sinefil Sineması bunu zaten hesaplıyor.
-- Blend geçmişi olan kişiler doğal takip adayı.
-- Aynı filme not yazanlar birbirini görür.
+**Tohumlama:** her hesabın `letterboxd.com/<kullanıcı>/following/` sayfası
+okunur; o listede bizde de kayıtlı olan biri varsa takip ilişkisi kurulur.
+Doğrulandı: sayfa 200 dönüyor ve `div.person-summary > a.name` ile kullanıcı
+adları güvenilir biçimde çıkıyor.
 
-Takip **asimetrik** (Twitter gibi), onay istemez. Bu, Blend ve Mektupların
-rızaya dayalı yapısından bilinçli bir sapma: onay mekanizması iki kez denendi ve
-akışı başlatmadı. Güvenlik tarafı engelleme + bildirme ile korunur; bunlar zaten
-çalışıyor.
+Bu, ağın ilk gününde boş olmamasını sağlayan tek gerçekçi yol. Üç kural:
+
+- **Tek yönlü kopyalanır.** Letterboxd'da A→B takip ediyorsa bizde de A→B olur.
+  "Birbirini otomatik takip etsin" demek, olmayan bir ilişkiyi uydurmak olurdu.
+- **Bir kez çalışır.** Şema her uygulandığında tekrar eden bir toplu iş değil,
+  ayrı bir script — kullanıcı sonradan takipten çıkarsa geri getirmemeli.
+- **Geri alınabilir.** Her ilişki normal takip satırı; kullanıcı istediğini
+  bırakır.
+
+Dürüst olmak gerekirse bu, kullanıcı adına kurulan bir ilişki. Gerekçesi, aynı
+ilişkinin Letterboxd'da zaten açıkça var olması ve tek tıkla bırakılabilmesi.
+
+**Keşif sinyalleri** (tohumlamadan sonra): zevk örtüşmesi (Sinefil Sineması
+zaten hesaplıyor), Blend geçmişi, aynı filme not yazmış olmak.
+
+Takip **asimetrik** ve onaysız. Blend ile Mektupların rızaya dayalı yapısından
+bilinçli sapma: onay iki kez denendi, akışı başlatmadı.
+
+### En çok konuşulan filmler
+
+Hashtag ve gündem yok; yerine **film trendi** var — zorunlu çapa bunu bedava
+veriyor:
+
+```sql
+SELECT film_slug, COUNT(*) FROM posts
+WHERE deleted_at IS NULL AND reply_to IS NULL
+  AND created_at >= now() - interval '7 days'
+GROUP BY film_slug ORDER BY COUNT(*) DESC LIMIT 5
+```
+
+Keşfet'te beş poster: *"bu hafta en çok konuşulan"*. Tıklayınca film sayfası.
 
 ---
 
@@ -258,6 +300,25 @@ olmamalı. Mektup, profil üzerinden bulunur.
 
 ## 8. Aşamalar
 
+### Durum — 6 Eylül 2026 (POC)
+
+F1 ve F4 kodlandı, yerelde gerçek tablolara karşı denendi, henüz push edilmedi.
+
+| Yapıldı | Nerede |
+|---|---|
+| `posts` / `post_likes` / `follows` / `notifications` + sayaç trigger'ları | `supabase/schema.sql` |
+| Film çapası zorunlu (şemada CHECK, serviste `post_film_required`) | `schema.sql`, `app/auth.py` |
+| Akış (Topluluk / Takip ettiklerin), keyset sayfalama, iki yönlü engelleme | `list_feed` |
+| Not · cevap · beğeni · silme (yumuşak) | `/api/posts*` |
+| Sinefil profili: notlar, takipçi/takip sayıları, takip düğmesi, Fav 4 | `/api/users/{username}`, `view-user` |
+| Takipçi ve takip listeleri, listeden takip etme | `/api/users/{username}/followers\|following` |
+| Bildirim ekranı (beğeni, cevap, takip; hangi nota ait olduğu yazılı) | `/api/notifications`, `view-notifications` |
+| "Bu hafta en çok konuşulanlar" → tıklayınca o filmin notları | `/api/feed?film=`, `trending_films` |
+| Takip ettiklerin boşsa "kimi takip etmeli" önerisi | `renderFollowSuggestions` |
+| Letterboxd takip listelerinden tohumlama | `scripts/seed_follows.py` |
+
+Bekleyenler: F2 (günce kayıtları), F3 (film sayfası), F5 (sıralama), web push.
+
 | Aşama | Kapsam | Neden bu sırada |
 |---|---|---|
 | **F1** | `posts` + film çapası + düz cevap + beğeni + topluluk akışı + moderasyon + bildirimler | Akışın tek başına ayakta durduğu en küçük hâli |
@@ -280,7 +341,12 @@ F1 öncesi hiçbir şey yayınlanmamalı: yarım bir akış, boş bir akıştan 
 | Görsel/video yükleme | Depolama + moderasyon maliyeti; posterler katalogdan geliyor |
 | Hashtag / gündem | Film çapası hashtag'in işini zaten yapıyor |
 | Açık web görünürlüğü | Gizlilik konumumuz; notlar yalnız üyelere |
-| Takipçi sayısı vitrini | Sayı yarışı, 126 kişilik toplulukta hemen zehirler |
+
+**Değişen karar — takipçi sayısı.** Bu tablo başta "takipçi sayısı vitrini
+olmasın" diyordu: 126 kişilik bir toplulukta sayı yarışı hızla zehirler. POC'te
+profil sayfası Twitter'a benzesin diye sayılar gösterildi (not · takipçi ·
+takip). Risk duruyor; sayıları gizlemek tek satırlık bir değişiklik
+(`userHeaderMarkup`), sıralamada ya da erişimde hiçbir yerde kullanılmıyorlar.
 
 ---
 

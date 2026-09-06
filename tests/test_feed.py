@@ -70,6 +70,13 @@ class FeedSchemaTests(unittest.TestCase):
         follows = follows.split(");", 1)[0]
         self.assertIn("CHECK (follower_id <> followee_id)", follows)
 
+    def test_private_accounts_keep_follow_requests_until_accepted(self):
+        follows = self.schema.split("CREATE TABLE IF NOT EXISTS public.follows (", 1)[1]
+        follows = follows.split(");", 1)[0]
+        self.assertIn("status      TEXT NOT NULL DEFAULT 'accepted'", follows)
+        self.assertIn("status IN ('pending', 'accepted')", follows)
+        self.assertIn("private_account BOOLEAN NOT NULL DEFAULT FALSE", self.schema)
+
 
 class FeedApiTests(unittest.TestCase):
     def setUp(self):
@@ -136,6 +143,17 @@ class FeedApiTests(unittest.TestCase):
         block = self.auth.split("def set_post_like", 1)[1].split("\n    def ", 1)[0]
 
         self.assertIn('if int(post["author_id"]) != account.id:', block)
+
+    def test_posts_are_canonicalized_from_the_authenticated_library(self):
+        create = self.auth.split("def create_post", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn("watched_film_by_slug", create)
+        self.assertIn("post_film_not_owned", create)
+
+    def test_follow_requests_and_post_reports_have_dedicated_write_paths(self):
+        self.assertIn("def decide_follow_request", self.auth)
+        self.assertIn("def report_post", self.auth)
+        self.assertIn('@app.post("/api/users/{username}/follow-request")', self.main)
+        self.assertIn('@app.post("/api/posts/{post_id}/report")', self.main)
 
 
 class ProfilePageTests(unittest.TestCase):

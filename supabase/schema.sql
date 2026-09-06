@@ -1612,6 +1612,7 @@ CREATE TABLE IF NOT EXISTS public.follows (
   follower_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   followee_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   source      TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'letterboxd')),
+  status      TEXT NOT NULL DEFAULT 'accepted' CHECK (status IN ('pending', 'accepted')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (follower_id, followee_id),
   CHECK (follower_id <> followee_id)

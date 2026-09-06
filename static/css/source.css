@@ -563,3 +563,59 @@
     .stream-word { opacity: 1; transition: none; }
     .ob-in { animation: none; }
   }
+
+  /* ── Twitter-şeklinde kabuk: sol gezinme, alt sekme çubuğu ────────────
+     Gezinme her ekranda aynı yerde durur; hangi ekranın açık olduğu
+     `.is-active` ile işaretlenir. */
+  .nav-item {
+    display: flex; align-items: center; gap: .75rem;
+    border-radius: 9999px; padding: .7rem .85rem;
+    font-size: 1rem; color: rgb(var(--color-on-surface));
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .nav-item:hover { background: rgb(var(--color-surface-container) / .8); }
+  .nav-item.is-active { font-weight: 700; color: rgb(var(--color-primary-container)); }
+  .nav-item.is-active .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+
+  .tab-item {
+    display: flex; flex: 1 1 0%; align-items: center; justify-content: center;
+    padding: .85rem 0 calc(.85rem + env(safe-area-inset-bottom));
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease;
+  }
+  .tab-item.is-active { color: rgb(var(--color-primary-container)); }
+  .tab-item.is-active .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+
+  /* Kabuk açıkken içerik gezinmenin altına girmesin. */
+  body.has-shell { padding-bottom: 4.5rem; }
+  @media (min-width: 1024px) {
+    body.has-shell { padding-left: 248px; padding-bottom: 0; }
+    body.has-shell #app-sidebar { display: flex; }
+    body.has-shell #app-tabbar, body.has-shell #btn-compose-fab { display: none !important; }
+    body.has-shell #app-header { display: none !important; }
+  }
+  @media (max-width: 1023px) {
+    body.has-shell #app-tabbar { display: flex; }
+  }
+  /* Sağ raf yalnız akış ailesinde: pano kendi iki sütununu taşıyor,
+     üstüne bir sütun daha koyunca sıkışıyor. */
+  @media (min-width: 1280px) {
+    body.has-rail { padding-right: 320px; }
+    body.has-rail #app-rail { display: block; }
+  }
+
+  /* Akış sekmeleri — Twitter'ın alt çizgili ikilisi. */
+  .feed-tab {
+    position: relative; flex: 1 1 0%;
+    padding: .95rem .5rem; font-size: .95rem;
+    color: rgb(var(--color-on-surface-variant));
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .feed-tab:hover { background: rgb(var(--color-surface-container) / .5); }
+  .feed-tab.is-active { color: rgb(var(--color-on-surface)); font-weight: 700; }
+  .feed-tab.is-active::after {
+    content: ''; position: absolute; left: 50%; bottom: 0;
+    transform: translateX(-50%);
+    width: 60%; max-width: 8rem; height: 4px; border-radius: 9999px;
+    background: rgb(var(--color-primary-container));
+  }

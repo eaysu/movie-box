@@ -197,6 +197,14 @@ let _profileWatchMode = 'taste';
 let _profileBlendTimer = null;
 
 function homeView() {
+  // The feed is the home screen, the way a timeline is on Twitter. The
+  // recommender dashboard is now reached as "Profil".
+  return (_authEnabled && _account) ? 'feed' : 'idle';
+}
+
+// Screens that belong to the recommender return to the dashboard, not the feed:
+// that is where the buttons they came from live.
+function dashboardView() {
   return (_authEnabled && _account) ? 'profile' : 'idle';
 }
 
@@ -223,17 +231,18 @@ function showActionError(msg) {
 }
 
 function openProfilePanel(which) {
+  $('profile-quick-tools')?.classList.remove('hidden');
   const watch = which === 'watch';
   const blend = which === 'blend';
   $('profile-watch-panel').classList.toggle('open', watch);
   $('profile-blend-panel').classList.toggle('open', blend);
   if (watch || blend) resetRecoPanel();
-  $('profile-act-watch').classList.toggle('border-primary-container/60', watch);
-  $('profile-act-watch').classList.toggle('bg-surface-container/70', watch);
-  $('profile-act-watch').classList.toggle('border-outline-variant/25', !watch);
-  $('profile-act-blend').classList.toggle('border-secondary-container/60', blend);
-  $('profile-act-blend').classList.toggle('bg-surface-container/70', blend);
-  $('profile-act-blend').classList.toggle('border-outline-variant/25', !blend);
+  $('profile-act-watch')?.classList.toggle('border-primary-container/60', watch);
+  $('profile-act-watch')?.classList.toggle('bg-surface-container/70', watch);
+  $('profile-act-watch')?.classList.toggle('border-outline-variant/25', !watch);
+  $('profile-act-blend')?.classList.toggle('border-secondary-container/60', blend);
+  $('profile-act-blend')?.classList.toggle('bg-surface-container/70', blend);
+  $('profile-act-blend')?.classList.toggle('border-outline-variant/25', !blend);
   profileActionNotice(null);
   profileActionError(null);
   if (watch) {
@@ -243,6 +252,12 @@ function openProfilePanel(which) {
     if (cached) _showTasteReco(cached.at || 0);
   }
   if (blend) setTimeout(() => $('profile-blend-username').focus(), 40);
+}
+
+function openQuickTool(which) {
+  showView('profile');
+  openProfilePanel(which);
+  setTimeout(() => $('profile-quick-tools')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 40);
 }
 
 function setProfileWatchMode(mode) {
@@ -616,15 +631,124 @@ function setAuthHeaderLinks(visible) {
   $('header-privacy').classList.toggle('hidden', !visible);
 }
 
+async function refreshFeedBadge() {
+  if (!_account) return;
+  try {
+    const data = await apiJSON('/api/notifications/unread-count');
+    const count = Math.max(0, Number(data.count) || 0);
+    const label = count > 9 ? '9+' : String(count);
+    // Header pill outside the feed, bell inside it — the same tally.
+    [$('feed-notification-badge'), $('feed-bell-badge')].forEach(badge => {
+      if (!badge) return;
+      badge.textContent = label;
+      badge.classList.toggle('hidden', count === 0);
+    });
+    paintNavBadge('notifications', count);
+    if (_lastUnreadNotificationCount !== null
+      && count > _lastUnreadNotificationCount
+      && document.hidden
+      && 'Notification' in window
+      && Notification.permission === 'granted') {
+      new Notification('Movieboxd', {
+        body: `${count - _lastUnreadNotificationCount} yeni bildirimin var.`,
+        icon: '/favicon.ico',
+      });
+    }
+    _lastUnreadNotificationCount = count;
+  } catch (_) {}
+}
+
+function startFeedNotificationPolling() {
+  if (_feedNotificationPollTimer) return;
+  _feedNotificationPollTimer = setInterval(refreshFeedBadge, 45000);
+}
+
+function stopFeedNotificationPolling() {
+  if (_feedNotificationPollTimer) clearInterval(_feedNotificationPollTimer);
+  _feedNotificationPollTimer = null;
+  _lastUnreadNotificationCount = null;
+}
+
 function showView(name) {
-  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil'].forEach(v => {
+  ['auth', 'onboarding', 'profile', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
-  $('main-footer').classList.toggle('hidden', ['auth', 'onboarding', 'loading', 'blend-loading'].includes(name));
+  $('main-footer').classList.toggle('hidden', NO_FOOTER_VIEWS.includes(name));
   // Onboarding is a locked, full-screen takeover — no header to click away with.
-  $('app-header').classList.toggle('hidden', name === 'onboarding');
+  $('app-header').classList.toggle(
+    'hidden',
+    name === 'onboarding' || (Boolean(_account) && OWN_HEADER_VIEWS.includes(name)),
+  );
   setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
+  const feedButton = $('btn-open-feed');
+  const showFeed = Boolean(_account) && !SHELL_VIEWS.includes(name);
+  feedButton.classList.toggle('hidden', !showFeed);
+  feedButton.classList.toggle('flex', showFeed);
+  paintShell(name);
   if (name === 'profile') applyProfileTheme();
+}
+
+// ── Uygulama kabuğu: sol gezinme, alt sekme çubuğu, sağ raf ─────────────
+// Twitter'ın üç sütunu: solda gezinme, ortada akış, sağda gündem. Mobilde sol
+// sütun alta iner, sağ raf kaybolur — aynı bilgi mimarisi, dar ekran hâli.
+const SHELL_VIEWS = [
+  'feed', 'thread', 'user', 'follows', 'notifications',
+  'profile', 'inbox', 'blends', 'sinefil',
+];
+// The feed family carries its own column header, so the global logo bar would
+// be a second, redundant band above it — Twitter has one.
+const OWN_HEADER_VIEWS = ['feed', 'thread', 'user', 'follows', 'notifications'];
+const NO_FOOTER_VIEWS = [
+  'auth', 'onboarding', 'loading', 'blend-loading',
+  'feed', 'thread', 'user', 'follows', 'notifications',
+];
+// Which nav item lights up for a given view.
+const NAV_OF_VIEW = {
+  feed: 'feed', thread: 'feed', user: 'feed', follows: 'feed',
+  notifications: 'notifications', inbox: 'inbox', blends: 'blends',
+  sinefil: 'sinefil', profile: 'profile',
+};
+
+function paintShell(name) {
+  const on = Boolean(_account) && SHELL_VIEWS.includes(name);
+  document.body.classList.toggle('has-shell', on);
+  document.body.classList.toggle('has-rail', on && OWN_HEADER_VIEWS.includes(name));
+  const active = NAV_OF_VIEW[name] || '';
+  document.querySelectorAll('[data-nav]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.nav === active);
+  });
+  const fab = $('btn-compose-fab');
+  const showFab = on && ['feed', 'thread', 'user', 'follows', 'notifications'].includes(name);
+  fab.classList.toggle('hidden', !showFab);
+  fab.classList.toggle('flex', showFab);
+  if (on) paintNavAccount();
+}
+
+function paintNavAccount() {
+  if (!_account) return;
+  const avatar = safeImageURL(_account.avatar_url);
+  const name = _account.display_name || _account.username || '';
+  $('nav-account-avatar').innerHTML = avatar
+    ? `<img src="${avatar}" alt="" class="h-full w-full object-cover"/>`
+    : escapeHTML((name[0] || '?').toUpperCase());
+  $('nav-account-name').textContent = name;
+  $('nav-account-handle').textContent = `@${_account.username || ''}`;
+  const composer = $('feed-compose-avatar');
+  composer.innerHTML = avatar
+    ? `<img src="${avatar}" alt="" class="h-full w-full object-cover"/>`
+    : escapeHTML((name[0] || '?').toUpperCase());
+}
+
+function goNav(target) {
+  switch (target) {
+    case 'feed': openFeed(); break;
+    case 'notifications': openNotifications(); break;
+    case 'inbox': openLetterInbox(); break;
+    case 'blends': loadMyBlends(true); break;
+    case 'sinefil': showView('sinefil'); loadSinefilArea(); break;
+    case 'profile': showView('profile'); break;
+    default: openFeed();
+  }
 }
 
 // ── Profile-only light/dark theme (opt-in, per viewer) ─────────────────
@@ -714,6 +838,8 @@ async function loadPublicStats() {
 let _authEnabled = false;
 let _account = null;
 let _persistedProfile = null;
+let _lastUnreadNotificationCount = null;
+let _feedNotificationPollTimer = null;
 let _verification = null;
 let _resetChallenge = null;
 // Parola, kayıt sırasında girildiği haliyle bio doğrulaması bitene kadar
@@ -750,6 +876,37 @@ function applyAccount(account) {
   $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
   renderDiscoveryVisibility(Boolean(account.discoverable));
   renderProfileLetterSettings(Boolean(account.letter_receiving_enabled));
+  renderPrivateAccount(Boolean(account.private_account));
+}
+
+function renderPrivateAccount(privateAccount) {
+  const label = $('profile-private-label');
+  if (label) label.textContent = privateAccount ? 'Hesap: Kilitli' : 'Hesap: Herkese açık';
+}
+
+async function togglePrivateAccount() {
+  const next = !_account?.private_account;
+  const message = next
+    ? 'Hesabın kilitlenecek. Sinefil Sineması kartın görünür kalır; notların, ayrıntılı profilin ve takip listelerin yalnız kabul ettiğin takipçilere açılır. Devam edilsin mi?'
+    : 'Hesabın herkese açık olacak. Notların ve profil ayrıntıların tüm kayıtlı sinefillere görünür. Devam edilsin mi?';
+  if (!window.confirm(message)) return;
+  try {
+    const data = await apiJSON('/api/profile/privacy-settings', {
+      method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ private: next }),
+    });
+    if (_account) _account.private_account = Boolean(data.private_account);
+    renderPrivateAccount(Boolean(data.private_account));
+    profileActionNotice(data.private_account ? 'Hesabın kilitlendi.' : 'Hesabın herkese açıldı.');
+  } catch (error) { profileActionError(error.message || 'Hesap gizliliği değiştirilemedi.'); }
+}
+
+async function enableBrowserNotifications() {
+  if (!('Notification' in window)) { profileActionError('Bu tarayıcı bildirim desteği sunmuyor.'); return; }
+  const permission = await Notification.requestPermission();
+  profileActionNotice(permission === 'granted'
+    ? 'Tarayıcı bildirimleri açık. Sekme açıkken yeni hareketleri haber vereceğiz.'
+    : 'Tarayıcı bildirimi için izin verilmedi.');
 }
 
 function renderProfileLetterSettings(open) {
@@ -906,6 +1063,557 @@ function renderPersistedProfile(data) {
   if (!deferAuxiliary && !_recentLoaded) loadRecentFilms();
   if (!deferAuxiliary && !_bulletinLoaded) loadBulletin();
   applySyncJob(data.sync_job);
+}
+
+// ── Sinefil Akışı ────────────────────────────────────────────────────────
+let _feedScope = 'community';
+let _feedCursor = '';
+let _feedPickedFilm = null;
+// When set, the feed is narrowed to one film — the trend behaves like a
+// destination rather than a decoration.
+let _feedFilm = { slug: '', title: '' };
+let _threadId = '';
+let _threadFrom = '';
+
+function feedRelativeTime(value) {
+  const then = new Date(value).getTime();
+  if (!then) return '';
+  const minutes = Math.floor((Date.now() - then) / 60000);
+  if (minutes < 1) return 'az önce';
+  if (minutes < 60) return `${minutes} dk`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} sa`;
+  const days = Math.floor(minutes / 1440);
+  return days < 7 ? `${days} g` : new Date(then).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
+}
+
+function feedPostCard(post, { compact = false } = {}) {
+  const author = post.author || {};
+  const film = post.film;
+  const name = escapeHTML(author.display_name || author.username || 'sinefil');
+  const username = escapeHTML(author.username || '');
+  const body = escapeHTML(post.body || '');
+  const poster = film ? safeImageURL(film.poster_url) : '';
+  const filmChip = film
+    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" class="mt-3 flex items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container/50 p-2 hover:border-primary-container/40 transition-colors">
+        ${poster
+          ? `<img src="${poster}" alt="" onerror="posterErr(this)" loading="lazy" class="w-10 shrink-0 aspect-[2/3] rounded-md object-cover bg-surface-container"/>`
+          : `<div class="w-10 shrink-0 aspect-[2/3] rounded-md bg-surface-container"></div>`}
+        <span class="min-w-0">
+          <strong class="block truncate text-sm text-on-surface">${escapeHTML(film.title || '')}</strong>
+          <span class="text-xs text-on-surface-variant/60">${[film.year, film.director].filter(Boolean).map(escapeHTML).join(' · ')}</span>
+        </span>
+      </a>`
+    : '';
+  // A spoiler stays covered until the reader asks for it — in a film community
+  // that is a bigger trust question than profanity.
+  const text = post.spoiler
+    ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
+    : `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`;
+  return `<article class="border-b border-outline-variant/20 px-4 py-3 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
+    <div class="flex items-start gap-3">
+      <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-2">
+          <button type="button" data-post-author="${username}" class="min-w-0 truncate text-left text-sm font-bold text-on-surface hover:underline">${name}</button>
+          <span class="truncate text-xs text-on-surface-variant/60">@${username}</span>
+          <span class="ml-auto shrink-0 text-xs text-on-surface-variant/50">${escapeHTML(feedRelativeTime(post.created_at))}</span>
+        </div>
+        ${text}
+        ${filmChip}
+        <div class="mt-3 flex items-center gap-4 text-sm text-on-surface-variant">
+          <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
+            <span class="material-symbols-outlined text-[18px]" style="${post.liked ? "font-variation-settings:'FILL' 1" : ''}">favorite</span>
+            <span data-like-count>${post.like_count || 0}</span>
+          </button>
+          ${compact ? '' : `<button type="button" data-post-open class="flex items-center gap-1.5 hover:text-primary-container transition-colors">
+            <span class="material-symbols-outlined text-[18px]">chat_bubble</span>
+            <span>${post.reply_count || 0}</span>
+          </button>`}
+          ${post.mine ? '<button type="button" data-post-delete class="flex items-center gap-1 text-on-surface-variant/60 hover:text-error transition-colors"><span class="material-symbols-outlined text-[18px]">delete</span></button>' : ''}
+          ${post.mine ? '' : '<button type="button" data-post-report class="ml-auto flex items-center gap-1 text-on-surface-variant/55 hover:text-error transition-colors" title="Notu bildir"><span class="material-symbols-outlined text-[18px]">flag</span></button>'}
+        </div>
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderFeedTrending(films) {
+  const strip = $('feed-trending');
+  const rail = $('rail-trending');
+  if (!films.length) { strip.innerHTML = ''; rail.innerHTML = ''; return; }
+  renderRailTrending(films);
+  strip.innerHTML = `
+    <p class="mb-2 font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">Bu hafta en çok konuşulanlar</p>
+    <div class="flex gap-3 overflow-x-auto pb-1">
+      ${films.map(film => `<button type="button" data-trend-film="${escapeHTML(film.slug)}" data-trend-title="${escapeHTML(film.title)}" class="shrink-0 w-[86px] text-left">
+        ${safeImageURL(film.poster_url)
+          ? `<img src="${safeImageURL(film.poster_url)}" alt="" onerror="posterErr(this)" class="w-full aspect-[2/3] rounded-lg object-cover bg-surface-container"/>`
+          : '<div class="w-full aspect-[2/3] rounded-lg bg-surface-container"></div>'}
+        <p class="mt-1 truncate text-[11px] text-on-surface">${escapeHTML(film.title)}</p>
+        <p class="text-[11px] text-on-surface-variant/50">${film.count} not</p>
+      </button>`).join('')}
+    </div>`;
+}
+
+// The rail is Twitter's right column: trends as a vertical list, then people.
+function renderRailTrending(films) {
+  $('rail-trending').innerHTML = `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/40 p-4">
+    <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">Bu hafta en çok konuşulanlar</p>
+    <div class="mt-3 flex flex-col">${films.map((film, index) => `<button type="button" data-trend-film="${escapeHTML(film.slug)}" data-trend-title="${escapeHTML(film.title)}" class="flex items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-surface-container/70 transition-colors">
+      <span class="w-4 shrink-0 text-sm text-on-surface-variant/40">${index + 1}</span>
+      ${safeImageURL(film.poster_url)
+        ? `<img src="${safeImageURL(film.poster_url)}" alt="" onerror="posterErr(this)" class="h-12 w-8 shrink-0 rounded object-cover bg-surface-container"/>`
+        : '<div class="h-12 w-8 shrink-0 rounded bg-surface-container"></div>'}
+      <span class="min-w-0 flex-1">
+        <strong class="block truncate text-sm text-on-surface">${escapeHTML(film.title)}</strong>
+        <span class="block text-xs text-on-surface-variant/50">${film.count} not</span>
+      </span>
+    </button>`).join('')}</div>
+  </div>`;
+}
+
+async function renderRailSuggestions() {
+  if (!_account) return;
+  const box = $('rail-suggestions');
+  try {
+    const [data, mine] = await Promise.all([
+      apiJSON('/api/sinefil-alani?q=&page=1&per_page=8'),
+      apiJSON(`/api/users/${encodeURIComponent(_account.username)}/following`).catch(() => ({ users: [] })),
+    ]);
+    const already = new Set((mine.users || []).map(user => user.username));
+    const people = (data.profiles || [])
+      .filter(person => person.username && !already.has(person.username))
+      .slice(0, 3);
+    if (!people.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/40 p-4">
+      <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">Kimi takip etmeli</p>
+      <div class="mt-3 flex flex-col gap-3">${people.map(person => `<div class="flex items-center gap-3">
+        <button type="button" data-post-author="${escapeHTML(person.username)}" class="shrink-0">${peerAvatar(person)}</button>
+        <button type="button" data-post-author="${escapeHTML(person.username)}" class="min-w-0 flex-1 text-left">
+          <strong class="block truncate text-sm text-on-surface">${escapeHTML(person.display_name || person.username)}</strong>
+          <span class="block truncate text-xs text-on-surface-variant/60">@${escapeHTML(person.username)}</span>
+        </button>
+        ${followButton({ username: person.username, following: false, is_me: false })}
+      </div>`).join('')}</div>
+    </div>`;
+  } catch (_) { box.innerHTML = ''; }
+}
+
+async function searchFeedFilms() {
+  const query = $('feed-film-search').value.trim();
+  if (query.length < 2) { $('feed-film-results').innerHTML = ''; return; }
+  try {
+    const data = await apiJSON(`/api/profile/watched?q=${encodeURIComponent(query)}`);
+    const films = (data.films || []).slice(0, 8).map(film => ({
+      ...film, slug: film.slug || film.film_slug || '',
+    })).filter(film => film.slug);
+    $('feed-film-results').innerHTML = films.length
+      ? films.map((film, index) => `<button type="button" data-feed-film-index="${index}" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-variant">${letterFilmMarkup(film)}</button>`).join('')
+      : '<p class="px-3 py-2 text-sm text-on-surface-variant/60">İzlediklerin arasında bulunamadı.</p>';
+    $('feed-film-results')._feedFilms = films;
+  } catch (_) { $('feed-film-results').innerHTML = ''; }
+}
+
+async function loadFeed({ append = false } = {}) {
+  if (!_account) return;
+  if (!append) { _feedCursor = ''; $('feed-list').innerHTML = '<p class="px-4 py-10 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>'; }
+  try {
+    const data = await apiJSON(`/api/feed?scope=${_feedScope}&cursor=${encodeURIComponent(_feedCursor)}&film=${encodeURIComponent(_feedFilm.slug || '')}`);
+    const cards = (data.posts || []).map(post => feedPostCard(post)).join('');
+    if (append) $('feed-list').insertAdjacentHTML('beforeend', cards);
+    else if (cards) $('feed-list').innerHTML = cards;
+    else if (_feedFilm.slug) $('feed-list').innerHTML = '<p class="px-4 py-12 text-center text-sm text-on-surface-variant">Bu film hakkında not yok.</p>';
+    else if (_feedScope === 'following') await renderFollowSuggestions();
+    else $('feed-list').innerHTML = '<p class="px-4 py-12 text-center text-sm text-on-surface-variant">Henüz not yok. İlkini sen yaz.</p>';
+    _feedCursor = data.next_cursor || '';
+    $('btn-feed-more').classList.toggle('hidden', !_feedCursor);
+  } catch (error) {
+    $('feed-list').innerHTML = `<div class="px-4 py-10 text-center">
+      <p class="text-sm text-error">${escapeHTML(error.message || 'Akış yüklenemedi.')}</p>
+      <button type="button" id="btn-feed-retry" class="mt-3 rounded-full border border-outline-variant/40 px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors">Tekrar dene</button>
+    </div>`;
+  }
+}
+
+// An empty "takip ettiklerin" is a dead end unless it says who to follow. The
+// names come from the same taste matching the Sinefil Sineması page uses.
+async function renderFollowSuggestions() {
+  const list = $('feed-list');
+  list.innerHTML = '<p class="px-4 py-10 text-center text-sm text-on-surface-variant">Takip ettiklerin henüz not yazmamış.</p>';
+  try {
+    const [data, mine] = await Promise.all([
+      apiJSON('/api/sinefil-alani?q=&page=1&per_page=8'),
+      apiJSON(`/api/users/${encodeURIComponent(_account.username)}/following`).catch(() => ({ users: [] })),
+    ]);
+    // Someone already followed is not a suggestion — they simply have not written yet.
+    const already = new Set((mine.users || []).map(user => user.username));
+    const people = (data.profiles || [])
+      .filter(person => person.username && !already.has(person.username))
+      .slice(0, 5);
+    if (!people.length) return;
+    list.insertAdjacentHTML('beforeend', `<div class="mx-4 rounded-2xl border border-outline-variant/25 bg-surface-container/60 p-4">
+      <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">Kimi takip etmeli?</p>
+      <div class="mt-3 flex flex-col gap-2">${people.map(person => `<div class="flex items-center gap-3">
+        <button type="button" data-post-author="${escapeHTML(person.username)}" class="shrink-0">${peerAvatar(person)}</button>
+        <button type="button" data-post-author="${escapeHTML(person.username)}" class="min-w-0 flex-1 text-left">
+          <strong class="block truncate text-sm text-on-surface">${escapeHTML(person.display_name || person.username)}</strong>
+          <span class="block truncate text-xs text-on-surface-variant/60">${escapeHTML(person.match_note || `@${person.username}`)}</span>
+        </button>
+        ${followButton({ username: person.username, following: false, is_me: false })}
+      </div>`).join('')}</div>
+    </div>`);
+  } catch (_) {}
+}
+
+function renderFeedFilmChip() {
+  const chip = $('feed-film-filter');
+  chip.classList.toggle('hidden', !_feedFilm.slug);
+  if (_feedFilm.slug) {
+    chip.innerHTML = `<span class="text-on-surface-variant">“${escapeHTML(_feedFilm.title)}” hakkındaki notlar</span>
+      <button type="button" id="feed-film-clear" class="ml-2 rounded-full border border-outline-variant/40 px-2 py-0.5 text-xs text-on-surface-variant hover:text-on-surface">Temizle</button>`;
+  }
+}
+
+function openFilmFeed(slug, title) {
+  _feedFilm = { slug, title };
+  renderFeedFilmChip();
+  loadFeed();
+}
+
+function setFeedScope(scope) {
+  _feedScope = scope;
+  document.querySelectorAll('[data-feed-scope]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.feedScope === scope);
+  });
+  return loadFeed();
+}
+
+async function openFeed() {
+  showView('feed');
+  _feedFilm = { slug: '', title: '' };
+  renderFeedFilmChip();
+  // Serial, not parallel: a burst of six calls at boot is what made a
+  // transient read failure look like an empty timeline.
+  await setFeedScope(_feedScope);
+  try { renderFeedTrending((await apiJSON('/api/feed/trending')).films || []); } catch (_) {}
+  await renderRailSuggestions();
+}
+
+// A picked film is shown as a card with an ×; changing your mind has to be
+// one click, not a page reload.
+function renderComposerFilm() {
+  const chip = $('feed-compose-film-chip');
+  const picker = $('feed-compose-film');
+  const film = _feedPickedFilm;
+  picker.classList.toggle('hidden', Boolean(film));
+  chip.classList.toggle('hidden', !film);
+  chip.classList.toggle('flex', Boolean(film));
+  chip.classList.toggle('mt-3', Boolean(film));
+  if (!film) { chip.innerHTML = ''; return; }
+  const poster = safeImageURL(film.poster_url);
+  chip.innerHTML = `${poster
+      ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="h-14 w-10 shrink-0 rounded-md object-cover bg-surface-container"/>`
+      : '<div class="h-14 w-10 shrink-0 rounded-md bg-surface-container"></div>'}
+    <span class="min-w-0 flex-1">
+      <strong class="block truncate text-sm text-on-surface">${escapeHTML(film.title || '')}</strong>
+      <span class="block truncate text-xs text-on-surface-variant/60">${[film.year, film.director].filter(Boolean).map(escapeHTML).join(' · ')}</span>
+    </span>
+    <button type="button" id="feed-compose-film-change" class="shrink-0 rounded-lg px-2 py-1 text-xs text-on-surface-variant hover:text-on-surface">Değiştir</button>
+    <button type="button" id="feed-compose-film-clear" class="shrink-0 rounded-lg p-1.5 text-on-surface-variant hover:text-error" aria-label="Filmi kaldır"><span class="material-symbols-outlined text-[18px]">close</span></button>`;
+}
+
+function clearComposerFilm() {
+  _feedPickedFilm = null;
+  $('feed-compose-film-label').textContent = 'Hangi film hakkında yazacaksın?';
+  renderComposerFilm();
+}
+
+async function submitPost() {
+  const button = $('btn-feed-post');
+  const error = $('feed-compose-error');
+  const body = $('feed-compose-text').value.trim();
+  if (!_feedPickedFilm) {
+    error.textContent = 'Önce hakkında yazacağın filmi seç.';
+    error.classList.remove('hidden');
+    return;
+  }
+  if (!body) { error.textContent = 'Birkaç kelime yaz.'; error.classList.remove('hidden'); return; }
+  button.disabled = true;
+  error.classList.add('hidden');
+  try {
+    await apiJSON('/api/posts', {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        body,
+        film_slug: _feedPickedFilm.slug,
+        tmdb_id: _feedPickedFilm.tmdb_id || null,
+        film_title: _feedPickedFilm.title || '',
+        film_year: _feedPickedFilm.year || null,
+        spoiler: $('feed-compose-spoiler').checked,
+      }),
+    });
+    $('feed-compose-text').value = '';
+    $('feed-compose-spoiler').checked = false;
+    $('feed-compose-count').textContent = '280';
+    clearComposerFilm();
+    await loadFeed();
+  } catch (err) {
+    error.textContent = err.message || 'Not paylaşılamadı.';
+    error.classList.remove('hidden');
+  } finally { button.disabled = false; }
+}
+
+async function openThread(postId, { from = '' } = {}) {
+  _threadId = postId;
+  // Remember where the reader came from so "geri" is not always the feed.
+  _threadFrom = from || _currentFeedOrigin();
+  showView('thread');
+  $('thread-root').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  $('thread-replies').innerHTML = '';
+  try {
+    const data = await apiJSON(`/api/posts/${encodeURIComponent(postId)}`);
+    $('thread-root').innerHTML = feedPostCard(data.post, { compact: true });
+    $('thread-replies').innerHTML = (data.replies || []).map(reply => feedPostCard(reply, { compact: true })).join('');
+  } catch (error) {
+    $('thread-root').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Not yüklenemedi.')}</p>`;
+  }
+}
+
+async function submitReply() {
+  const button = $('btn-thread-reply');
+  const error = $('thread-reply-error');
+  const body = $('thread-reply-text').value.trim();
+  if (!body || !_threadId) return;
+  button.disabled = true;
+  error.classList.add('hidden');
+  try {
+    await apiJSON(`/api/posts/${encodeURIComponent(_threadId)}/replies`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ body }),
+    });
+    $('thread-reply-text').value = '';
+    await openThread(_threadId);
+  } catch (err) {
+    error.textContent = err.message || 'Cevap gönderilemedi.';
+    error.classList.remove('hidden');
+  } finally { button.disabled = false; }
+}
+
+async function togglePostLike(card) {
+  const postId = card.dataset.postId;
+  const button = card.querySelector('[data-post-like]');
+  const liked = button.classList.contains('text-primary-container');
+  try {
+    const data = await apiJSON(`/api/posts/${encodeURIComponent(postId)}/like`, {
+      method: liked ? 'DELETE' : 'POST',
+      headers: csrfHeaders(),
+    });
+    button.classList.toggle('text-primary-container', data.liked);
+    button.querySelector('.material-symbols-outlined').style.fontVariationSettings = data.liked ? "'FILL' 1" : '';
+    button.querySelector('[data-like-count]').textContent = data.like_count;
+  } catch (_) {}
+}
+
+async function reportPost(card) {
+  const postId = card.dataset.postId;
+  const detail = window.prompt('Bu not için kısa bir bildirim nedeni yazabilirsin (isteğe bağlı):', '');
+  if (detail === null) return;
+  try {
+    await apiJSON(`/api/posts/${encodeURIComponent(postId)}/report`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ category: 'other', detail: detail.slice(0, 500) }),
+    });
+    window.alert('Bildirim alındı. İncelenecek.');
+  } catch (error) {
+    window.alert(error.message || 'Bu not bildirilemedi.');
+  }
+}
+
+// ── Sinefil profili, takip listeleri ve bildirimler ─────────────────────
+let _userPage = { username: '', cursor: '', from: 'feed' };
+let _followsFrom = '';
+
+function followButton(profile) {
+  if (profile.is_me) return '';
+  const status = profile.follow_status || (profile.following ? 'accepted' : 'none');
+  const active = status === 'accepted';
+  const pending = status === 'pending';
+  const label = pending ? 'İstek gönderildi' : (active ? 'Takiptesin' : 'Takip et');
+  const style = active || pending
+    ? 'border border-outline-variant/40 text-on-surface-variant hover:border-error/40 hover:text-error'
+    : 'bg-primary-container text-on-primary-container';
+  return `<button type="button" data-follow="${escapeHTML(profile.username)}" data-follow-status="${status}" class="shrink-0 rounded-full px-4 py-2 font-label-sm text-label-sm uppercase tracking-wide transition-colors ${style}">${label}</button>`;
+}
+
+function userHeaderMarkup(profile) {
+  const name = escapeHTML(profile.display_name || profile.username);
+  const avatar = safeImageURL(profile.avatar_url);
+  const stats = profile.letterboxd_stats || {};
+  const watched = Number(stats.films || stats.watched || 0);
+  const locked = Boolean(profile.private_account) && !profile.can_view && !profile.is_me;
+  return `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/60 p-5">
+    <div class="flex items-start gap-4">
+      ${avatar
+        ? `<img src="${avatar}" alt="" class="h-20 w-20 shrink-0 rounded-full object-cover border border-outline-variant/30"/>`
+        : `<div class="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-surface-container text-2xl font-bold text-primary-container">${name[0] || '?'}</div>`}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h1 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h1>
+            <p class="text-sm text-on-surface-variant/70">@${escapeHTML(profile.username)}</p>
+          </div>
+          ${followButton(profile)}
+        </div>
+        ${locked ? '<span class="mt-2 inline-flex items-center gap-1 rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">lock</span>Kilitli hesap</span>' : (profile.follows_you ? '<span class="mt-2 inline-block rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant">Seni takip ediyor</span>' : '')}
+      </div>
+    </div>
+    <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+      <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.note_count}</strong> not</span>
+      <button type="button" data-follows="followers" class="text-on-surface-variant hover:text-on-surface transition-colors"><strong class="text-on-surface">${profile.follower_count}</strong> takipçi</button>
+      <button type="button" data-follows="following" class="text-on-surface-variant hover:text-on-surface transition-colors"><strong class="text-on-surface">${profile.following_count}</strong> takip</button>
+      ${watched ? `<span class="text-on-surface-variant"><strong class="text-on-surface">${watched}</strong> film izlemiş</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function userFavoritesMarkup(favorites) {
+  const films = (favorites || []).filter(Boolean);
+  if (!films.length) return '';
+  return `<p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">Fav 4</p>
+    <div class="mt-2 grid grid-cols-4 gap-2">${films.map(film => {
+      const poster = safeImageURL(film.poster_url);
+      const href = letterboxdFilmURL(film.slug);
+      const art = poster
+        ? `<img src="${poster}" alt="${escapeHTML(film.title || '')}" onerror="posterErr(this)" loading="lazy" class="w-full aspect-[2/3] rounded-lg object-cover bg-surface-container"/>`
+        : `<div class="w-full aspect-[2/3] rounded-lg bg-surface-container"></div>`;
+      return href ? `<a href="${href}" target="_blank" rel="noopener">${art}</a>` : art;
+    }).join('')}</div>`;
+}
+
+async function openUserPage(username, { from = 'feed' } = {}) {
+  if (!username) return;
+  _userPage = { username, cursor: '', from };
+  showView('user');
+  $('user-header').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  $('user-favorites').innerHTML = '';
+  $('user-posts').innerHTML = '';
+  $('btn-user-more').classList.add('hidden');
+  try {
+    const data = await apiJSON(`/api/users/${encodeURIComponent(username)}`);
+    $('user-header').innerHTML = userHeaderMarkup(data.profile);
+    const locked = Boolean(data.profile.private_account) && !data.profile.can_view && !data.profile.is_me;
+    $('user-favorites').innerHTML = locked ? '' : userFavoritesMarkup(data.profile.favorites);
+    $('user-posts').innerHTML = locked
+      ? '<p class="py-8 text-center text-sm text-on-surface-variant/60">Bu hesap kilitli. Notlarını ve zevk profilini görmek için takip isteğinin kabul edilmesini bekle.</p>'
+      : (data.posts || []).length
+      ? data.posts.map(post => feedPostCard(post)).join('')
+      : '<p class="py-8 text-center text-sm text-on-surface-variant/60">Henüz not yazmamış.</p>';
+    _userPage.cursor = data.next_cursor || '';
+    $('btn-user-more').classList.toggle('hidden', !_userPage.cursor);
+  } catch (error) {
+    $('user-header').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Profil açılamadı.')}</p>`;
+  }
+}
+
+async function loadMoreUserPosts() {
+  if (!_userPage.cursor) return;
+  const button = $('btn-user-more');
+  button.disabled = true;
+  try {
+    const data = await apiJSON(`/api/users/${encodeURIComponent(_userPage.username)}?cursor=${encodeURIComponent(_userPage.cursor)}`);
+    $('user-posts').insertAdjacentHTML('beforeend', (data.posts || []).map(post => feedPostCard(post)).join(''));
+    _userPage.cursor = data.next_cursor || '';
+    button.classList.toggle('hidden', !_userPage.cursor);
+  } catch (_) {} finally { button.disabled = false; }
+}
+
+async function toggleFollow(button) {
+  const username = button.dataset.follow;
+  const status = button.dataset.followStatus || 'none';
+  const following = status !== 'none';
+  button.disabled = true;
+  try {
+    const response = await apiJSON(`/api/users/${encodeURIComponent(username)}/follow`, {
+      method: following ? 'DELETE' : 'POST',
+      headers: csrfHeaders(),
+    });
+    if ($('view-user').classList.contains('hidden')) {
+      // In a list the row flips in place; the page stays where it was.
+      button.outerHTML = followButton({ username, follow_status: response.follow_status || 'none', is_me: false });
+    } else {
+      await openUserPage(username, { from: _userPage.from });
+    }
+  } catch (_) {} finally { button.disabled = false; }
+}
+
+async function openFollows(username, kind) {
+  _followsFrom = username;
+  showView('follows');
+  $('follows-title').textContent = kind === 'followers' ? 'Takipçiler' : 'Takip edilenler';
+  $('follows-list').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  try {
+    const data = await apiJSON(`/api/users/${encodeURIComponent(username)}/${kind}`);
+    const users = data.users || [];
+    $('follows-list').innerHTML = users.length
+      ? users.map(user => `<div class="flex items-center gap-3 rounded-xl border border-outline-variant/25 bg-surface-container/50 p-3">
+          <button type="button" data-post-author="${escapeHTML(user.username)}" class="shrink-0">${peerAvatar(user)}</button>
+          <button type="button" data-post-author="${escapeHTML(user.username)}" class="min-w-0 flex-1 text-left">
+            <strong class="block truncate text-sm text-on-surface">${escapeHTML(user.display_name || user.username)}</strong>
+            <span class="block truncate text-xs text-on-surface-variant/60">@${escapeHTML(user.username)}</span>
+          </button>
+          ${followButton({ ...user, is_me: user.is_me })}
+        </div>`).join('')
+      : '<p class="py-8 text-center text-sm text-on-surface-variant/60">Burada kimse yok.</p>';
+  } catch (error) {
+    $('follows-list').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Liste açılamadı.')}</p>`;
+  }
+}
+
+function notificationRow(item) {
+  const actor = item.actor || {};
+  const who = escapeHTML(actor.display_name || actor.username || 'Bir sinefil');
+  const post = item.post;
+  const excerpt = post ? escapeHTML((post.body || '').slice(0, 90)) : '';
+  const film = post && post.film_title ? escapeHTML(post.film_title) : '';
+  const what = {
+    like: 'notunu beğendi',
+    reply: 'notuna cevap yazdı',
+    follow: 'seni takip etmeye başladı',
+    follow_request: 'sana takip isteği gönderdi',
+    follow_accepted: 'takip isteğini kabul etti',
+  }[item.kind] || 'bir şey yaptı';
+  const icon = { like: 'favorite', reply: 'chat_bubble', follow: 'person_add', follow_request: 'person_add', follow_accepted: 'how_to_reg' }[item.kind] || 'notifications';
+  const unread = !item.read_at;
+  return `<div class="flex items-start gap-3 rounded-xl border p-3 transition-colors ${unread ? 'border-primary-container/35 bg-primary-container/10' : 'border-outline-variant/25 bg-surface-container/40'}"
+      ${post ? `data-notification-thread="${escapeHTML(post.thread_id)}"` : ''} role="button" tabindex="0">
+    <span class="material-symbols-outlined mt-0.5 text-[18px] text-primary-container">${icon}</span>
+    <div class="min-w-0 flex-1">
+      <p class="text-sm text-on-surface"><button type="button" data-post-author="${escapeHTML(actor.username || '')}" class="font-bold hover:underline">${who}</button> ${what}</p>
+      ${film ? `<p class="mt-0.5 text-xs text-on-surface-variant/60">${film}</p>` : ''}
+      ${excerpt ? `<p class="mt-1 truncate text-sm text-on-surface-variant">“${excerpt}”</p>` : ''}
+      ${item.kind === 'follow_request' && actor.username ? `<div class="mt-3 flex gap-2"><button type="button" data-follow-request="${escapeHTML(actor.username)}" data-follow-decision="accepted" class="rounded-lg bg-primary-container px-3 py-2 text-xs font-bold text-on-primary-container">Kabul et</button><button type="button" data-follow-request="${escapeHTML(actor.username)}" data-follow-decision="rejected" class="rounded-lg border border-outline-variant/30 px-3 py-2 text-xs text-on-surface-variant">Reddet</button></div>` : ''}
+      <p class="mt-1 text-xs text-on-surface-variant/50">${escapeHTML(feedRelativeTime(item.created_at))}</p>
+    </div>
+  </div>`;
+}
+
+async function openNotifications() {
+  showView('notifications');
+  $('notifications-list').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  try {
+    const data = await apiJSON('/api/notifications');
+    const items = data.notifications || [];
+    $('notifications-list').innerHTML = items.length
+      ? items.map(notificationRow).join('')
+      : '<p class="py-8 text-center text-sm text-on-surface-variant/60">Henüz bildirim yok.</p>';
+  } catch (error) {
+    $('notifications-list').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Bildirimler açılamadı.')}</p>`;
+  }
+  // Reading the list marks it read server-side; the badges follow.
+  refreshFeedBadge();
 }
 
 // ── Sinema gündemi — yatay kart şeridi, profil boyandıktan sonra ─────────
@@ -1551,6 +2259,18 @@ function renderBlendBadge(rawCount) {
     'aria-label',
     count ? `Gelen kutusu, ${count} yeni öğe` : 'Gelen kutusu',
   );
+  paintNavBadge('inbox', count);
+}
+
+// The same tally in three places: sidebar pill, tab-bar dot, old header badge.
+function paintNavBadge(kind, count) {
+  const pill = $(`nav-badge-${kind}`);
+  const dot = $(`tab-badge-${kind}`);
+  if (pill) {
+    pill.textContent = count > 9 ? '9+' : String(count);
+    pill.classList.toggle('hidden', count === 0);
+  }
+  if (dot) dot.classList.toggle('hidden', count === 0);
 }
 
 async function refreshBlendBadge() {
@@ -1620,20 +2340,6 @@ async function loadLetterSendStatus(username = _letterRecipient?.username || '')
   _letterSendStatus = await apiJSON(`/api/letters/send-status${query}`);
   renderLetterCooldown();
   return _letterSendStatus;
-}
-
-function setInboxTab(tab) {
-  const letters = tab === 'letters';
-  $('inbox-blends-panel').classList.toggle('hidden', letters);
-  $('inbox-letters-panel').classList.toggle('hidden', !letters);
-  document.querySelectorAll('[data-inbox-tab]').forEach(button => {
-    const active = button.dataset.inboxTab === tab;
-    button.setAttribute('aria-selected', String(active));
-    button.classList.toggle('bg-surface', active);
-    button.classList.toggle('text-on-surface', active);
-    button.classList.toggle('text-on-surface-variant', !active);
-  });
-  if (letters) loadLetters();
 }
 
 function renderLetterSettings() {
@@ -2001,16 +2707,18 @@ function blockedUserCard(item) {
 
 function renderBlendInbox(data) {
   _blendInbox = data;
-  $('inbox-incoming').innerHTML = data.incoming?.length
+  $('blend-incoming').innerHTML = data.incoming?.length
     ? data.incoming.map(item => blendRequestCard(item, 'incoming')).join('')
     : emptyInbox('Bekleyen gelen isteğin yok.');
-  $('inbox-outgoing').innerHTML = data.outgoing?.length
+  $('blend-outgoing').innerHTML = data.outgoing?.length
     ? data.outgoing.map(item => blendRequestCard(item, 'outgoing')).join('')
     : emptyInbox('Bekleyen gönderilmiş isteğin yok.');
-  $('inbox-history').innerHTML = data.history?.length
-    ? data.history.map(blendHistoryCard).join('')
-    : emptyInbox('Henüz tamamlanmış bir Blend yok.');
-  $('inbox-blocked').innerHTML = data.blocked?.length
+  // Kabul edilenler yukarıdaki kart ızgarasında; burada yalnız kalanlar.
+  const resolved = (data.history || []).filter(item => item.status !== 'accepted');
+  $('blend-history').innerHTML = resolved.length
+    ? resolved.map(blendHistoryCard).join('')
+    : emptyInbox('Reddedilen ya da süresi dolan istek yok.');
+  $('blend-blocked').innerHTML = data.blocked?.length
     ? data.blocked.map(blockedUserCard).join('')
     : emptyInbox('Engellediğin kullanıcı yok.');
   // The small polling endpoint owns the combined Blend + letter badge; do not
@@ -2021,25 +2729,25 @@ function renderBlendInbox(data) {
 
 async function loadBlendInbox(show = true) {
   if (!_account) return;
-  if (show) showView('inbox');
-  $('inbox-error').classList.add('hidden');
+  if (show) showView('blends');
+  $('blends-error').classList.add('hidden');
   try {
     const data = await apiJSON('/api/blends');
     renderBlendInbox(data);
-    setInboxTab('blends');
     return data;
   } catch (error) {
     if (show) {
-      $('inbox-error').textContent = error.message || 'Inbox yüklenemedi.';
-      $('inbox-error').classList.remove('hidden');
+      $('blends-error').textContent = error.message || 'Blendler yüklenemedi.';
+      $('blends-error').classList.remove('hidden');
     }
   }
   return null;
 }
 
+// Gelen kutusu artık yalnız mektuplar; Blend tarafı kendi sekmesinde.
 async function openLetterInbox() {
-  await loadBlendInbox(true);
-  setInboxTab('letters');
+  showView('inbox');
+  await loadLetters();
 }
 
 async function openLetterSendingArea() {
@@ -2075,10 +2783,10 @@ async function routeToExistingBlend(data) {
     card.scrollIntoView({ block: 'center', behavior: 'smooth' });
     setTimeout(() => card.classList.remove('ring-2', 'ring-secondary-container/70'), 2600);
   }
-  $('inbox-notice').textContent = data.direction === 'incoming'
+  $('blends-notice').textContent = data.direction === 'incoming'
     ? 'Bu kullanıcı sana zaten bir Blend isteği göndermiş. İstek burada.'
     : 'Bu kullanıcıya gönderdiğin Blend isteği hâlâ yanıt bekliyor.';
-  $('inbox-notice').classList.remove('hidden');
+  $('blends-notice').classList.remove('hidden');
 }
 
 async function handleBlendInboxAction(event) {
@@ -2128,11 +2836,11 @@ async function handleBlendInboxAction(event) {
   const requestId = button.dataset.requestId;
   const peerUsername = button.dataset.peerUsername;
   const inBlendLibrary = !!button.closest('#view-blends');
-  const actionError = inBlendLibrary ? $('blends-error') : $('inbox-error');
-  const actionNotice = inBlendLibrary ? $('blends-notice') : $('inbox-notice');
+  const actionError = inBlendLibrary ? $('blends-error') : $('blends-error');
+  const actionNotice = inBlendLibrary ? $('blends-notice') : $('blends-notice');
   actionError.classList.add('hidden');
   actionNotice?.classList.add('hidden');
-  $('inbox-notice').classList.add('hidden');
+  $('blends-notice').classList.add('hidden');
   if (action === 'block') {
     if (!peerUsername || !window.confirm(`@${peerUsername} engellensin mi? Bekleyen Blend istekleri de iptal edilir.`)) return;
     button.disabled = true;
@@ -2141,11 +2849,11 @@ async function handleBlendInboxAction(event) {
         method: 'POST', headers: csrfHeaders(),
       });
       await loadBlendInbox(false);
-      $('inbox-notice').textContent = `@${peerUsername} engellendi.`;
-      $('inbox-notice').classList.remove('hidden');
+      $('blends-notice').textContent = `@${peerUsername} engellendi.`;
+      $('blends-notice').classList.remove('hidden');
     } catch (error) {
-      $('inbox-error').textContent = error.message || 'Kullanıcı engellenemedi.';
-      $('inbox-error').classList.remove('hidden');
+      $('blends-error').textContent = error.message || 'Kullanıcı engellenemedi.';
+      $('blends-error').classList.remove('hidden');
     } finally { button.disabled = false; }
     return;
   }
@@ -2157,11 +2865,11 @@ async function handleBlendInboxAction(event) {
         method: 'DELETE', headers: csrfHeaders(),
       });
       await loadBlendInbox(false);
-      $('inbox-notice').textContent = `@${peerUsername} engeli kaldırıldı.`;
-      $('inbox-notice').classList.remove('hidden');
+      $('blends-notice').textContent = `@${peerUsername} engeli kaldırıldı.`;
+      $('blends-notice').classList.remove('hidden');
     } catch (error) {
-      $('inbox-error').textContent = error.message || 'Engel kaldırılamadı.';
-      $('inbox-error').classList.remove('hidden');
+      $('blends-error').textContent = error.message || 'Engel kaldırılamadı.';
+      $('blends-error').classList.remove('hidden');
     } finally { button.disabled = false; }
     return;
   }
@@ -2171,8 +2879,8 @@ async function handleBlendInboxAction(event) {
     if (category === null) return;
     const normalizedCategory = category.trim().toLowerCase();
     if (!['spam', 'harassment', 'impersonation', 'other'].includes(normalizedCategory)) {
-      $('inbox-error').textContent = 'Geçersiz bildirim kategorisi.';
-      $('inbox-error').classList.remove('hidden');
+      $('blends-error').textContent = 'Geçersiz bildirim kategorisi.';
+      $('blends-error').classList.remove('hidden');
       return;
     }
     const detail = window.prompt('Kısa açıklama (isteğe bağlı, en fazla 500 karakter)', '') ?? '';
@@ -2183,11 +2891,11 @@ async function handleBlendInboxAction(event) {
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ category: normalizedCategory, detail: detail.slice(0, 500) }),
       });
-      $('inbox-notice').textContent = 'Bildirimin alındı.';
-      $('inbox-notice').classList.remove('hidden');
+      $('blends-notice').textContent = 'Bildirimin alındı.';
+      $('blends-notice').classList.remove('hidden');
     } catch (error) {
-      $('inbox-error').textContent = error.message || 'Bildirim gönderilemedi.';
-      $('inbox-error').classList.remove('hidden');
+      $('blends-error').textContent = error.message || 'Bildirim gönderilemedi.';
+      $('blends-error').classList.remove('hidden');
     } finally { button.disabled = false; }
     return;
   }
@@ -2345,7 +3053,9 @@ function enterApp(account, opts = {}) {
   // İlk ekranda yalnız küçük badge sayısını al. Büyük Blend geçmişi ve kayıtlı
   // sonuç payload'ları inbox / Blendlerim gerçekten açıldığında lazy-load edilir.
   refreshBlendBadge();
+  refreshFeedBadge();
   startBlendBadgePolling();
+  startFeedNotificationPolling();
   // Onboarding always plays right after a fresh registration. Otherwise it
   // plays only while the first sync is still pending and it hasn't already
   // been shown for this account in this tab.
@@ -2359,9 +3069,10 @@ function enterApp(account, opts = {}) {
     startOnboarding();
     return;
   }
-  showView('profile');
+  // The feed is where the app opens now. The dashboard still prepares itself in
+  // the background so switching to "Profil" is instant.
   openProfilePanel('watch');
-  loadProfile();
+  openFeed().then(loadProfile);
 }
 
 // ── Onboarding reveal ──────────────────────────────────────────────────
@@ -3126,11 +3837,11 @@ function sinefilCard(profile) {
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl">
     <div class="flex items-center gap-3">
       ${avatar ? `<img src="${avatar}" alt="${name}" class="h-12 w-12 rounded-full object-cover ring-1 ring-tertiary-container/35"/>` : `<div class="flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-md text-tertiary-container">${initial}</div>`}
-      <div class="min-w-0"><h2 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h2><p class="mt-0.5 text-sm text-on-surface-variant">@${username}</p></div>
+      <div class="min-w-0"><h2 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h2><p class="mt-0.5 flex items-center gap-1 text-sm text-on-surface-variant">@${username}${profile.private_account ? '<span class="material-symbols-outlined text-[15px]" title="Kilitli hesap">lock</span>' : ''}</p></div>
     </div>
     ${match}
     <div class="mt-4 grid grid-cols-4 gap-2">${posters}</div>
-    <button type="button" data-sinefil-profile="${username}" class="mt-4 w-full rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Profili görüntüle</button>
+    <div class="mt-4 flex gap-2"><button type="button" data-sinefil-profile="${username}" class="min-w-0 flex-1 rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Profili görüntüle</button>${followButton(profile)}</div>
   </article>`;
 }
 
@@ -3150,9 +3861,18 @@ async function openSinefilProfile(username) {
   $('sinefil-profile-posters').innerHTML = posters || '<p class="col-span-4 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</p>';
   $('sinefil-profile-personality').textContent = 'Okuma yükleniyor…';
   $('sinefil-profile-blend').onclick = () => requestSinefilBlend(username, $('sinefil-profile-blend'));
+  $('sinefil-profile-open').onclick = () => {
+    $('dialog-sinefil-profile').close();
+    openUserPage(username, { from: 'sinefil' });
+  };
   const letterButton = $('sinefil-profile-letter');
   letterButton.classList.toggle('hidden', !profile.letters_open);
   letterButton.onclick = () => openLetterCompose(username);
+  const blendButton = $('sinefil-profile-blend');
+  const canStartBlend = profile.follow_status === 'accepted';
+  blendButton.disabled = !canStartBlend;
+  blendButton.title = canStartBlend ? '' : 'Blend için önce karşılıklı takip gerekiyor.';
+  blendButton.classList.toggle('opacity-45', !canStartBlend);
   $('dialog-sinefil-profile').showModal();
   try { const data = await apiJSON(`/api/sinefil-alani/${encodeURIComponent(username)}/personality`); $('sinefil-profile-personality').textContent = data.personality || 'Bu profil için kişilik okuması henüz hazır değil.'; }
   catch (error) { $('sinefil-profile-personality').textContent = error.message || 'Kişilik okuması yüklenemedi.'; }
@@ -3215,13 +3935,11 @@ async function loadSinefilArea(page = 1) {
     const pagination = data.pagination || { page: _sinefilPage, pages: profiles.length === _sinefilPerPage ? _sinefilPage + 1 : 1, per_page: _sinefilPerPage, total: profiles.length };
     _sinefilPage = Number(pagination.page) || _sinefilPage;
     if (!profiles.length) {
-      $('sinefil-grid').innerHTML = '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Henüz gösterilecek sinefil yok. Görünürlüğünü açan yeni profiller burada belirecek.</div>';
+      $('sinefil-grid').innerHTML = '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Henüz gösterilecek sinefil yok. Yeni kayıtlar burada belirecek.</div>';
       renderSinefilPagination({ pages: 1, page: 1, total: 0 });
       return;
     }
-    sinefilMessage('notice', _account?.discoverable
-      ? "Profilin Sinefil Sineması'nda görünür. İstediğin an profilindeki Görünür anahtarıyla gizleyebilirsin."
-      : 'Profilin şu an gizli; yine de diğer sinefilleri keşfedebilirsin.');
+    sinefilMessage('notice', 'Sinefil Sineması’nda tüm kayıtlı sinefiller var. Kilitli hesapların ayrıntıları yalnız kabul ettiği takipçilere görünür.');
     $('sinefil-grid').innerHTML = profiles.map(sinefilCard).join('');
     renderSinefilPagination(pagination);
   } catch (error) {
@@ -3438,7 +4156,7 @@ async function randomFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView(homeView());
+      showView(dashboardView());
       showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
@@ -3522,7 +4240,7 @@ async function tasteFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView(homeView());
+      showView(dashboardView());
       showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
@@ -3597,7 +4315,7 @@ function recommend() {
 
 async function deleteMyData() {
   const username = $('username-input').value.trim();
-  showView(homeView());
+  showView(dashboardView());
   setIdleNotice(null);
   setIdleError(null);
   profileActionNotice(null);
@@ -3801,6 +4519,7 @@ async function finishPasswordReset() {
 async function logoutAccount() {
   cancelActiveApiRequest();
   stopBlendBadgePolling();
+  stopFeedNotificationPolling();
   try {
     await apiJSON('/api/auth/logout', { method: 'POST', headers: csrfHeaders() });
   } catch (_) {}
@@ -3877,12 +4596,17 @@ document.querySelectorAll('[data-close-dialog]').forEach(button => {
     if (event.target === dialog) dialog.close();
   });
 });
+$('profile-my-notes').addEventListener('click', () => {
+  if (_account?.username) openUserPage(_account.username, { from: 'profile' });
+});
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {
   showView('sinefil');
   loadSinefilArea();
 });
 $('profile-discovery-toggle').addEventListener('click', toggleDiscoveryVisibility);
+$('profile-private-toggle').addEventListener('click', togglePrivateAccount);
+$('profile-browser-notifications').addEventListener('click', enableBrowserNotifications);
 $('btn-sinefil-back').addEventListener('click', () => showView(homeView()));
 $('btn-sinefil-refresh').addEventListener('click', loadSinefilArea);
 $('sinefil-search').addEventListener('input', () => {
@@ -3895,6 +4619,8 @@ $('sinefil-pagination').addEventListener('click', event => {
   loadSinefilArea(Number(button.dataset.sinefilPage));
 });
 $('sinefil-grid').addEventListener('click', event => {
+  const follow = event.target.closest('[data-follow]');
+  if (follow) { toggleFollow(follow); return; }
   const profile = event.target.closest('[data-sinefil-profile]');
   if (profile) {
     openSinefilProfile(profile.dataset.sinefilProfile);
@@ -3908,6 +4634,187 @@ $('sinefil-grid').addEventListener('click', event => {
 $('btn-share-personality').addEventListener('click', event => {
   buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
 });
+// Akış olayları. Film seçici mektuplardaki diyaloğun aynısı: yeni bileşen yok.
+$('btn-open-feed').addEventListener('click', openFeed);
+$('btn-feed-back').addEventListener('click', () => { showView('profile'); loadProfile(); });
+$('btn-thread-back').addEventListener('click', () => {
+  if (_threadFrom === 'notifications') { openNotifications(); return; }
+  if (_threadFrom === 'user' && _userPage.username) {
+    openUserPage(_userPage.username, { from: _userPage.from });
+    return;
+  }
+  if (_threadFrom === 'sinefil') { showView('sinefil'); return; }
+  openFeed();
+});
+$('btn-feed-more').addEventListener('click', () => loadFeed({ append: true }));
+$('btn-feed-post').addEventListener('click', submitPost);
+$('btn-thread-reply').addEventListener('click', submitReply);
+$('feed-compose-text').addEventListener('input', event => {
+  $('feed-compose-count').textContent = 280 - event.target.value.length;
+});
+document.querySelectorAll('[data-feed-scope]').forEach(button => {
+  button.addEventListener('click', () => setFeedScope(button.dataset.feedScope));
+});
+function openFilmPicker() {
+  $('feed-film-search').value = '';
+  $('feed-film-results').innerHTML = '';
+  $('dialog-feed-film').showModal();
+  setTimeout(() => $('feed-film-search').focus(), 50);
+}
+$('feed-compose-film').addEventListener('click', openFilmPicker);
+$('feed-compose-film-chip').addEventListener('click', event => {
+  if (event.target.closest('#feed-compose-film-clear')) { clearComposerFilm(); return; }
+  if (event.target.closest('#feed-compose-film-change')) openFilmPicker();
+});
+
+let _feedSearchTimer = null;
+$('feed-film-search').addEventListener('input', () => {
+  clearTimeout(_feedSearchTimer);
+  _feedSearchTimer = setTimeout(searchFeedFilms, 250);
+});
+$('feed-film-results').addEventListener('click', event => {
+  const button = event.target.closest('[data-feed-film-index]');
+  if (!button) return;
+  const films = $('feed-film-results')._feedFilms || [];
+  const film = films[Number(button.dataset.feedFilmIndex)];
+  if (!film) return;
+  _feedPickedFilm = film;
+  renderComposerFilm();
+  $('dialog-feed-film').close();
+  $('feed-compose-text').focus();
+});
+
+function handleFeedCardClick(event) {
+  // An author's name or avatar opens their page from wherever it was clicked.
+  const author = event.target.closest('[data-post-author]');
+  if (author && author.dataset.postAuthor) {
+    openUserPage(author.dataset.postAuthor, { from: _currentFeedOrigin() });
+    return;
+  }
+  const follow = event.target.closest('[data-follow]');
+  if (follow) { toggleFollow(follow); return; }
+  const card = event.target.closest('[data-post-id]');
+  if (!card) return;
+  if (event.target.closest('[data-reveal-spoiler]')) {
+    const hidden = card.querySelector('[data-reveal-spoiler] + span');
+    if (hidden) {
+      hidden.classList.remove('hidden');
+      event.target.closest('[data-reveal-spoiler]').remove();
+    }
+    return;
+  }
+  if (event.target.closest('[data-post-like]')) { togglePostLike(card); return; }
+  if (event.target.closest('[data-post-report]')) { reportPost(card); return; }
+  if (event.target.closest('[data-post-open]')) { openThread(card.dataset.postId); return; }
+  if (event.target.closest('[data-post-delete]')) {
+    if (!window.confirm('Bu not silinsin mi?')) return;
+    apiJSON(`/api/posts/${encodeURIComponent(card.dataset.postId)}`, {
+      method: 'DELETE', headers: csrfHeaders(),
+    }).then(() => (showView('feed'), loadFeed())).catch(() => {});
+    return;
+  }
+  // Anywhere else on the card opens the note, the way a tweet does. Links keep
+  // their own behaviour, and a thread card does not re-open itself.
+  if (!event.target.closest('a, button') && $('view-thread').classList.contains('hidden')) {
+    openThread(card.dataset.postId);
+  }
+}
+
+$('feed-list').addEventListener('click', event => {
+  if (event.target.closest('#btn-feed-retry')) { loadFeed(); return; }
+  handleFeedCardClick(event);
+});
+$('thread-root').addEventListener('click', handleFeedCardClick);
+$('thread-replies').addEventListener('click', handleFeedCardClick);
+$('user-posts').addEventListener('click', handleFeedCardClick);
+
+// Where "geri" should land: the view the reader was actually looking at.
+function _currentFeedOrigin() {
+  const open = ['feed', 'user', 'notifications', 'sinefil', 'thread'].find(
+    view => !$(`view-${view}`).classList.contains('hidden')
+  );
+  // A thread was itself opened from somewhere; inherit that rather than loop.
+  return open === 'thread' ? _threadFrom || 'feed' : (open || 'feed');
+}
+
+$('feed-trending').addEventListener('click', event => {
+  const trend = event.target.closest('[data-trend-film]');
+  if (trend) openFilmFeed(trend.dataset.trendFilm, trend.dataset.trendTitle);
+});
+$('feed-film-filter').addEventListener('click', event => {
+  if (event.target.closest('#feed-film-clear')) openFilmFeed('', '');
+});
+
+document.querySelectorAll('[data-nav]').forEach(button => {
+  button.addEventListener('click', () => goNav(button.dataset.nav));
+});
+$('nav-logo').addEventListener('click', () => goNav('feed'));
+$('app-rail').addEventListener('click', event => {
+  const action = event.target.closest('[data-rail-action]');
+  if (action) { openQuickTool(action.dataset.railAction); return; }
+  const trend = event.target.closest('[data-trend-film]');
+  if (trend) { openFeed(); openFilmFeed(trend.dataset.trendFilm, trend.dataset.trendTitle); return; }
+  const follow = event.target.closest('[data-follow]');
+  if (follow) { toggleFollow(follow); return; }
+  const person = event.target.closest('[data-post-author]');
+  if (person && person.dataset.postAuthor) openUserPage(person.dataset.postAuthor, { from: 'feed' });
+});
+$('nav-account').addEventListener('click', () => {
+  if (_account?.username) openUserPage(_account.username, { from: 'feed' });
+});
+$('nav-compose').addEventListener('click', () => { openFeed(); openFilmPicker(); });
+$('btn-compose-fab').addEventListener('click', () => { openFeed(); openFilmPicker(); });
+
+$('btn-feed-notifications').addEventListener('click', openNotifications);
+$('btn-notifications-back').addEventListener('click', () => (showView('feed'), loadFeed()));
+$('notifications-list').addEventListener('click', event => {
+  const request = event.target.closest('[data-follow-request]');
+  if (request) {
+    request.disabled = true;
+    apiJSON(`/api/users/${encodeURIComponent(request.dataset.followRequest)}/follow-request`, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ decision: request.dataset.followDecision }),
+    }).then(openNotifications).catch(error => window.alert(error.message || 'Takip isteği güncellenemedi.'));
+    return;
+  }
+  const author = event.target.closest('[data-post-author]');
+  if (author && author.dataset.postAuthor) {
+    openUserPage(author.dataset.postAuthor, { from: 'notifications' });
+    return;
+  }
+  const row = event.target.closest('[data-notification-thread]');
+  if (row) openThread(row.dataset.notificationThread);
+});
+
+$('btn-feed-mine').addEventListener('click', () => {
+  if (_account?.username) openUserPage(_account.username, { from: 'feed' });
+});
+$('btn-user-back').addEventListener('click', () => {
+  const from = _userPage.from;
+  if (from === 'notifications') { openNotifications(); return; }
+  if (from === 'sinefil') { showView('sinefil'); return; }
+  if (from === 'profile') { showView('profile'); return; }
+  showView('feed');
+  loadFeed();
+});
+$('btn-user-more').addEventListener('click', loadMoreUserPosts);
+$('user-header').addEventListener('click', event => {
+  const follow = event.target.closest('[data-follow]');
+  if (follow) { toggleFollow(follow); return; }
+  const list = event.target.closest('[data-follows]');
+  if (list) openFollows(_userPage.username, list.dataset.follows);
+});
+$('btn-follows-back').addEventListener('click', () => {
+  openUserPage(_followsFrom || _userPage.username, { from: _userPage.from });
+});
+$('follows-list').addEventListener('click', event => {
+  const follow = event.target.closest('[data-follow]');
+  if (follow) { toggleFollow(follow); return; }
+  const person = event.target.closest('[data-post-author]');
+  if (person && person.dataset.postAuthor) openUserPage(person.dataset.postAuthor, { from: 'feed' });
+});
+
 $('bulletin-venue').addEventListener('change', () => { _bulletinExpanded = false; paintBulletin(); });
 $('profile-bulletin').addEventListener('click', event => {
   if (event.target.closest('#bulletin-more')) {
@@ -3955,7 +4862,7 @@ document.addEventListener('keydown', event => {
     else if (event.key === 'ArrowRight') _obRevealNav(1);
   }
 });
-$('profile-inbox').addEventListener('click', () => loadBlendInbox(true));
+$('profile-inbox').addEventListener('click', () => openLetterInbox());
 $('profile-letters').addEventListener('click', openLetterSendingArea);
 $('profile-letter-toggle').addEventListener('click', event => toggleLetterReceiving(event.currentTarget));
 $('profile-blends').addEventListener('click', () => loadMyBlends(true));
@@ -3975,9 +4882,8 @@ $('menu-delete-data').addEventListener('click', () => {
 document.addEventListener('click', () => toggleProfileMenu(false));
 $('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
-$('btn-inbox-refresh').addEventListener('click', () => loadBlendInbox(false));
+$('btn-inbox-refresh').addEventListener('click', () => loadLetters());
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
-document.querySelectorAll('[data-inbox-tab]').forEach(button => button.addEventListener('click', () => setInboxTab(button.dataset.inboxTab)));
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
 $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
 
@@ -4017,7 +4923,7 @@ $('letter-film-picked').addEventListener('click', event => { if (event.target.cl
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
 $('btn-blends-back').addEventListener('click', () => showView(homeView()));
 $('btn-blends-create').addEventListener('click', () => {
-  showView(homeView());
+  showView(dashboardView());
   if (_account) openProfilePanel('blend');
   else setMode('blend');
 });
@@ -4154,13 +5060,13 @@ $('btn-home').addEventListener('click', () => {
 });
 $('btn-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(homeView());
+  showView(dashboardView());
   setIdleError(null);
   setIdleNotice(null);
 });
 $('btn-random-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(homeView());
+  showView(dashboardView());
   setIdleError(null);
   setIdleNotice(null);
 });
@@ -4179,7 +5085,7 @@ $('btn-switch-to-taste').addEventListener('click', () => {
 });
 $('btn-blend-back').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(homeView());
+  showView(dashboardView());
   setIdleError(null);
   setIdleNotice(null);
 });
