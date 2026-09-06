@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260906.39');
+    _shareCardsModule = import('./share-cards.js?v=20260907.40');
   }
   return _shareCardsModule;
 }
@@ -707,7 +707,7 @@ function showView(name) {
   headerProfile.classList.toggle('hidden', !showHeaderProfile);
   headerProfile.classList.toggle('flex', showHeaderProfile);
   paintShell(name);
-  if (name === 'profile') applyProfileTheme();
+  applyProfileTheme();
 }
 
 // ── Uygulama kabuğu: sol gezinme, alt sekme çubuğu, sağ raf ─────────────
@@ -782,22 +782,26 @@ function setMobileToolsMenu(open) {
   toggle.classList.toggle('text-primary-container', open);
 }
 
-// ── Profile-only light/dark theme (opt-in, per viewer) ─────────────────
+// ── App-wide light/dark theme (opt-in, per viewer) ─────────────────────
 function _profileThemePref() {
-  try { return localStorage.getItem('mb_profile_theme') === 'light' ? 'light' : 'dark'; }
+  try {
+    const value = localStorage.getItem('mb_theme') || localStorage.getItem('mb_profile_theme');
+    if (value === 'light') localStorage.setItem('mb_theme', 'light');
+    return value === 'light' ? 'light' : 'dark';
+  }
   catch (_) { return 'dark'; }
 }
 
 function applyProfileTheme() {
   const light = _profileThemePref() === 'light';
-  $('view-profile').classList.toggle('theme-light', light);
+  document.body.classList.toggle('theme-light', light);
   const label = $('profile-theme-label');
   if (label) label.textContent = light ? 'Görünüm: Açık' : 'Görünüm: Koyu';
 }
 
 function toggleProfileTheme() {
   const next = _profileThemePref() === 'light' ? 'dark' : 'light';
-  try { localStorage.setItem('mb_profile_theme', next); } catch (_) {}
+  try { localStorage.setItem('mb_theme', next); } catch (_) {}
   applyProfileTheme();
 }
 
@@ -1118,6 +1122,7 @@ function renderPersistedProfile(data) {
 let _feedScope = 'community';
 let _feedCursor = '';
 let _feedPickedFilm = null;
+let _feedFilmPickerMode = 'compose';
 let _feedAuthor = '';
 let _feedFollowingUsers = [];
 // When set, the feed is narrowed to one film — the trend behaves like a
@@ -1266,7 +1271,10 @@ async function searchFeedFilms() {
   const query = $('feed-film-search').value.trim();
   if (query.length < 2) { $('feed-film-results').innerHTML = ''; return; }
   try {
-    const data = await apiJSON(`/api/profile/watched?q=${encodeURIComponent(query)}`);
+    const endpoint = _feedFilmPickerMode === 'filter'
+      ? `/api/feed/films?q=${encodeURIComponent(query)}`
+      : `/api/profile/watched?q=${encodeURIComponent(query)}`;
+    const data = await apiJSON(endpoint);
     const films = (data.films || []).slice(0, 8).map(film => ({
       ...film, slug: film.slug || film.film_slug || '',
     })).filter(film => film.slug);
@@ -1281,7 +1289,8 @@ async function loadFeed({ append = false } = {}) {
   if (!_account) return;
   if (!append) { _feedCursor = ''; $('feed-list').innerHTML = '<p class="px-4 py-10 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>'; }
   try {
-    const data = await apiJSON(`/api/feed?scope=${_feedScope}&cursor=${encodeURIComponent(_feedCursor)}&film=${encodeURIComponent(_feedFilm.slug || '')}&author=${encodeURIComponent(_feedAuthor)}`);
+    const sort = _feedScope === 'community' ? 'engagement' : 'recent';
+    const data = await apiJSON(`/api/feed?scope=${_feedScope}&sort=${sort}&cursor=${encodeURIComponent(_feedCursor)}&film=${encodeURIComponent(_feedFilm.slug || '')}&author=${encodeURIComponent(_feedAuthor)}`);
     const cards = (data.posts || []).map(post => feedPostCard(post)).join('');
     if (append) $('feed-list').insertAdjacentHTML('beforeend', cards);
     else if (cards) $('feed-list').innerHTML = cards;
@@ -1333,6 +1342,7 @@ function renderFeedFilmChip() {
   chip.classList.toggle('hidden', !_feedFilm.slug);
   if (_feedFilm.slug) {
     chip.innerHTML = `<span class="text-on-surface-variant">“${escapeHTML(_feedFilm.title)}” hakkındaki notlar</span>
+      <button type="button" id="feed-film-change" class="ml-auto rounded-full border border-outline-variant/40 px-2 py-0.5 text-xs text-on-surface-variant hover:text-on-surface">Değiştir</button>
       <button type="button" id="feed-film-clear" class="ml-2 rounded-full border border-outline-variant/40 px-2 py-0.5 text-xs text-on-surface-variant hover:text-on-surface">Temizle</button>`;
   }
 }
@@ -1364,6 +1374,7 @@ async function loadFeedFollowingUsers() {
 async function setFeedScope(scope) {
   _feedScope = scope;
   _feedAuthor = '';
+  $('feed-sort-note').classList.toggle('hidden', scope !== 'community');
   document.querySelectorAll('[data-feed-scope]').forEach(button => {
     button.classList.toggle('is-active', button.dataset.feedScope === scope);
   });
@@ -1376,6 +1387,7 @@ async function openFeed() {
   showView('feed');
   _feedFilm = { slug: '', title: '' };
   renderFeedFilmChip();
+  $('feed-sort-note').classList.toggle('hidden', _feedScope !== 'community');
   // Serial, not parallel: a burst of six calls at boot is what made a
   // transient read failure look like an empty timeline.
   await setFeedScope(_feedScope);
@@ -1658,6 +1670,23 @@ async function openFollows(username, kind) {
       : '<p class="py-8 text-center text-sm text-on-surface-variant/60">Burada kimse yok.</p>';
   } catch (error) {
     $('follows-list').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Liste açılamadı.')}</p>`;
+  }
+}
+
+async function openProfileFollows(kind) {
+  if (!_account?.username) return;
+  const dialog = $('dialog-profile-follows');
+  $('profile-follows-title').textContent = kind === 'followers' ? 'Takipçilerin' : 'Takip ettiklerin';
+  $('profile-follows-list').innerHTML = '<p class="py-8 text-center text-sm text-on-surface-variant/60">Yükleniyor…</p>';
+  if (!dialog.open) dialog.showModal();
+  try {
+    const data = await apiJSON(`/api/users/${encodeURIComponent(_account.username)}/${kind}`);
+    const users = data.users || [];
+    $('profile-follows-list').innerHTML = users.length
+      ? users.map(user => `<button type="button" data-profile-follow-user="${escapeHTML(user.username)}" class="flex w-full items-center gap-3 rounded-xl border border-outline-variant/20 bg-surface-container/45 p-3 text-left hover:bg-surface-container transition-colors"><span class="shrink-0">${peerAvatar(user)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-sm text-on-surface">${escapeHTML(user.display_name || user.username)}</strong><span class="block truncate text-xs text-on-surface-variant/60">@${escapeHTML(user.username)}</span></span><span class="material-symbols-outlined text-on-surface-variant/50">chevron_right</span></button>`).join('')
+      : '<p class="py-8 text-center text-sm text-on-surface-variant/60">Burada henüz kimse yok.</p>';
+  } catch (error) {
+    $('profile-follows-list').innerHTML = `<p class="rounded-xl bg-error-container/30 px-4 py-3 text-sm text-error">${escapeHTML(error.message || 'Liste açılamadı.')}</p>`;
   }
 }
 
@@ -2476,7 +2505,7 @@ function letterCard(item, payload) {
   const date = new Date(item.created_at).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' });
   const seen = item.read_at ? new Date(item.read_at).toLocaleString('tr-TR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   const attachment = payload?.film ? `<div class="mt-3 rounded-xl border border-tertiary-container/25 bg-tertiary-container/10 p-3 text-sm text-tertiary-container"><span class="mb-2 block text-[10px] font-bold uppercase tracking-wide">Film hediyesi</span>${letterFilmMarkup(payload.film)}</div>` : '';
-  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(author)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
+  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-lg"><div class="flex items-center gap-3">${peerAvatar(author)}<div class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${title}</strong><span class="text-xs text-on-surface-variant">@${username} · ${date}</span></div><span class="rounded-full border border-tertiary-container/25 px-2 py-1 text-[10px] uppercase tracking-wide text-tertiary-container">${incoming ? 'Gelen' : 'Gönderilen'}</span></div><p class="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed text-on-surface-variant">${body}</p>${attachment}<div class="mt-4 flex flex-wrap gap-2"><button data-letter-action="report" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant">Bildir</button><button data-letter-action="block" data-peer-username="${peerUsername}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">Engelle</button>${!incoming ? `<button data-letter-action="delete" data-letter-id="${escapeHTML(item.id)}" class="rounded-lg border border-outline-variant/25 px-3 py-2 text-xs text-on-surface-variant hover:text-error">İki taraftan sil</button>` : ''}${!incoming && seen ? `<span class="self-center text-xs text-primary-container">Görüldü · ${seen}</span>` : ''}</div></article>`;
 }
 
 function letterReplyBar(peer) {
@@ -2515,8 +2544,19 @@ function renderLetterConversation(username = _openLetterThread) {
   const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
   const usernameLabel = escapeHTML(peer.username || '');
   const details = group.items.map(({ item, payload }) => letterCard(item, payload)).join('');
-  panel.innerHTML = `<div class="flex min-h-[420px] flex-col"><header class="flex items-center gap-3 border-b border-outline-variant/20 px-5 py-4"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="block truncate text-xs text-on-surface-variant">@${usernameLabel} · ${group.items.length} mektup</span></span></header><div class="flex-1 space-y-3 overflow-y-auto p-4 md:max-h-[510px]">${details}</div><div class="border-t border-outline-variant/20 p-4">${letterReplyBar(peer)}</div></div>`;
+  panel.innerHTML = `<div class="flex min-h-[420px] flex-col"><header class="flex items-center gap-3 border-b border-outline-variant/20 px-5 py-4"><button type="button" data-letter-mobile-back class="-ml-2 rounded-full p-2 text-on-surface-variant hover:text-on-surface md:hidden" aria-label="Mektuplara dön"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="block truncate text-xs text-on-surface-variant">@${usernameLabel} · ${group.items.length} mektup</span></span></header><div class="flex-1 space-y-3 overflow-y-auto p-4 md:max-h-[510px]">${details}</div><div class="border-t border-outline-variant/20 p-4">${letterReplyBar(peer)}</div></div>`;
   $('letters-list').innerHTML = _letterThreads.map(letterThreadCard).join('');
+  renderLetterWorkspace();
+}
+
+function isCompactLetterWorkspace() {
+  return window.matchMedia('(max-width: 767px)').matches;
+}
+
+function renderLetterWorkspace() {
+  const mobile = isCompactLetterWorkspace();
+  $('letters-sidebar').classList.toggle('hidden', mobile && Boolean(_openLetterThread));
+  $('letters-conversation').classList.toggle('hidden', mobile && !_openLetterThread);
 }
 
 async function loadLetters() {
@@ -2576,12 +2616,13 @@ async function loadLetters() {
     });
     _letterThreads = sortedThreads;
     if (!_openLetterThread || !sortedThreads.some(thread => thread.peer?.username === _openLetterThread)) {
-      _openLetterThread = sortedThreads[0]?.peer?.username || '';
+      _openLetterThread = isCompactLetterWorkspace() ? '' : (sortedThreads[0]?.peer?.username || '');
     }
     $('letters-list').innerHTML = sortedThreads.length
       ? sortedThreads.map(letterThreadCard).join('')
       : '<div class="p-5 text-center text-sm text-on-surface-variant">Henüz mektubun yok.</div>';
     renderLetterConversation();
+    renderLetterWorkspace();
     if (unread.length) refreshBlendBadge();
   } catch (error) {
     $('letters-list').innerHTML = '';
@@ -2873,6 +2914,7 @@ async function loadBlendInbox(show = true) {
 // Gelen kutusu artık yalnız mektuplar; Blend tarafı kendi sekmesinde.
 async function openLetterInbox() {
   showView('inbox');
+  if (isCompactLetterWorkspace()) _openLetterThread = '';
   await loadLetters();
 }
 
@@ -2916,6 +2958,12 @@ async function routeToExistingBlend(data) {
 }
 
 async function handleBlendInboxAction(event) {
+  if (event.target.closest('[data-letter-mobile-back]')) {
+    _openLetterThread = '';
+    renderLetterConversation();
+    renderLetterWorkspace();
+    return;
+  }
   const thread = event.target.closest('[data-letter-thread]');
   if (thread) {
     renderLetterConversation(thread.dataset.letterThread);
@@ -2931,6 +2979,17 @@ async function handleBlendInboxAction(event) {
   if (letterButton) {
     const action = letterButton.dataset.letterAction;
     const username = letterButton.dataset.peerUsername;
+    if (action === 'delete') {
+      const letterId = letterButton.dataset.letterId;
+      if (!letterId || !window.confirm('Bu gönderilmiş mektup iki tarafın konuşmasından da silinsin mi?')) return;
+      letterButton.disabled = true;
+      try {
+        await apiJSON(`/api/letters/${encodeURIComponent(letterId)}`, { method: 'DELETE', headers: csrfHeaders() });
+        letterMessage('notice', 'Mektup iki tarafın konuşmasından kaldırıldı.');
+        await loadLetters();
+      } catch (error) { letterMessage('error', error.message || 'Mektup silinemedi.'); }
+      return;
+    }
     if (!username) return;
     if (action === 'block') {
       if (!window.confirm(`@${username} engellensin mi? Aranızdaki mektuplar iki taraftan da silinir.`)) return;
@@ -4710,13 +4769,22 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-blocked-users')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
 });
 $('profile-my-notes').addEventListener('click', () => {
   showView('profile');
+});
+document.querySelectorAll('[data-profile-follows]').forEach(button => {
+  button.addEventListener('click', () => openProfileFollows(button.dataset.profileFollows));
+});
+$('profile-follows-list').addEventListener('click', event => {
+  const user = event.target.closest('[data-profile-follow-user]');
+  if (!user) return;
+  $('dialog-profile-follows').close();
+  openUserPage(user.dataset.profileFollowUser, { from: 'profile' });
 });
 $('profile-invite-friend').addEventListener('click', () => openShareSheet());
 $('profile-sinefil-area').addEventListener('click', () => {
@@ -4782,9 +4850,15 @@ $('feed-follow-filter').addEventListener('click', event => {
   renderFeedFollowingFilter();
   loadFeed();
 });
-function openFilmPicker() {
+function openFilmPicker(mode = 'compose') {
+  _feedFilmPickerMode = mode;
   $('feed-film-search').value = '';
   $('feed-film-results').innerHTML = '';
+  $('feed-film-dialog-kicker').textContent = mode === 'filter' ? 'Topluluk notları' : 'Not yazmadan önce';
+  $('feed-film-dialog-title').textContent = mode === 'filter' ? 'Bir filmde ara' : 'Hangi film?';
+  $('feed-film-search').placeholder = mode === 'filter'
+    ? 'Toplulukta notu olan filmlerde ara'
+    : 'İzlediğin filmlerde ara';
   $('dialog-feed-film').showModal();
   setTimeout(() => $('feed-film-search').focus(), 50);
 }
@@ -4805,10 +4879,21 @@ $('feed-film-results').addEventListener('click', event => {
   const films = $('feed-film-results')._feedFilms || [];
   const film = films[Number(button.dataset.feedFilmIndex)];
   if (!film) return;
-  _feedPickedFilm = film;
-  renderComposerFilm();
+  if (_feedFilmPickerMode === 'filter') {
+    _feedScope = 'community';
+    _feedAuthor = '';
+    document.querySelectorAll('[data-feed-scope]').forEach(tab => {
+      tab.classList.toggle('is-active', tab.dataset.feedScope === 'community');
+    });
+    renderFeedFollowingFilter();
+    $('feed-sort-note').classList.remove('hidden');
+    openFilmFeed(film.slug, film.title);
+  } else {
+    _feedPickedFilm = film;
+    renderComposerFilm();
+  }
   $('dialog-feed-film').close();
-  $('feed-compose-text').focus();
+  if (_feedFilmPickerMode !== 'filter') $('feed-compose-text').focus();
 });
 
 function handleFeedCardClick(event) {
@@ -4870,7 +4955,9 @@ $('feed-trending').addEventListener('click', event => {
 });
 $('feed-film-filter').addEventListener('click', event => {
   if (event.target.closest('#feed-film-clear')) openFilmFeed('', '');
+  if (event.target.closest('#feed-film-change')) openFilmPicker('filter');
 });
+$('btn-feed-film-filter').addEventListener('click', () => openFilmPicker('filter'));
 
 document.querySelectorAll('[data-nav]').forEach(button => {
   button.addEventListener('click', () => goNav(button.dataset.nav));
@@ -5030,6 +5117,9 @@ $('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadLetters());
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
+window.addEventListener('resize', () => {
+  if (!$('view-inbox').classList.contains('hidden')) renderLetterWorkspace();
+});
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
 if ($('btn-letter-receiving')) $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
 

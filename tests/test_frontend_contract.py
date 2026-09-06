@@ -56,7 +56,7 @@ def test_logo_button_accessible_name_contains_its_visible_label():
     html = (ROOT / "static" / "index.html").read_text()
 
     assert 'id="btn-home"' in html
-    assert 'aria-label="MOVIEBOXD · AI ana sayfa"' in html
+    assert 'aria-label="Movieboxd ana sayfa"' in html
 
 
 def test_three_png_share_modules_are_wired_to_native_share_and_download():
@@ -321,6 +321,43 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "mobilde ve webde" in html
 
 
+def test_letter_workspace_is_a_mobile_thread_view_and_sent_letters_can_be_recalled():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'id="letters-sidebar"' in html
+    assert 'id="letters-workspace"' in html
+    assert "function renderLetterWorkspace" in app_js
+    assert "data-letter-mobile-back" in app_js
+    assert 'data-letter-action="delete"' in app_js
+    assert "Bu gönderilmiş mektup iki tarafın konuşmasından da silinsin mi?" in app_js
+    assert "`/api/letters/${encodeURIComponent(letterId)}`" in app_js
+
+
+def test_profile_follow_lists_are_dialogs_and_stay_out_of_the_share_card():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    share_js = (ROOT / "static" / "js" / "share-cards.js").read_text()
+
+    assert 'id="dialog-profile-follows"' in html
+    assert 'data-profile-follows="followers"' in html
+    assert 'data-profile-follows="following"' in html
+    assert "function openProfileFollows" in app_js
+    assert "profile-follows-list" in app_js
+    assert "profile-follows-list" not in share_js
+
+
+def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert 'id="btn-feed-film-filter"' in html
+    assert 'id="feed-sort-note"' in html
+    assert "_feedFilmPickerMode === 'filter'" in app_js
+    assert '`/api/feed/films?q=${encodeURIComponent(query)}`' in app_js
+    assert "sort = _feedScope === 'community' ? 'engagement' : 'recent'" in app_js
+
+
 def test_feed_has_own_notes_and_a_following_person_filter_without_mobile_trends():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -403,9 +440,9 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "7cd85f66e4132e3f2cbda17885e3acbc679cbc06c323321e81cb36048d746d71",
-        "static/app.css": "06879600eaba621084a9a907a2be46fa8aea4439e4b896530b6c6e9dd447b26f",
-        "static/js/share-cards.js": "b71b90a0754dad295f7a5de587cacf660dc63b898666de51139ab8f2d45ce140",
+        "static/js/app.js": "40c43915367f4e71ef6bf1691b7ed0721c808db4dbc455854eb12ed2b5214736",
+        "static/app.css": "fb1789b07fddef80aab87144048042caab0def40dedea395a251810f76509c53",
+        "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -436,11 +473,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.65"
+    css_version = "v=20260907.66"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.67" in html
+    assert "/static/js/app.js?v=20260907.68" in html
     assert app_js.count(f"?{dependency_version}") == 5
-    assert "./share-cards.js?v=20260906.39" in app_js
+    assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -513,7 +550,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260906.39')" in imports
+    assert "import('./share-cards.js?v=20260907.40')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 

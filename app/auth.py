@@ -841,6 +841,18 @@ class AuthService:
             "created_at": row["created_at"], "read_at": row.get("read_at"),
         } for row in rows]
 
+    def delete_sent_letter(self, account: Account, letter_id: str) -> bool:
+        """Recall one sent letter for both participants.
+
+        A letter is one shared row, not a per-device copy. Deleting that row
+        keeps the two inboxes in sync while preventing recipients from
+        removing messages they did not send.
+        """
+        removed = self._service_client().table("cinephile_letters").delete().eq(
+            "id", letter_id
+        ).eq("sender_user_id", account.id).execute().data or []
+        return bool(removed)
+
     def purge_legacy_letters(self, account: Account) -> int:
         """Delete only unreadable device-key rows involving this account.
 
@@ -1499,26 +1511,43 @@ class AuthService:
         return out
 
     @staticmethod
-    def _cursor_parts(cursor: str) -> tuple[str, str] | None:
+    def _cursor_parts(cursor: str, *, sort: str = "recent") -> tuple | None:
         """Validate a composite keyset cursor before it reaches PostgREST."""
         if not cursor:
             return None
         try:
-            created_at, post_id = cursor.rsplit("|", 1)
+            if sort == "engagement":
+                likes, replies, created_at, post_id = cursor.split("|", 3)
+                if int(likes) < 0 or int(replies) < 0:
+                    raise ValueError
+                values = (int(likes), int(replies), created_at, post_id)
+            else:
+                created_at, post_id = cursor.rsplit("|", 1)
+                values = (created_at, post_id)
             datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             UUID(post_id)
         except (TypeError, ValueError):
             raise BlendServiceError("invalid_cursor") from None
-        return created_at, post_id
+        return values
 
     @staticmethod
-    def _post_cursor(row: dict) -> str:
+    def _post_cursor(row: dict, *, sort: str = "recent") -> str:
+        if sort == "engagement":
+            return f"{int(row.get('like_count') or 0)}|{int(row.get('reply_count') or 0)}|{row['created_at']}|{row['id']}"
         return f"{row['created_at']}|{row['id']}"
 
-    def _apply_post_cursor(self, query, cursor: str):
-        parsed = self._cursor_parts(cursor)
+    def _apply_post_cursor(self, query, cursor: str, *, sort: str = "recent"):
+        parsed = self._cursor_parts(cursor, sort=sort)
         if not parsed:
             return query
+        if sort == "engagement":
+            likes, replies, created_at, post_id = parsed
+            return query.or_(
+                f"like_count.lt.{likes},"
+                f"and(like_count.eq.{likes},reply_count.lt.{replies}),"
+                f"and(like_count.eq.{likes},reply_count.eq.{replies},created_at.lt.{created_at}),"
+                f"and(like_count.eq.{likes},reply_count.eq.{replies},created_at.eq.{created_at},id.lt.{post_id})"
+            )
         created_at, post_id = parsed
         # created_at alone loses or repeats notes written in the same tick.
         return query.or_(
@@ -1560,8 +1589,17 @@ class AuthService:
     def list_feed(
         self, account: Account, *, scope: str = "community",
         cursor: str = "", limit: int = 20, film_slug: str = "", author_username: str = "",
+        sort: str = "recent",
     ) -> dict:
         service = self._service_client()
+        engagement_sorted = scope == "community" and sort == "engagement"
+        followed: set[int] = set()
+        if engagement_sorted:
+            followed = {
+                int(row["followee_id"]) for row in service.table("follows").select("followee_id").eq(
+                    "follower_id", account.id
+                ).eq("status", "accepted").execute().data or []
+            }
         following: list[int] | None = None
         if not film_slug and scope == "following":
             following = [row["followee_id"] for row in (
@@ -1595,8 +1633,15 @@ class AuthService:
         for _ in range(6):
             query = service.table("posts").select(self._POST_COLS).is_(
                 "deleted_at", "null"
-            ).is_("reply_to", "null").order("created_at", desc=True).order("id", desc=True).limit(60)
-            query = self._apply_post_cursor(query, scanned_cursor)
+            ).is_("reply_to", "null")
+            if engagement_sorted:
+                query = query.order("like_count", desc=True).order("reply_count", desc=True).order("created_at", desc=True).order("id", desc=True)
+            else:
+                query = query.order("created_at", desc=True).order("id", desc=True)
+            query = query.limit(60)
+            query = self._apply_post_cursor(
+                query, scanned_cursor, sort="engagement" if engagement_sorted else "recent"
+            )
             if film_slug:
                 query = query.eq("film_slug", film_slug)
             elif following is not None:
@@ -1611,17 +1656,63 @@ class AuthService:
                 exhausted = True
                 break
             visible.extend(self._visible_rows(account, rows))
+            if engagement_sorted:
+                # Within equally engaged notes, put the people the viewer chose
+                # to follow first. The database order remains deterministic for
+                # all other ties and therefore keeps the keyset cursor stable.
+                visible.sort(key=lambda row: (
+                    -int(row.get("like_count") or 0),
+                    -int(row.get("reply_count") or 0),
+                    0 if int(row["author_id"]) in followed else 1,
+                ))
             if len(visible) > limit:
                 break
             if len(rows) < 60:
                 exhausted = True
                 break
-            scanned_cursor = self._post_cursor(rows[-1])
+            scanned_cursor = self._post_cursor(
+                rows[-1], sort="engagement" if engagement_sorted else "recent"
+            )
         page = visible[:limit]
         return {
             "posts": self._hydrate_posts(page, account.id),
-            "next_cursor": self._post_cursor(page[-1]) if page and (len(visible) > limit or not exhausted) else "",
+            "next_cursor": self._post_cursor(
+                page[-1], sort="engagement" if engagement_sorted else "recent"
+            ) if page and (len(visible) > limit or not exhausted) else "",
         }
+
+    def search_feed_films(self, account: Account, query_text: str, limit: int = 16) -> list[dict]:
+        """Find films that actually have visible community notes."""
+        query_text = str(query_text or "").strip()
+        if len(query_text) < 2:
+            return []
+        service = self._service_client()
+        try:
+            query = service.table("posts").select(
+                "author_id,film_slug,film_title,film_year,created_at"
+            ).is_("deleted_at", "null").is_("reply_to", "null").not_.is_(
+                "film_slug", "null"
+            ).ilike("film_title", f"%{query_text}%").order("created_at", desc=True).limit(120)
+            rows = self._visible_rows(account, query.execute().data or [])
+        except Exception:
+            return []
+        slugs: list[str] = []
+        by_slug: dict[str, dict] = {}
+        for row in rows:
+            slug = str(row.get("film_slug") or "")
+            if slug and slug not in by_slug:
+                by_slug[slug] = row
+                slugs.append(slug)
+            if len(slugs) >= limit:
+                break
+        posters = self.get_film_assets(slugs)
+        return [{
+            "slug": slug,
+            "title": (posters.get(slug) or {}).get("title") or row.get("film_title") or slug,
+            "year": (posters.get(slug) or {}).get("release_year") or row.get("film_year"),
+            "poster_url": (posters.get(slug) or {}).get("poster_url") or "",
+            "director": (posters.get(slug) or {}).get("director") or "",
+        } for slug, row in by_slug.items()]
 
     def get_post_thread(self, account: Account, post_id: str) -> dict | None:
         service = self._service_client()

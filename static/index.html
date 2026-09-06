@@ -3,25 +3,25 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MOVIEBOXD · AI</title>
+<title>Movieboxd</title>
 <meta name="description" content="Watchlist'indeki en uygun filmi bul. Yapay zeka, izleme geçmişini analiz ederek bu akşam için mükemmel filmi seçiyor."/>
 <!-- Open Graph -->
 <meta property="og:type"        content="website"/>
-<meta property="og:title"       content="MOVIEBOXD · AI"/>
+<meta property="og:title"       content="Movieboxd"/>
 <meta property="og:description" content="Watchlist'indeki en uygun filmi bul. Yapay zeka, izleme geçmişini analiz ederek bu akşam için mükemmel filmi seçiyor."/>
-<meta property="og:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
+<meta property="og:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v4.png"/>
 <meta property="og:image:type"  content="image/png"/>
 <meta property="og:image:width" content="1200"/>
 <meta property="og:image:height" content="630"/>
 <meta property="og:url"         content="https://movie-boxd.onrender.com"/>
 <!-- Twitter / X -->
 <meta name="twitter:card"        content="summary_large_image"/>
-<meta name="twitter:title"       content="MOVIEBOXD · AI"/>
+<meta name="twitter:title"       content="Movieboxd"/>
 <meta name="twitter:description" content="Watchlist'indeki en uygun filmi bul. Yapay zeka, izleme geçmişini analiz ederek bu akşam için mükemmel filmi seçiyor."/>
-<meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
+<meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v4.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.65"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.66"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -30,10 +30,10 @@
   <button id="nav-logo" type="button" class="mb-4 px-3 py-2 text-left font-headline-md text-headline-md tracking-tighter text-gradient-green">MOVIEBOXD</button>
   <div class="flex flex-col gap-1">
     <button type="button" data-nav="feed" class="nav-item"><span class="material-symbols-outlined">home</span>Akış</button>
-    <button type="button" data-nav-action="watch" class="nav-item"><span class="material-symbols-outlined">auto_awesome</span>Ne izlesem?</button>
     <button type="button" data-nav="sinefil" class="nav-item"><span class="material-symbols-outlined">explore</span>Sinefil Sineması</button>
     <button type="button" data-nav="notifications" class="nav-item"><span class="material-symbols-outlined">notifications</span>Bildirimler<span id="nav-badge-notifications" class="hidden ml-auto rounded-full bg-secondary-container px-2 text-[11px] font-bold leading-5 text-on-secondary-container"></span></button>
     <button type="button" data-nav="inbox" class="nav-item"><span class="material-symbols-outlined">mail</span>Mektuplar<span id="nav-badge-inbox" class="hidden ml-auto rounded-full bg-secondary-container px-2 text-[11px] font-bold leading-5 text-on-secondary-container"></span></button>
+    <button type="button" data-nav-action="watch" class="nav-item"><span class="material-symbols-outlined">auto_awesome</span>Ne izlesem?</button>
     <button type="button" data-nav="blends" class="nav-item"><span class="material-symbols-outlined">join_inner</span>Blend</button>
     <button type="button" data-nav="profile" class="nav-item"><span class="material-symbols-outlined">person</span>Profil</button>
   </div>
@@ -82,8 +82,8 @@
     <button id="header-how-it-works" class="hidden absolute left-margin-mobile md:left-margin-desktop font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors text-left" type="button">
       <span class="hidden sm:inline">Program </span>nasıl çalışır?
     </button>
-    <button id="btn-home" class="font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="MOVIEBOXD · AI ana sayfa">
-      MOVIEBOXD · AI
+    <button id="btn-home" class="font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="Movieboxd ana sayfa">
+      MOVIEBOXD
     </button>
     <button id="btn-open-feed" class="hidden absolute right-margin-mobile md:right-margin-desktop items-center gap-1.5 rounded-full border border-primary-container/30 bg-primary-container/10 px-3 py-1.5 font-label-md text-[11px] sm:text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
       <span class="material-symbols-outlined text-[16px]">forum</span>Akış
@@ -100,7 +100,7 @@
   <div class="glass-panel rounded-xl p-6 md:p-8 shadow-2xl">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Movieboxd · AI</span>
+        <span class="font-label-sm text-label-sm text-primary-container uppercase tracking-wider">Movieboxd</span>
         <h2 class="font-headline-md text-headline-md text-on-surface mt-2">Program nasıl çalışır?</h2>
       </div>
       <button type="button" data-close-dialog="dialog-how-it-works" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
@@ -222,6 +222,16 @@
   </div>
 </dialog>
 
+<dialog id="dialog-profile-follows" class="auth-info-dialog">
+  <div class="glass-panel max-h-[82vh] w-full max-w-[560px] overflow-y-auto rounded-2xl p-6 md:p-7 shadow-2xl">
+    <div class="flex items-start justify-between gap-4">
+      <div><span class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Profilin</span><h2 id="profile-follows-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Takipçiler</h2></div>
+      <button type="button" data-close-dialog="dialog-profile-follows" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
+    </div>
+    <div id="profile-follows-list" class="mt-5 flex flex-col gap-2"></div>
+  </div>
+</dialog>
+
 <dialog id="dialog-sinefil-profile" class="auth-info-dialog sinefil-profile-dialog">
   <div class="glass-panel max-h-[88vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl">
     <div class="flex items-start justify-between gap-4"><div><span class="font-label-sm text-label-sm uppercase tracking-wider text-tertiary-container">Sinefil profili</span><h2 id="sinefil-profile-title" class="mt-2 font-headline-md text-headline-md text-on-surface"></h2><p id="sinefil-profile-username" class="mt-1 text-sm text-on-surface-variant"></p></div><button type="button" data-close-dialog="dialog-sinefil-profile" class="text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button></div>
@@ -238,8 +248,8 @@
   <div class="glass-panel rounded-2xl p-6 shadow-2xl">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <span class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Not yazmadan önce</span>
-        <h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Hangi film?</h2>
+        <span id="feed-film-dialog-kicker" class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Not yazmadan önce</span>
+        <h2 id="feed-film-dialog-title" class="mt-2 font-headline-md text-headline-md text-on-surface">Hangi film?</h2>
       </div>
       <button type="button" data-close-dialog="dialog-feed-film" class="shrink-0 text-on-surface-variant hover:text-primary" aria-label="Kapat"><span class="material-symbols-outlined">close</span></button>
     </div>
@@ -436,6 +446,11 @@
                 <span class="font-label-sm text-[10px] uppercase tracking-wide text-on-surface-variant">Letterboxd bağlı</span>
               </div>
             </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-2 border-t border-outline-variant/15 pt-4">
+            <button type="button" data-profile-follows="followers" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="block text-sm text-on-surface">Takipçiler</strong><span class="mt-0.5 block text-xs text-on-surface-variant">Seni takip edenler</span></button>
+            <button type="button" data-profile-follows="following" class="rounded-xl border border-outline-variant/25 bg-surface-container/45 px-3 py-2.5 text-left transition-colors hover:border-primary-container/45 hover:bg-primary-container/10"><strong class="block text-sm text-on-surface">Takip</strong><span class="mt-0.5 block text-xs text-on-surface-variant">Takip ettiklerin</span></button>
           </div>
 
           <div class="mt-4 border-t border-outline-variant/15 pt-3">
@@ -811,7 +826,7 @@
       <div class="flex items-center gap-2">
         <span class="material-symbols-outlined text-primary text-[32px]" style="font-variation-settings:'FILL' 1">movie_filter</span>
         <h1 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface tracking-tighter">
-          MOVIEBOXD <span class="text-primary-container">· AI</span>
+          MOVIEBOXD
         </h1>
       </div>
     </div>
@@ -1144,7 +1159,8 @@
   <div class="sticky top-0 z-30 border-b border-outline-variant/25 bg-surface/85 backdrop-blur-xl">
     <div class="flex items-center justify-between gap-3 px-4 py-4">
       <h1 class="font-headline-md text-headline-md text-on-surface">Akış</h1>
-      <div class="flex shrink-0 items-center lg:hidden">
+      <div class="flex shrink-0 items-center gap-1">
+        <button id="btn-feed-film-filter" type="button" title="Film notlarında ara" class="rounded-full p-2 text-on-surface-variant hover:text-primary-container transition-colors"><span class="material-symbols-outlined text-[22px]">movie_filter</span></button>
         <button id="btn-feed-mine" type="button" title="Profilim" class="rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors">
           <span class="material-symbols-outlined text-[22px]">person</span>
         </button>
@@ -1188,6 +1204,7 @@
 
   <div id="feed-trending" class="hidden px-4 pt-4 lg:block xl:hidden"></div>
   <p id="feed-film-filter" class="hidden mx-4 mt-4 flex items-center rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2 text-sm"></p>
+  <p id="feed-sort-note" class="mx-4 mt-3 text-xs text-on-surface-variant/60">Topluluk notları etkileşime göre sıralanır; eşit notlarda takip ettiklerin öne çıkar.</p>
 
   <div id="feed-list" class="flex flex-col"></div>
   <button id="btn-feed-more" type="button" class="hidden w-full border-t border-outline-variant/25 py-4 text-sm text-primary-container hover:bg-surface-container/40 transition-colors">Daha fazla göster</button>
@@ -1243,8 +1260,8 @@
     <div id="inbox-letters-panel" class="flex flex-col gap-gutter">
       <p id="letters-error" class="hidden rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
       <p id="letters-notice" class="hidden rounded-xl border border-primary-container/25 bg-primary-container/10 px-4 py-3 text-sm text-primary-container"></p>
-      <section class="grid min-h-[520px] overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.55fr)]">
-        <aside class="border-b border-outline-variant/20 md:border-b-0 md:border-r">
+      <section id="letters-workspace" class="grid min-h-[520px] overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.55fr)]">
+        <aside id="letters-sidebar" class="border-b border-outline-variant/20 md:border-b-0 md:border-r">
           <div class="flex items-center justify-between border-b border-outline-variant/20 px-4 py-4"><h2 class="font-headline-md text-[18px] text-on-surface">Mektupların</h2><button id="btn-letter-help" type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-outline-variant/30 text-[13px] font-bold text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
           <div id="letters-list" class="max-h-[42vh] overflow-y-auto p-2 md:max-h-[620px]"></div>
         </aside>
@@ -1318,7 +1335,7 @@
 <!-- ═══════════════════════════  FOOTER  ═══════════════════════════ -->
 <footer id="main-footer" class="safe-footer hidden w-full pt-stack-lg bg-surface-container-lowest border-t border-outline-variant/20">
   <div class="flex flex-col md:flex-row justify-between items-center px-margin-mobile md:px-margin-desktop gap-stack-md w-full max-w-[1200px] mx-auto text-center md:text-left">
-    <div class="font-label-md text-label-md text-on-surface overflow-safe">© 2025 Movieboxd AI · Yapay Zeka Film Motoru</div>
+    <div class="font-label-md text-label-md text-on-surface overflow-safe">© 2025 Movieboxd · Film Motoru</div>
     <div class="safe-footer__links flex items-center gap-gutter font-label-md text-label-md">
       <button id="btn-delete-data" class="text-on-surface-variant hover:text-error transition-colors cursor-pointer">Verimi Sil</button>
       <a class="text-on-surface-variant hover:text-primary transition-colors cursor-pointer" href="#">Kullanım Koşulları</a>
@@ -1327,6 +1344,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.67"></script>
+<script type="module" src="/static/js/app.js?v=20260907.68"></script>
 </body>
 </html>

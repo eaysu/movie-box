@@ -174,6 +174,28 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn("recipient_user_id.eq.{account.id}", cleanup)
         self.assertIn("row.get(\"ciphertext\")", cleanup)
 
+    def test_sent_letter_recall_deletes_the_one_shared_row_for_both_inboxes(self):
+        route = self.main.split('@app.delete("/api/letters/{letter_id}")', 1)[1].split("@app.", 1)[0]
+        recall = self.auth.split("def delete_sent_letter", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn("_require_csrf(request)", route)
+        self.assertIn("sender_user_id", recall)
+        self.assertIn(".delete()", recall)
+        self.assertNotIn("recipient_user_id", recall)
+
+    def test_community_feed_uses_engagement_keyset_and_visible_film_search(self):
+        feed = self.auth.split("def list_feed", 1)[1].split("\n    def ", 1)[0]
+        films = self.auth.split("def search_feed_films", 1)[1].split("\n    def ", 1)[0]
+        route = self.main.split('@app.get("/api/feed")', 1)[1].split("@app.", 1)[0]
+        film_route = self.main.split('@app.get("/api/feed/films")', 1)[1].split("@app.", 1)[0]
+
+        self.assertIn('sort == "engagement"', feed)
+        self.assertIn('order("like_count", desc=True)', feed)
+        self.assertIn('order("reply_count", desc=True)', feed)
+        self.assertIn("_visible_rows(account, query.execute().data or [])", films)
+        self.assertIn('feed_sort = "engagement"', route)
+        self.assertIn("search_feed_films", film_route)
+
     def test_follow_requests_and_post_reports_have_dedicated_write_paths(self):
         self.assertIn("def decide_follow_request", self.auth)
         self.assertIn("def report_post", self.auth)

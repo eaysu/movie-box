@@ -119,7 +119,7 @@ function drawBrand(ctx, width = WIDTH) {
   ctx.fillStyle = '#e0e2e6';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText('MOVIEBOXD · AI', 150, 78);
+  ctx.fillText('MOVIEBOXD', 150, 78);
   font(ctx, 20, 600);
   ctx.fillStyle = 'rgba(224,226,230,.45)';
   ctx.textAlign = 'right';

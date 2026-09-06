@@ -83,7 +83,7 @@ async def _lifespan(_app):
     await close_tmdb_client()
 
 
-app = FastAPI(title="Letterboxd AI Recommender", version="0.4.0", lifespan=_lifespan)
+app = FastAPI(title="Movieboxd", version="0.4.0", lifespan=_lifespan)
 log = logging.getLogger("moviebox")
 
 _allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
@@ -525,6 +525,7 @@ def _raise_blend_http(exc: BlendServiceError) -> None:
         "letter_blocked": (403, "Bu kullanıcıyla mektuplaşamazsın."),
         "invalid_letter_body": (422, "Mektup 1–600 karakter arasında olmalı."),
         "letter_send_failed": (503, "Mektup şu an gönderilemedi. Lütfen tekrar dene."),
+        "letter_not_found": (404, "Bu gönderilmiş mektup bulunamadı."),
     }
     status_code, detail = errors.get(code, (400, "Blend işlemi tamamlanamadı."))
     raise HTTPException(
@@ -1750,6 +1751,19 @@ async def mark_letter_read(letter_id: str, request: Request) -> dict:
     if marked:
         await _record_activity_event(_auth_service(), account, "letter_read", {})
     return {"ok": True, "read": marked}
+
+
+@app.delete("/api/letters/{letter_id}")
+async def delete_sent_letter(letter_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    if not re.fullmatch(r"[0-9a-fA-F-]{36}", letter_id):
+        raise HTTPException(status_code=422, detail="Geçersiz mektup kimliği.")
+    deleted = await asyncio.to_thread(_auth_service().delete_sent_letter, account, letter_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Bu gönderilmiş mektup bulunamadı.")
+    await _record_activity_event(_auth_service(), account, "letter_deleted", {})
+    return {"ok": True, "deleted": True}
 
 
 @app.get("/api/sinefil-alani")
@@ -3234,15 +3248,16 @@ def _raise_post_http(exc: BlendServiceError) -> None:
 
 @app.get("/api/feed")
 async def read_feed(
-    request: Request, scope: str = "community", cursor: str = "", film: str = "", author: str = "",
+    request: Request, scope: str = "community", cursor: str = "", film: str = "", author: str = "", sort: str = "",
 ) -> dict:
     account = await _require_account(request)
     service = _auth_service()
     scope = scope if scope in ("community", "following", "mine") else "community"
     try:
+        feed_sort = "engagement" if scope == "community" and sort != "recent" else "recent"
         feed = await asyncio.to_thread(
             service.list_feed, account, scope=scope, cursor=cursor, limit=20,
-            film_slug=film.strip()[:120], author_username=author.strip()[:80],
+            film_slug=film.strip()[:120], author_username=author.strip()[:80], sort=feed_sort,
         )
     except BlendServiceError as exc:
         _raise_post_http(exc)
@@ -3256,10 +3271,18 @@ async def read_feed(
         "scope": scope,
         "film": film.strip()[:120],
         "author": author.strip()[:80],
+        "sort": feed_sort,
         "posts": feed["posts"],
         # Composite keyset: timestamp ties never duplicate or hide a note.
         "next_cursor": feed["next_cursor"],
     }
+
+
+@app.get("/api/feed/films")
+async def search_feed_films(request: Request, q: str = "") -> dict:
+    account = await _require_account(request)
+    films = await asyncio.to_thread(_auth_service().search_feed_films, account, q.strip()[:80])
+    return {"films": films}
 
 
 @app.post("/api/posts")

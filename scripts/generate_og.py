@@ -1,4 +1,4 @@
-"""OG image üretici — static/og-image-v3.png oluşturur.
+"""OG image üretici — static/og-image-v4.png oluşturur.
 Çalıştır: python scripts/generate_og.py
 """
 from pathlib import Path
@@ -58,7 +58,7 @@ for side_x in (42, 1143):
         draw.rounded_rectangle([side_x + 2, y, side_x + 13, y + 20], radius=2, fill=BG)
 
 # ── Badge ─────────────────────────────────────────────────────────────────
-badge = "YAPAY ZEKA DESTEKLİ"
+badge = "SİNEFİL PROFİLİ"
 bb = draw.textbbox((0, 0), badge, font=f_small)
 bw, bh = bb[2] - bb[0] + 44, 30
 bx, by = W // 2 - bw // 2, 158
@@ -66,10 +66,10 @@ draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=15, fill=SURFACE, outl
 draw.text((W // 2, by + bh // 2), badge, font=f_small, fill=MUTED, anchor="mm")
 
 # ── Title ─────────────────────────────────────────────────────────────────
-draw.text((W // 2, 278), "LETTERBOXD", font=f_title, fill=TEXT, anchor="mm")
+draw.text((W // 2, 278), "MOVIEBOXD", font=f_title, fill=TEXT, anchor="mm")
 
-# ── AI accent ─────────────────────────────────────────────────────────────
-draw.text((W // 2, 348), "· AI ·", font=f_accent, fill=GREEN, anchor="mm")
+# ── Accent ────────────────────────────────────────────────────────────────
+draw.text((W // 2, 348), "Film zevkini keşfet", font=f_accent, fill=GREEN, anchor="mm")
 
 # ── Divider ───────────────────────────────────────────────────────────────
 draw.line([(280, 394), (920, 394)], fill=OUTLINE, width=1)
@@ -87,6 +87,6 @@ draw.ellipse([cx + 52  - r, 504 - r, cx + 52  + r, 504 + r], fill=BLUE)
 # ── URL ───────────────────────────────────────────────────────────────────
 draw.text((W // 2, 566), "movie-boxd.onrender.com", font=f_url, fill=OUTLINE, anchor="mm")
 
-out = Path(__file__).parent.parent / "static" / "og-image-v3.png"
+out = Path(__file__).parent.parent / "static" / "og-image-v4.png"
 img.save(out, "PNG", optimize=True)
 print(f"✓ Kaydedildi: {out}  ({out.stat().st_size // 1024} KB)")
