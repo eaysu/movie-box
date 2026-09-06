@@ -299,7 +299,7 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "cinephile_letters" in schema
     assert "send_cinephile_letter" in schema
     assert 'id="profile-letter-toggle"' in html
-    assert "600 karakter kaldı" in html
+    assert 'id="letters-conversation"' in html
     assert "/api/letters/send-status" in app_js
     assert "recipient_username" in app_js
     assert "recipient_user_id = v_recipient_user_id" in schema
@@ -382,8 +382,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "fff104819e559896ce18122485874a49edf4397757b6ff85ab623d1f9a83def7",
-        "static/app.css": "caab837420e68f9ee629a1906e82bc8680c4315f87815240d75e44b8d2592304",
+        "static/js/app.js": "c1d2958778f5f800c08a4aaeae42a6c91bde5cf1ef1295a85d1cc88ef277559f",
+        "static/app.css": "de5b57dbb4510e21999d7be5e60318831e32076b4e61f0fb8d801784799f2f50",
         "static/js/share-cards.js": "b71b90a0754dad295f7a5de587cacf660dc63b898666de51139ab8f2d45ce140",
     }
     for path, digest in expected.items():
@@ -415,11 +415,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.63"
+    css_version = "v=20260906.64"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.65" in html
+    assert "/static/js/app.js?v=20260906.66" in html
     assert app_js.count(f"?{dependency_version}") == 5
-    assert "./share-cards.js?v=20260906.38" in app_js
+    assert "./share-cards.js?v=20260906.39" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -428,14 +428,13 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     assert f"criterion-closet-bg.jpg?{dependency_version}" in source_css
 
 
-def test_editorial_body_font_is_loaded_without_changing_app_navigation_type():
+def test_body_font_uses_the_original_geist_app_stack():
     html = (ROOT / "static" / "index.html").read_text()
     config = (ROOT / "tailwind.config.cjs").read_text()
 
-    assert "family=Lora" in html
-    assert "subset=latin-ext" in html
-    assert "'body-md': ['Lora', 'Georgia', 'serif']" in config
-    assert "'body-lg': ['Lora', 'Georgia', 'serif']" in config
+    assert "family=Lora" not in html
+    assert "'body-md': ['Geist']" in config
+    assert "'body-lg': ['Geist']" in config
     assert "'label-md': ['Space Grotesk', 'Geist']" in config
 
 
@@ -493,7 +492,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260906.38')" in imports
+    assert "import('./share-cards.js?v=20260906.39')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 

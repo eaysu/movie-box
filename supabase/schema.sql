@@ -1567,7 +1567,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   author_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   kind          TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note', 'log')),
-  body          TEXT NOT NULL DEFAULT '' CHECK (char_length(body) <= 280),
+  body          TEXT NOT NULL DEFAULT '' CHECK (char_length(body) <= 420),
   film_slug     TEXT,
   tmdb_id       INTEGER,
   film_title    TEXT NOT NULL DEFAULT '',
@@ -1582,6 +1582,11 @@ CREATE TABLE IF NOT EXISTS public.posts (
   CHECK ((reply_to IS NULL AND film_slug IS NOT NULL) OR reply_to IS NOT NULL),
   CHECK (kind = 'log' OR char_length(trim(body)) > 0)
 );
+
+-- Existing installations started with a 280-character check. Rebuild the
+-- named check so applying this idempotent schema upgrades them to 420 too.
+ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_body_check;
+ALTER TABLE public.posts ADD CONSTRAINT posts_body_check CHECK (char_length(body) <= 420);
 
 -- Bir notu doğrudan bildirmek, sosyal akışın moderasyon bağlamını korur.
 -- Not silinse bile rapor satırı kalsın; post_id yalnızca NULL olur.

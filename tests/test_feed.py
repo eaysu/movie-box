@@ -26,7 +26,7 @@ class FeedSchemaTests(unittest.TestCase):
         posts = self.schema.split("CREATE TABLE IF NOT EXISTS public.posts (", 1)[1]
         posts = posts.split(");", 1)[0]
 
-        self.assertIn("char_length(body) <= 280", posts)
+        self.assertIn("char_length(body) <= 420", posts)
         self.assertIn("char_length(trim(body)) > 0", posts)
 
     def test_counters_are_maintained_by_triggers_not_by_callers(self):

@@ -1124,8 +1124,8 @@ class PostRequest(BaseModel):
     @classmethod
     def validate_body(cls, value: str) -> str:
         value = str(value or "").strip()
-        if not 1 <= len(value) <= 280:
-            raise ValueError("Not 1–280 karakter arasında olmalı.")
+        if not 1 <= len(value) <= 420:
+            raise ValueError("Not 1–420 karakter arasında olmalı.")
         return value
 
 

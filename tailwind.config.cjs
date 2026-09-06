@@ -33,12 +33,10 @@ module.exports = {
         'headline-lg-mobile': ['Space Grotesk', 'Geist'],
         'label-md': ['Space Grotesk', 'Geist'],
         'headline-md': ['Space Grotesk', 'Geist'],
-        // Letterboxd-like editorial voice for longer, human-facing copy.
-        // Labels and headings deliberately stay sans-serif for app-like clarity.
-        'body-md': ['Lora', 'Georgia', 'serif'],
+        'body-md': ['Geist'],
         'label-sm': ['Space Grotesk', 'Geist'],
         'display-lg': ['Space Grotesk', 'Geist'],
-        'body-lg': ['Lora', 'Georgia', 'serif'],
+        'body-lg': ['Geist'],
       },
       fontSize: {
         'headline-lg': ['36px', { lineHeight: '1.15', letterSpacing: '-0.03em', fontWeight: '700' }],

@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260906.38');
+    _shareCardsModule = import('./share-cards.js?v=20260906.39');
   }
   return _shareCardsModule;
 }
@@ -1040,6 +1040,9 @@ function renderPersistedProfile(data) {
     $('profile-favorite-director-note').textContent = favoriteDirector?.count
       ? `${favoriteDirector.count} film ve puanlarınla öne çıkan yönetmen.`
       : favoriteDirector ? 'İzleme sıklığın ve verdiğin puanlarla öne çıkıyor.' : 'Yeterli yönetmen verisi oluştuğunda burada görünecek.';
+    $('profile-favorite-director-avatar').innerHTML = favoriteDirector
+      ? directorAvatar(favoriteDirector, 'w-14 h-14 text-[18px]')
+      : '<span class="material-symbols-outlined">person</span>';
 
     if (dirRows.length) {
       renderDirectorDeck(dirRows);
@@ -1060,6 +1063,7 @@ function renderPersistedProfile(data) {
     $('profile-account-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
     $('profile-favorite-director-name').textContent = 'Henüz belirleniyor';
     $('profile-favorite-director-note').textContent = 'Yönetmen bilgileri tamamlandıkça burada görünecek.';
+    $('profile-favorite-director-avatar').innerHTML = '<span class="material-symbols-outlined">person</span>';
   }
   const deferAuxiliary = !$('view-onboarding').classList.contains('hidden');
   if (!deferAuxiliary && !_statsLoaded) loadProfileStats();
@@ -1119,6 +1123,42 @@ let _feedPickedFilm = null;
 let _feedFilm = { slug: '', title: '' };
 let _threadId = '';
 let _threadFrom = '';
+const FEED_COMPOSER_PROMPTS = [
+  'Bir film hakkında düşüncelerini paylaş',
+  'Perde kapandıktan sonra aklında ne kaldı?',
+  'Bu sahne sende nasıl bir iz bıraktı?',
+  'Bugün izlediğin filmle iki cümle kur',
+  'Bir oyunculuk, bir plan ya da final… paylaş',
+  'Sinefillerin arasında bir not bırak',
+];
+let _feedComposerPromptIndex = 0;
+let _feedComposerPromptTimer = null;
+
+function startFeedComposerPromptFlow() {
+  const input = $('feed-compose-text');
+  if (!input || _feedComposerPromptTimer) return;
+  const next = () => {
+    if (input.value || document.activeElement === input) {
+      _feedComposerPromptTimer = setTimeout(next, 1400);
+      return;
+    }
+    const phrase = FEED_COMPOSER_PROMPTS[_feedComposerPromptIndex % FEED_COMPOSER_PROMPTS.length];
+    _feedComposerPromptIndex += 1;
+    let length = 0;
+    const stream = () => {
+      if (input.value || document.activeElement === input) {
+        _feedComposerPromptTimer = setTimeout(next, 1000);
+        return;
+      }
+      input.placeholder = phrase.slice(0, length) || ' ';
+      length += 1;
+      if (length <= phrase.length) _feedComposerPromptTimer = setTimeout(stream, 34);
+      else _feedComposerPromptTimer = setTimeout(next, 2800);
+    };
+    stream();
+  };
+  _feedComposerPromptTimer = setTimeout(next, 700);
+}
 
 function feedRelativeTime(value) {
   const then = new Date(value).getTime();
@@ -1139,15 +1179,15 @@ function feedPostCard(post, { compact = false } = {}) {
   const body = escapeHTML(post.body || '');
   const poster = film ? safeImageURL(film.poster_url) : '';
   const filmRail = film
-    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" title="${escapeHTML(film.title || 'Film')} — Letterboxd" class="group w-24 shrink-0 text-left sm:w-28">
+    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" title="${escapeHTML(film.title || 'Film')} — Letterboxd" class="group order-3 ml-auto w-[68px] shrink-0 text-left sm:w-[78px]">
         <span class="block overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-[0_16px_34px_-22px_rgba(0,0,0,.95)] transition-transform duration-300 group-hover:-translate-y-1 group-hover:border-primary-container/50">
           ${poster
             ? `<img src="${poster}" alt="${escapeHTML(film.title || '')}" onerror="posterErr(this)" loading="lazy" class="aspect-[2/3] w-full object-cover bg-surface-container"/>`
             : `<span class="flex aspect-[2/3] items-center justify-center bg-surface-container text-on-surface-variant/35"><span class="material-symbols-outlined text-[28px]">movie</span></span>`}
         </span>
-        <strong class="mt-2 block line-clamp-2 text-[12px] leading-snug text-on-surface group-hover:text-primary-container sm:text-[13px]">${escapeHTML(film.title || 'Film')}</strong>
-        <span class="mt-1 block text-[11px] text-on-surface-variant/60">${escapeHTML(String(film.year || ''))}</span>
-        <span class="mt-0.5 block line-clamp-2 text-[11px] leading-snug text-on-surface-variant">${escapeHTML(film.director || '')}</span>
+        <strong class="mt-2 block line-clamp-2 text-[11px] leading-snug text-on-surface group-hover:text-primary-container sm:text-[12px]">${escapeHTML(film.title || 'Film')}</strong>
+        <span class="mt-1 block text-[10px] text-on-surface-variant/60">${escapeHTML(String(film.year || ''))}</span>
+        <span class="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-on-surface-variant">${escapeHTML(film.director || '')}</span>
       </a>`
     : '';
   // A spoiler stays covered until the reader asks for it — in a film community
@@ -1156,8 +1196,7 @@ function feedPostCard(post, { compact = false } = {}) {
     ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
     : `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`;
   return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
-    <div class="flex items-start gap-4">
-      ${filmRail}
+    <div class="flex min-h-[128px] items-start gap-3">
       <div class="min-w-0 flex-1 pt-0.5">
         <div class="flex min-w-0 items-center gap-2.5">
           <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
@@ -1165,10 +1204,9 @@ function feedPostCard(post, { compact = false } = {}) {
             <button type="button" data-post-author="${username}" class="block max-w-full truncate text-left text-sm font-bold text-on-surface hover:underline">${name}</button>
             <span class="mt-0.5 block truncate text-xs text-on-surface-variant/60">@${username}</span>
           </div>
-          <span class="shrink-0 self-start text-xs text-on-surface-variant/50">${escapeHTML(feedRelativeTime(post.created_at))}</span>
         </div>
         ${text}
-        <div class="mt-3 flex items-center gap-4 text-sm text-on-surface-variant">
+        <div class="mt-4 flex items-center gap-4 text-sm text-on-surface-variant">
           <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
             <span class="material-symbols-outlined text-[18px]" style="${post.liked ? "font-variation-settings:'FILL' 1" : ''}">favorite</span>
             <span data-like-count>${post.like_count || 0}</span>
@@ -1181,6 +1219,8 @@ function feedPostCard(post, { compact = false } = {}) {
           ${post.mine ? '' : '<button type="button" data-post-report class="ml-auto flex items-center gap-1 text-on-surface-variant/55 hover:text-error transition-colors" title="Notu bildir"><span class="material-symbols-outlined text-[18px]">flag</span></button>'}
         </div>
       </div>
+      <span class="order-2 shrink-0 pt-1 font-label-sm text-label-sm text-on-surface-variant/55">${escapeHTML(feedRelativeTime(post.created_at))}</span>
+      ${filmRail}
     </div>
   </article>`;
 }
@@ -1375,7 +1415,7 @@ async function submitPost() {
     });
     $('feed-compose-text').value = '';
     $('feed-compose-spoiler').checked = false;
-    $('feed-compose-count').textContent = '280';
+    $('feed-compose-count').textContent = '420';
     clearComposerFilm();
     await loadFeed();
   } catch (err) {
@@ -2428,14 +2468,32 @@ function letterReplyBar(peer) {
 }
 
 let _openLetterThread = '';
+let _letterThreads = [];
 
 function letterThreadCard(group) {
   const peer = group.peer || {};
   const username = escapeHTML(peer.username || '');
   const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
   const unread = group.items.filter(({ item }) => item.direction === 'received' && !item.read_at).length;
+  const latest = group.items[0]?.payload?.body || 'Filmli bir mektup';
+  const selected = _openLetterThread === peer.username;
+  return `<button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 rounded-xl p-3 text-left transition-colors ${selected ? 'bg-tertiary-container/15 text-on-surface ring-1 ring-tertiary-container/25' : 'text-on-surface hover:bg-surface-variant/45'}"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-sm">${name}</strong><span class="mt-0.5 block truncate text-xs text-on-surface-variant">${escapeHTML(latest)}</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread}</span>` : ''}</button>`;
+}
+
+function renderLetterConversation(username = _openLetterThread) {
+  const panel = $('letters-conversation');
+  const group = _letterThreads.find(thread => thread.peer?.username === username);
+  if (!group) {
+    panel.innerHTML = '<div class="flex min-h-[360px] flex-col items-center justify-center px-6 text-center text-on-surface-variant"><span class="material-symbols-outlined text-[36px] text-tertiary-container/45">mail</span><strong class="mt-4 text-on-surface">Bir mektup seç</strong><p class="mt-2 max-w-xs text-sm leading-relaxed">Konuştuğun sinefiller solda. Birini seçtiğinde tüm mektuplarınız burada açılır.</p></div>';
+    return;
+  }
+  _openLetterThread = group.peer.username;
+  const peer = group.peer || {};
+  const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
+  const usernameLabel = escapeHTML(peer.username || '');
   const details = group.items.map(({ item, payload }) => letterCard(item, payload)).join('');
-  return `<article class="overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container shadow-lg"><button type="button" data-letter-thread="${username}" class="flex w-full items-center gap-3 p-4 text-left hover:bg-surface-variant/40"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="text-xs text-on-surface-variant">@${username} · ${group.items.length} mektup</span></span>${unread ? `<span class="rounded-full bg-secondary-container px-2 py-1 text-[10px] font-bold text-on-secondary-container">${unread} yeni</span>` : ''}<span class="material-symbols-outlined text-on-surface-variant transition-transform">expand_more</span></button><div data-letter-thread-body="${username}" class="hidden border-t border-outline-variant/20 p-3"><div class="flex flex-col gap-3">${details}</div>${letterReplyBar(peer)}</div></article>`;
+  panel.innerHTML = `<div class="flex min-h-[420px] flex-col"><header class="flex items-center gap-3 border-b border-outline-variant/20 px-5 py-4"><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="block truncate text-xs text-on-surface-variant">@${usernameLabel} · ${group.items.length} mektup</span></span></header><div class="flex-1 space-y-3 overflow-y-auto p-4 md:max-h-[510px]">${details}</div><div class="border-t border-outline-variant/20 p-4">${letterReplyBar(peer)}</div></div>`;
+  $('letters-list').innerHTML = _letterThreads.map(letterThreadCard).join('');
 }
 
 async function loadLetters() {
@@ -2475,19 +2533,19 @@ async function loadLetters() {
       const latestB = b.items[0]?.item?.created_at || '';
       return new Date(latestB) - new Date(latestA);
     });
-    $('letters-list').innerHTML = decoded.length
-      ? sortedThreads.map(letterThreadCard).join('')
-      : '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-8 text-center text-sm text-on-surface-variant">Henüz mektubun yok. Mektuba açık sinefilleri Sinefil Sineması’nda bulabilirsin.</div>';
-    // Reloading after a reply should leave the conversation open, not collapse
-    // everything back to a list.
-    if (_openLetterThread) {
-      const body = document.querySelector(`[data-letter-thread-body="${CSS.escape(_openLetterThread)}"]`);
-      if (body) body.classList.remove('hidden');
-      else _openLetterThread = '';
+    _letterThreads = sortedThreads;
+    if (!_openLetterThread || !sortedThreads.some(thread => thread.peer?.username === _openLetterThread)) {
+      _openLetterThread = sortedThreads[0]?.peer?.username || '';
     }
+    $('letters-list').innerHTML = sortedThreads.length
+      ? sortedThreads.map(letterThreadCard).join('')
+      : '<div class="p-5 text-center text-sm text-on-surface-variant">Henüz mektubun yok.</div>';
+    renderLetterConversation();
     if (unread.length) refreshBlendBadge();
   } catch (error) {
     $('letters-list').innerHTML = '';
+    _letterThreads = [];
+    renderLetterConversation();
     letterMessage('error', error.message || 'Mektuplar yüklenemedi.');
   }
 }
@@ -2819,12 +2877,7 @@ async function routeToExistingBlend(data) {
 async function handleBlendInboxAction(event) {
   const thread = event.target.closest('[data-letter-thread]');
   if (thread) {
-    const username = thread.dataset.letterThread;
-    const body = document.querySelector(`[data-letter-thread-body="${CSS.escape(username)}"]`);
-    if (body) {
-      body.classList.toggle('hidden');
-      _openLetterThread = body.classList.contains('hidden') ? '' : username;
-    }
+    renderLetterConversation(thread.dataset.letterThread);
     return;
   }
   const reply = event.target.closest('[data-letter-reply]');
@@ -4675,8 +4728,9 @@ $('btn-feed-more').addEventListener('click', () => loadFeed({ append: true }));
 $('btn-feed-post').addEventListener('click', submitPost);
 $('btn-thread-reply').addEventListener('click', submitReply);
 $('feed-compose-text').addEventListener('input', event => {
-  $('feed-compose-count').textContent = 280 - event.target.value.length;
+  $('feed-compose-count').textContent = 420 - event.target.value.length;
 });
+startFeedComposerPromptFlow();
 document.querySelectorAll('[data-feed-scope]').forEach(button => {
   button.addEventListener('click', () => setFeedScope(button.dataset.feedScope));
 });
