@@ -164,6 +164,13 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn('event_key=f"blend-request:{request_id}"', blend)
         self.assertIn('event_key=f"letter:{letter_id}"', letters)
 
+    def test_background_push_uses_a_subscription_not_notification_content(self):
+        schema = (ROOT / "supabase" / "schema.sql").read_text()
+        self.assertIn("web_push_subscriptions", schema)
+        self.assertIn("def upsert_push_subscription", self.auth)
+        self.assertIn("def _send_web_push", self.auth)
+        self.assertIn('@app.post("/api/push/subscriptions")', self.main)
+
     def test_locked_profile_payload_does_not_expose_viewing_totals(self):
         profile = self.auth.split("def public_profile", 1)[1].split("\n    def ", 1)[0]
         self.assertIn('"letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {}', profile)

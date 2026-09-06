@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     auth_identity_secret: str = ""
     auth_cookie_secure: bool = True
     auth_session_max_age: int = 60 * 60 * 24 * 7
+    web_push_vapid_public_key: str = ""
+    web_push_vapid_private_key: str = ""
+    web_push_vapid_subject: str = "mailto:hello@movieboxd.onrender.com"
 
     # --- Recommender tuning ---
     num_recommendations: int = 5
@@ -100,6 +103,10 @@ class Settings(BaseSettings):
             and self.supabase_anon_key.strip()
             and self.auth_identity_secret.strip()
         )
+
+    @property
+    def has_web_push(self) -> bool:
+        return bool(self.web_push_vapid_public_key.strip() and self.web_push_vapid_private_key.strip())
 
 
 @lru_cache

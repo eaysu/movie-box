@@ -24,3 +24,4 @@ openai>=1.35.0
 
 # Database
 supabase>=2.4.0
+pywebpush==2.5.0

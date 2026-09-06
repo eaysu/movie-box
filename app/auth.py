@@ -24,6 +24,12 @@ from .enrich import EnrichedFilm
 from .scraper import ScrapedProfile
 from .taste_profile import TasteProfileSnapshot
 
+try:  # Optional locally; Render installs the pinned package for real delivery.
+    from pywebpush import WebPushException, webpush
+except ImportError:  # pragma: no cover - keeps local schema/unit tooling light
+    WebPushException = Exception
+    webpush = None
+
 
 class AuthError(Exception):
     code = "auth_failed"
@@ -1773,12 +1779,50 @@ class AuthService:
         self, user_id: int, kind: str, actor_id: int, post_id: str | None = None,
         *, event_key: str | None = None,
     ) -> None:
-        with contextlib.suppress(Exception):
+        try:
             self._service_client().table("notifications").insert({
                 "user_id": user_id, "kind": kind,
                 "actor_id": actor_id, "post_id": post_id,
                 "event_key": event_key,
             }).execute()
+        except Exception:
+            return
+        self._send_web_push(user_id, kind)
+
+    def upsert_push_subscription(self, account: Account, subscription: dict, user_agent: str = "") -> None:
+        endpoint = str(subscription.get("endpoint") or "")
+        keys = subscription.get("keys") or {}
+        p256dh, auth = str(keys.get("p256dh") or ""), str(keys.get("auth") or "")
+        if not endpoint.startswith("https://") or not p256dh or not auth:
+            raise BlendServiceError("invalid_push_subscription")
+        self._service_client().table("web_push_subscriptions").upsert({
+            "user_id": account.id, "endpoint": endpoint, "p256dh": p256dh, "auth": auth,
+            "user_agent": user_agent[:500], "updated_at": datetime.now(timezone.utc).isoformat(),
+        }, on_conflict="endpoint").execute()
+
+    def _send_web_push(self, user_id: int, kind: str) -> None:
+        if not self.settings.has_web_push or webpush is None:
+            return
+        try:
+            rows = self._service_client().table("web_push_subscriptions").select(
+                "endpoint,p256dh,auth"
+            ).eq("user_id", user_id).execute().data or []
+        except Exception:
+            return
+        payload = json.dumps({"title": "Movieboxd", "body": "Yeni bir bildirimin var.", "kind": kind})
+        for row in rows:
+            try:
+                webpush(
+                    subscription_info={"endpoint": row["endpoint"], "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}},
+                    data=payload, vapid_private_key=self.settings.web_push_vapid_private_key,
+                    vapid_claims={"sub": self.settings.web_push_vapid_subject}, ttl=120,
+                )
+            except WebPushException as exc:
+                if getattr(exc, "status_code", 0) in (404, 410):
+                    with contextlib.suppress(Exception):
+                        self._service_client().table("web_push_subscriptions").delete().eq("endpoint", row["endpoint"]).execute()
+            except Exception:
+                pass
 
     def list_notifications(self, account: Account, limit: int = 30) -> list[dict]:
         service = self._service_client()

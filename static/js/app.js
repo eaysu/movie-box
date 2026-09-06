@@ -902,11 +902,27 @@ async function togglePrivateAccount() {
 }
 
 async function enableBrowserNotifications() {
-  if (!('Notification' in window)) { profileActionError('Bu tarayıcı bildirim desteği sunmuyor.'); return; }
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) { profileActionError('Bu tarayıcı kalıcı push bildirimi desteği sunmuyor.'); return; }
   const permission = await Notification.requestPermission();
-  profileActionNotice(permission === 'granted'
-    ? 'Tarayıcı bildirimleri açık. Sekme açıkken yeni hareketleri haber vereceğiz.'
-    : 'Tarayıcı bildirimi için izin verilmedi.');
+  if (permission !== 'granted') { profileActionNotice('Tarayıcı bildirimi için izin verilmedi.'); return; }
+  try {
+    const key = await apiJSON('/api/push/public-key');
+    const registration = await navigator.serviceWorker.register('/push-sw.js');
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const raw = String(key.public_key || '').replace(/-/g, '+').replace(/_/g, '/');
+      const padded = raw + '='.repeat((4 - raw.length % 4) % 4);
+      const bytes = Uint8Array.from(atob(padded), char => char.charCodeAt(0));
+      subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
+    }
+    await apiJSON('/api/push/subscriptions', {
+      method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(subscription.toJSON()),
+    });
+    profileActionNotice('Tarayıcı bildirimleri açık. Uygulama arka plandayken de yeni hareketleri haber vereceğiz.');
+  } catch (error) {
+    profileActionError(error.message || 'Tarayıcı bildirimi açılamadı.');
+  }
 }
 
 function renderProfileLetterSettings(open) {

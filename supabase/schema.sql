@@ -1659,6 +1659,21 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_event_key
   ON public.notifications (user_id, event_key) WHERE event_key IS NOT NULL;
 
+-- One browser/device can be replaced without duplicating delivery. Push payloads
+-- never contain a letter or note body; they only wake the recipient's browser.
+CREATE TABLE IF NOT EXISTS public.web_push_subscriptions (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  endpoint    TEXT NOT NULL UNIQUE,
+  p256dh      TEXT NOT NULL,
+  auth        TEXT NOT NULL,
+  user_agent  TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_user
+  ON public.web_push_subscriptions (user_id);
+
 -- Counters are denormalized because every feed card would otherwise run its own
 -- COUNT(*). Triggers keep them true no matter which path writes.
 CREATE OR REPLACE FUNCTION public.posts_like_counter() RETURNS TRIGGER
@@ -1735,6 +1750,7 @@ ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.post_likes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.web_push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.screenings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bulletin_digests ENABLE ROW LEVEL SECURITY;
@@ -1761,6 +1777,7 @@ REVOKE ALL ON TABLE public.posts FROM anon, authenticated;
 REVOKE ALL ON TABLE public.post_likes FROM anon, authenticated;
 REVOKE ALL ON TABLE public.follows FROM anon, authenticated;
 REVOKE ALL ON TABLE public.notifications FROM anon, authenticated;
+REVOKE ALL ON TABLE public.web_push_subscriptions FROM anon, authenticated;
 REVOKE ALL ON SEQUENCE public.notifications_id_seq FROM anon, authenticated;
 REVOKE ALL ON TABLE public.venues FROM anon, authenticated;
 REVOKE ALL ON TABLE public.screenings FROM anon, authenticated;
@@ -1789,6 +1806,7 @@ GRANT ALL ON TABLE public.posts TO service_role;
 GRANT ALL ON TABLE public.post_likes TO service_role;
 GRANT ALL ON TABLE public.follows TO service_role;
 GRANT ALL ON TABLE public.notifications TO service_role;
+GRANT ALL ON TABLE public.web_push_subscriptions TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE public.notifications_id_seq TO service_role;
 GRANT ALL ON TABLE public.venues TO service_role;
 GRANT ALL ON TABLE public.screenings TO service_role;

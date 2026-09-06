@@ -1129,6 +1129,11 @@ class PostRequest(BaseModel):
         return value
 
 
+class PushSubscriptionRequest(BaseModel):
+    endpoint: str
+    keys: dict[str, str]
+
+
 class ReplyRequest(BaseModel):
     body: str
 
@@ -1172,6 +1177,11 @@ def index() -> FileResponse:
     )
 
 
+@app.get("/push-sw.js")
+def push_service_worker() -> FileResponse:
+    return FileResponse(STATIC_DIR / "push-sw.js", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/api/health")
 @app.head("/api/health", include_in_schema=False)
 def health() -> dict:
@@ -1182,6 +1192,7 @@ def health() -> dict:
         "llm_enabled": settings.has_openai,
         "supabase_enabled": settings.has_supabase,
         "auth_enabled": getattr(settings, "has_auth", False),
+        "web_push_enabled": settings.has_web_push,
     }
 
 
@@ -1447,6 +1458,29 @@ if get_settings().dev_login_enabled:  # pragma: no cover - local tooling only
 async def auth_me(request: Request) -> dict:
     account = await _require_account(request)
     return {"account": account.__dict__}
+
+
+@app.get("/api/push/public-key")
+async def web_push_public_key(request: Request) -> dict:
+    await _require_account(request)
+    settings = get_settings()
+    if not settings.has_web_push:
+        raise HTTPException(status_code=503, detail="Tarayıcı push bildirimi henüz yapılandırılmadı.")
+    return {"public_key": settings.web_push_vapid_public_key}
+
+
+@app.post("/api/push/subscriptions")
+async def save_web_push_subscription(req: PushSubscriptionRequest, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        await asyncio.to_thread(
+            _auth_service().upsert_push_subscription, account, req.model_dump(),
+            request.headers.get("user-agent", ""),
+        )
+    except BlendServiceError as exc:
+        _raise_blend_http(exc)
+    return {"ok": True}
 
 
 @app.post("/api/auth/refresh")
