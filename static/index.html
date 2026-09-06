@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260906.61"/>
+<link rel="stylesheet" href="/static/app.css?v=20260906.62"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -50,7 +50,6 @@
 <!-- ═══════════════  SAĞ RAF (geniş ekran)  ═══════════════ -->
 <aside id="app-rail" class="hidden fixed inset-y-0 right-0 z-40 w-[320px] overflow-y-auto border-l border-outline-variant/20 px-5 py-8">
   <div id="rail-trending"></div>
-  <div id="rail-suggestions" class="mt-6"></div>
 </aside>
 
 <!-- ═══════════════  ALT SEKME ÇUBUĞU (mobil)  ═══════════════ -->
@@ -390,10 +389,23 @@
         Geri
       </button>
       <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-on-surface-variant/50">Profilim</span>
-      <button id="btn-profile-sync" title="Letterboxd güncesindeki yeni filmleri tarar" class="flex items-center gap-2 px-4 py-2.5 rounded-full border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 hover:border-primary-container/50 transition-colors font-label-md text-label-md disabled:opacity-40">
-        <span class="material-symbols-outlined text-[18px]">sync</span>
-        Profili güncelle
-      </button>
+      <div class="relative flex items-center gap-2">
+        <button id="profile-settings-btn" type="button" class="flex h-10 w-10 items-center justify-center rounded-full border border-outline-variant/30 bg-surface-container/60 text-on-surface-variant hover:border-outline-variant/60 hover:text-on-surface transition-colors" aria-label="Ayarlar" aria-expanded="false">
+          <span class="material-symbols-outlined text-[18px]">settings</span>
+        </button>
+        <div id="profile-settings-menu" class="hidden absolute right-0 top-12 z-30 w-64 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container shadow-2xl py-1 text-left">
+          <button id="profile-theme-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">contrast</span><span id="profile-theme-label">Görünüm: Koyu</span></button>
+          <button id="profile-private-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">lock</span><span id="profile-private-label">Hesap: Herkese açık</span></button>
+          <button id="profile-letter-toggle" type="button" aria-pressed="false" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-[#ffb56f] hover:bg-surface-variant text-sm"><span id="profile-letter-icon" class="material-symbols-outlined text-[18px]">mail_lock</span><span>Mektuplar: <span id="profile-letter-label">Kapalı</span></span></button>
+          <button id="profile-browser-notifications" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">notifications_active</span>Tarayıcı bildirimleri</button>
+          <button id="menu-blocked-users" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">block</span>Engellediğin kullanıcılar</button>
+          <button id="menu-delete-data" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
+          <button id="btn-logout" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
+        </div>
+        <button id="btn-profile-sync" title="Letterboxd güncesindeki yeni filmleri tarar" class="flex items-center gap-2 px-4 py-2.5 rounded-full border border-primary-container/30 bg-primary-container/10 text-primary-container hover:bg-primary-container/20 hover:border-primary-container/50 transition-colors font-label-md text-label-md disabled:opacity-40">
+          <span class="material-symbols-outlined text-[18px]">sync</span><span class="hidden sm:inline">Profili güncelle</span>
+        </button>
+      </div>
     </div>
 
     <!-- ── HERO · kimlik + sinematik DNA ─────────────────────────────── -->
@@ -434,7 +446,7 @@
             <div class="mb-3 flex items-center justify-between gap-3">
               <span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-secondary-container">Fav 4</span>
               <button id="btn-share-personality" type="button" class="hidden min-h-[32px] items-center gap-1.5 rounded-full border border-secondary-container/30 bg-secondary-container/10 px-2.5 py-1.5 font-label-sm text-[9px] uppercase tracking-wide text-secondary-container hover:bg-secondary-container/20 transition-colors">
-                <span class="material-symbols-outlined text-[14px]">ios_share</span><span data-share-label>Paylaş</span>
+                <span class="material-symbols-outlined text-[14px]">ios_share</span><span data-share-label>Profil kartını paylaş</span>
               </button>
             </div>
             <div id="profile-favorites" class="grid grid-cols-2 gap-2.5"></div>
@@ -446,19 +458,6 @@
                 <span class="material-symbols-outlined text-[16px]">inbox</span>Gelen kutusu
                 <span id="profile-inbox-badge" aria-live="polite" class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-secondary-container text-on-secondary-container text-[9px] font-bold items-center justify-center"></span>
               </button>
-              <div class="relative">
-                <button id="profile-settings-btn" type="button" class="w-10 h-10 rounded-xl border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors flex items-center justify-center" aria-label="Ayarlar" aria-expanded="false">
-                  <span class="material-symbols-outlined text-[18px]">settings</span>
-                </button>
-                <div id="profile-settings-menu" class="hidden absolute left-0 lg:left-auto lg:right-0 top-11 z-30 w-56 rounded-xl overflow-hidden bg-surface-container border border-outline-variant/30 shadow-2xl py-1 text-left">
-                  <button id="profile-theme-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">contrast</span><span id="profile-theme-label">Görünüm: Koyu</span></button>
-                  <button id="profile-private-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">lock</span><span id="profile-private-label">Hesap: Herkese açık</span></button>
-                  <button id="profile-browser-notifications" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">notifications_active</span>Tarayıcı bildirimleri</button>
-                  <button id="menu-blocked-users" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">block</span>Engellediğin kullanıcılar</button>
-                  <button id="menu-delete-data" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">delete_forever</span>Verimi sil</button>
-                  <button id="btn-logout" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-error hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">logout</span>Çıkış yap</button>
-                </div>
-              </div>
             </div>
 
             <button id="profile-my-notes" type="button" class="hidden inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary-container/35 bg-primary-container/10 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
@@ -476,15 +475,6 @@
               </button>
               <button id="profile-discovery-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container transition-colors" title="Sinefil Sineması görünürlüğü">
                 <span id="profile-discovery-icon" class="material-symbols-outlined text-[15px]">visibility_off</span><span id="profile-discovery-label">Gizli</span>
-              </button>
-            </div>
-
-            <div class="hidden flex items-center gap-2">
-              <button id="profile-letters" type="button" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#ff8000] px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-black shadow-[0_8px_24px_-12px_rgba(255,128,0,.85)] hover:bg-[#ff962f] transition-colors">
-                <span class="material-symbols-outlined text-[16px]">mail</span>Mektup yolla
-              </button>
-              <button id="profile-letter-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#ff8000]/45 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-[#ffb56f] hover:bg-[#ff8000]/10 transition-colors" title="Mektup alma ayarı">
-                <span id="profile-letter-icon" class="material-symbols-outlined text-[15px]">mail_lock</span><span id="profile-letter-label">Kapalı</span>
               </button>
             </div>
 
@@ -1164,29 +1154,31 @@
     </div>
   </div>
 
-  <!-- Yazma kutusu: avatar + metin, altında film eki. -->
-  <div class="flex gap-3 border-b border-outline-variant/25 px-4 py-4">
-    <span id="feed-compose-avatar" class="hidden h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-container font-bold text-primary-container sm:flex"></span>
-    <div class="min-w-0 flex-1">
-      <textarea id="feed-compose-text" maxlength="280" rows="2" placeholder="Bir film hakkında ne düşünüyorsun?" class="w-full resize-none bg-transparent text-lg text-on-surface outline-none placeholder:text-on-surface-variant/50"></textarea>
-      <div id="feed-compose-film-chip" class="hidden items-center gap-3 rounded-xl border border-outline-variant/30 bg-surface-container/50 p-2"></div>
-      <div class="mt-3 flex items-center justify-between gap-3 border-t border-outline-variant/15 pt-3">
-        <div class="flex min-w-0 items-center gap-1">
-          <button id="feed-compose-film" type="button" class="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-primary-container hover:bg-primary-container/10 transition-colors">
-            <span class="material-symbols-outlined text-[20px]">movie</span><span id="feed-compose-film-label" class="truncate">Film seç</span>
-          </button>
-          <label class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-sm text-on-surface-variant">
-            <input id="feed-compose-spoiler" type="checkbox" class="accent-primary-container"/> Spoiler
-          </label>
-        </div>
-        <div class="flex shrink-0 items-center gap-3">
-          <span id="feed-compose-count" class="text-xs text-on-surface-variant/50">280</span>
-          <button id="btn-feed-post" type="button" class="rounded-full bg-primary-container px-5 py-2 font-label-md text-label-md uppercase tracking-wide text-on-primary-container disabled:opacity-40">Paylaş</button>
+  <!-- Yazma kutusu: sakin bir yüzey, film ve spoiler araçları tek akışta. -->
+  <section class="border-b border-outline-variant/25 px-4 py-4 sm:px-5 sm:py-5">
+    <div class="flex gap-3">
+      <span id="feed-compose-avatar" class="hidden h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-primary-container/30 bg-surface-container font-bold text-primary-container shadow-[0_0_20px_rgba(0,224,84,.12)] sm:flex"></span>
+      <div class="min-w-0 flex-1 rounded-[22px] border border-outline-variant/25 bg-surface-container-low/75 p-3.5 shadow-[0_14px_40px_-28px_rgba(0,0,0,.9)] transition-colors focus-within:border-primary-container/45 focus-within:bg-surface-container">
+        <textarea id="feed-compose-text" maxlength="280" rows="3" placeholder="Bir film hakkında ne düşünüyorsun?" class="min-h-[78px] w-full resize-none bg-transparent text-[16px] leading-relaxed text-on-surface outline-none placeholder:text-on-surface-variant/50 sm:text-[17px]"></textarea>
+        <div id="feed-compose-film-chip" class="hidden items-center gap-3 rounded-2xl border border-outline-variant/30 bg-surface-container/80 p-2.5"></div>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-outline-variant/15 pt-3">
+          <div class="flex min-w-0 items-center gap-1.5">
+            <button id="feed-compose-film" type="button" class="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-primary-container/25 bg-primary-container/10 px-3 py-2 text-sm text-primary-container hover:bg-primary-container/20 transition-colors">
+              <span class="material-symbols-outlined text-[18px]">movie</span><span id="feed-compose-film-label" class="truncate">Film ekle</span>
+            </button>
+            <label class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-2 text-sm text-on-surface-variant hover:bg-surface-variant/50 transition-colors">
+              <input id="feed-compose-spoiler" type="checkbox" class="accent-primary-container"/> Spoiler
+            </label>
+          </div>
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <span id="feed-compose-count" class="rounded-full bg-surface-variant/50 px-2.5 py-1 font-label-sm text-label-sm text-on-surface-variant/70">280</span>
+            <button id="btn-feed-post" type="button" class="rounded-full bg-primary-container px-5 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-primary-container shadow-[0_10px_26px_-12px_rgba(0,224,84,.75)] transition-transform hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0">Paylaş</button>
+          </div>
         </div>
       </div>
-      <p id="feed-compose-error" class="hidden mt-2 text-sm text-error"></p>
     </div>
-  </div>
+    <p id="feed-compose-error" class="hidden ml-0 mt-2 text-sm text-error sm:ml-14"></p>
+  </section>
 
   <div id="feed-compose-body" class="hidden"></div>
 
@@ -1245,19 +1237,10 @@
       <p class="font-body-md text-body-md text-on-surface-variant mt-1">Yalnızca sana açılabilen sinefil mektupların burada. Blend istekleri Blend sekmesinde.</p>
     </div>
     <div id="inbox-letters-panel" class="flex flex-col gap-gutter">
-      <section class="rounded-2xl border border-tertiary-container/25 bg-tertiary-container/10 p-5">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div class="flex items-center gap-2"><h2 class="font-headline-md text-headline-md text-on-surface">Sinefil Mektupları</h2><button id="btn-letter-help" type="button" class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-tertiary-container/40 text-[13px] font-bold text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
-            <p id="letters-status" class="hidden mt-1 text-sm leading-relaxed text-on-surface-variant"></p>
-          </div>
-          <button id="btn-letter-receiving" type="button" aria-pressed="false" class="shrink-0 rounded-xl border border-tertiary-container/40 px-4 py-2.5 font-label-sm text-label-sm text-tertiary-container">Mektuplara kapalı</button>
-        </div>
-      </section>
       <p id="letters-error" class="hidden rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
       <p id="letters-notice" class="hidden rounded-xl border border-primary-container/25 bg-primary-container/10 px-4 py-3 text-sm text-primary-container"></p>
       <section>
-        <div class="mb-3 flex items-center justify-between gap-3"><h2 class="font-headline-md text-headline-md text-on-surface">Mektupların</h2><span class="text-xs text-on-surface-variant">Her cihazdan erişilir</span></div>
+        <div class="mb-3 flex items-center justify-between gap-3"><h2 class="font-headline-md text-headline-md text-on-surface">Mektupların</h2><button id="btn-letter-help" type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-outline-variant/30 text-[13px] font-bold text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
         <div id="letters-list" class="flex flex-col gap-3"></div>
       </section>
     </div>
@@ -1285,6 +1268,7 @@
     </div>
     <div id="blends-error" class="hidden glass-panel rounded-lg px-4 py-3 text-error font-body-md text-body-md"></div>
     <div id="blends-notice" class="hidden glass-panel rounded-lg px-4 py-3 text-primary-container font-body-md text-body-md"></div>
+    <div id="blend-tools-host"></div>
     <!-- Kayıtlı Blendler önce; karar bekleyen istekler ardından gelir. -->
     <section>
       <h2 class="font-headline-md text-headline-md text-on-surface mb-3">Blendlerim</h2>
@@ -1339,6 +1323,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.62"></script>
+<script type="module" src="/static/js/app.js?v=20260906.64"></script>
 </body>
 </html>

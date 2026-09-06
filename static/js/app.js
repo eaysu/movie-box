@@ -23,7 +23,7 @@ import { createRecommendationCards } from './recommendations.js?v=20260902.15';
 let _shareCardsModule;
 function loadShareCardsModule() {
   if (!_shareCardsModule) {
-    _shareCardsModule = import('./share-cards.js?v=20260904.36');
+    _shareCardsModule = import('./share-cards.js?v=20260906.37');
   }
   return _shareCardsModule;
 }
@@ -248,20 +248,31 @@ function openProfilePanel(which) {
   if (blend) setTimeout(() => $('profile-blend-username').focus(), 40);
 }
 
-function mountQuickTools() {
-  const host = $('quick-tools-host');
+function mountQuickTools(hostId = 'quick-tools-host') {
+  const host = $(hostId);
   const tools = $('profile-quick-tools');
   if (host && tools && tools.parentElement !== host) host.appendChild(tools);
 }
 
 function openQuickTool(which) {
+  if (which === 'blend') {
+    mountQuickTools('blend-tools-host');
+    showView('blends');
+    $('profile-quick-tools')?.classList.remove('hidden');
+    $('quick-tools-kicker').textContent = 'İki zevk, tek liste';
+    $('quick-tools-title').textContent = 'Blend yap';
+    $('quick-tools-icon').textContent = 'join_inner';
+    openProfilePanel('blend');
+    loadMyBlends(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   mountQuickTools();
   showView('tools');
   $('profile-quick-tools')?.classList.remove('hidden');
-  const blend = which === 'blend';
-  $('quick-tools-kicker').textContent = blend ? 'İki zevk, tek liste' : 'Bu gece';
-  $('quick-tools-title').textContent = blend ? 'Blend yap' : 'Ne izlesem?';
-  $('quick-tools-icon').textContent = blend ? 'join_inner' : 'local_movies';
+  $('quick-tools-kicker').textContent = 'Bu gece';
+  $('quick-tools-title').textContent = 'Ne izlesem?';
+  $('quick-tools-icon').textContent = 'local_movies';
   openProfilePanel(which);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1053,7 +1064,7 @@ function renderPersistedProfile(data) {
   const deferAuxiliary = !$('view-onboarding').classList.contains('hidden');
   if (!deferAuxiliary && !_statsLoaded) loadProfileStats();
 
-  const personality = (taste && taste.personality || '').trim();
+  const accountSummary = accountSummaryFromTaste(taste);
 
   const favorites = data.favorite_films || [];
   $('profile-favorites').innerHTML = favorites.length
@@ -1089,9 +1100,9 @@ function renderPersistedProfile(data) {
     }).join('')
     : '<div class="col-span-full rounded-2xl border border-dashed border-outline-variant/30 p-10 text-center text-on-surface-variant">Letterboxd Fav 4 henüz alınamadı.</div>';
 
-  const personalityShareReady = favorites.length >= 4 && Boolean(personality);
-  $('btn-share-personality').classList.toggle('hidden', !personalityShareReady);
-  $('btn-share-personality').classList.toggle('flex', personalityShareReady);
+  const profileShareReady = favorites.length >= 4 && Boolean(accountSummary);
+  $('btn-share-personality').classList.toggle('hidden', !profileShareReady);
+  $('btn-share-personality').classList.toggle('flex', profileShareReady);
 
   if (!deferAuxiliary && !_topFilmsLoaded) loadTopFilms();
   if (!deferAuxiliary && !_recentLoaded) loadRecentFilms();
@@ -1206,33 +1217,6 @@ function renderRailTrending(films) {
   </div>`;
 }
 
-async function renderRailSuggestions() {
-  if (!_account) return;
-  const box = $('rail-suggestions');
-  try {
-    const [data, mine] = await Promise.all([
-      apiJSON('/api/sinefil-alani?q=&page=1&per_page=8'),
-      apiJSON(`/api/users/${encodeURIComponent(_account.username)}/following`).catch(() => ({ users: [] })),
-    ]);
-    const already = new Set((mine.users || []).map(user => user.username));
-    const people = (data.profiles || [])
-      .filter(person => person.username && !already.has(person.username))
-      .slice(0, 3);
-    if (!people.length) { box.innerHTML = ''; return; }
-    box.innerHTML = `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/40 p-4">
-      <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">Kimi takip etmeli</p>
-      <div class="mt-3 flex flex-col gap-3">${people.map(person => `<div class="flex items-center gap-3">
-        <button type="button" data-post-author="${escapeHTML(person.username)}" class="shrink-0">${peerAvatar(person)}</button>
-        <button type="button" data-post-author="${escapeHTML(person.username)}" class="min-w-0 flex-1 text-left">
-          <strong class="block truncate text-sm text-on-surface">${escapeHTML(person.display_name || person.username)}</strong>
-          <span class="block truncate text-xs text-on-surface-variant/60">@${escapeHTML(person.username)}</span>
-        </button>
-        ${followButton({ username: person.username, following: false, is_me: false })}
-      </div>`).join('')}</div>
-    </div>`;
-  } catch (_) { box.innerHTML = ''; }
-}
-
 async function searchFeedFilms() {
   const query = $('feed-film-search').value.trim();
   if (query.length < 2) { $('feed-film-results').innerHTML = ''; return; }
@@ -1330,7 +1314,6 @@ async function openFeed() {
   // transient read failure look like an empty timeline.
   await setFeedScope(_feedScope);
   try { renderFeedTrending((await apiJSON('/api/feed/trending')).films || []); } catch (_) {}
-  await renderRailSuggestions();
 }
 
 // A picked film is shown as a card with an ×; changing your mind has to be
@@ -2134,6 +2117,9 @@ async function loadProfileStats() {
     _statsLoaded = true;
     if (typeof data.this_year === 'number') {
       $('profile-year-count').textContent = data.this_year.toLocaleString('tr-TR');
+      if (_persistedProfile) {
+        _persistedProfile.stats = { ...(_persistedProfile.stats || {}), this_year: data.this_year };
+      }
     }
   } catch (_) { /* sonraki render tekrar dener */ }
 }
@@ -2390,11 +2376,11 @@ async function loadLetterSendStatus(username = _letterRecipient?.username || '')
 function renderLetterSettings() {
   const open = Boolean(_account?.letter_receiving_enabled);
   renderProfileLetterSettings(open);
-  $('btn-letter-receiving').setAttribute('aria-pressed', String(open));
-  $('btn-letter-receiving').textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
-  const status = $('letters-status');
-  status.textContent = open ? '' : 'Mektuplar varsayılan olarak kapalıdır; yalnızca sen açarsan mektup alırsın.';
-  status.classList.toggle('hidden', open);
+  const receiving = $('btn-letter-receiving');
+  if (receiving) {
+    receiving.setAttribute('aria-pressed', String(open));
+    receiving.textContent = open ? 'Mektuplara açığım' : 'Mektuplara kapalı';
+  }
 }
 
 function letterFilmMarkup(film) {
@@ -2509,14 +2495,15 @@ async function toggleLetterReceiving(trigger = null) {
     ? 'Mektupları açarsan Sinefil Sineması’ndaki kullanıcılar sana 24 saatte bir mektup gönderebilir. Açmak istiyor musun?'
     : 'Mektupları kapatırsan yeni mektup alamazsın. Mevcut mektupların korunur. Kapatmak istiyor musun?';
   if (!window.confirm(prompt)) return;
-  const button = trigger || $('btn-letter-receiving'); button.disabled = true;
+  const button = trigger || $('btn-letter-receiving');
+  if (button) button.disabled = true;
   try {
     const data = await apiJSON('/api/letters/receiving', { method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ enabled: next }) });
     _account.letter_receiving_enabled = data.letter_receiving_enabled;
     renderLetterSettings();
     letterMessage('notice', next ? 'Mektuplara açıksın. İstediğin an buradan kapatabilirsin.' : 'Mektuplar kapatıldı.');
   } catch (error) { letterMessage('error', error.message || 'Mektup ayarı güncellenemedi.'); }
-  finally { button.disabled = false; }
+  finally { if (button) button.disabled = false; }
 }
 
 function openLetterCompose(username) {
@@ -4668,7 +4655,7 @@ $('sinefil-grid').addEventListener('click', event => {
   if (letter) openLetterCompose(letter.dataset.sinefilLetter);
 });
 $('btn-share-personality').addEventListener('click', event => {
-  buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderPersonalityShareCard(_persistedProfile));
+  buildAndOpenShareCard(event.currentTarget, shareCards => shareCards.renderProfileShareCard(_persistedProfile));
 });
 // Akış olayları. Film seçici mektuplardaki diyaloğun aynısı: yeni bileşen yok.
 $('btn-open-feed').addEventListener('click', openFeed);
@@ -4915,7 +4902,6 @@ document.addEventListener('keydown', event => {
   }
 });
 $('profile-inbox').addEventListener('click', () => openLetterInbox());
-$('profile-letters').addEventListener('click', openLetterSendingArea);
 $('profile-letter-toggle').addEventListener('click', event => toggleLetterReceiving(event.currentTarget));
 $('profile-blends').addEventListener('click', () => loadMyBlends(true));
 $('profile-settings-btn').addEventListener('click', event => {
@@ -4940,7 +4926,7 @@ $('btn-profile-back').addEventListener('click', () => showView(homeView()));
 $('btn-inbox-refresh').addEventListener('click', () => loadLetters());
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 $('btn-letter-help').addEventListener('click', () => $('dialog-letter-help').showModal());
-$('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
+if ($('btn-letter-receiving')) $('btn-letter-receiving').addEventListener('click', toggleLetterReceiving);
 
 // Opening the letterbox straight from the prompt, then continuing to the letter
 // the member came to write.

@@ -401,44 +401,66 @@ export async function renderBlendShareCard(data, mode = 'watched') {
   };
 }
 
-export async function renderPersonalityShareCard(profile) {
+export async function renderProfileShareCard(profile) {
   const favorites = (profile?.favorite_films || []).slice(0, 4);
-  const personality = clean(profile?.taste?.personality || profile?.taste?.summary);
-  if (!favorites.length || !personality) throw new Error('Fav 4 kişilik analizi henüz hazır değil.');
+  const taste = profile?.taste || {};
+  const summary = clean([taste.summary, ...(taste.analysis || [])].filter(Boolean).slice(0, 4).join(' '));
+  if (favorites.length < 4 || !summary) throw new Error('Profil kartı için Fav 4 ve hesap özeti henüz hazır değil.');
   if (document.fonts?.ready) await document.fonts.ready;
+  const accent = '#ff8000';
   const canvas = makeCanvas();
   const ctx = canvas.getContext('2d');
-  drawBackground(ctx, '#ff8000');
+  drawBackground(ctx, accent);
   drawBrand(ctx);
-  const username = clean(profile?.account?.username || 'kullanıcı');
+  const account = profile?.account || {};
+  const username = clean(account.username || 'kullanıcı');
+  const name = clean(account.display_name || username);
+  const genres = (taste.top_genres || []).filter(Boolean).slice(0, 3);
+  const director = clean(taste.favorite_director || taste.top_directors?.[0] || taste.top_directors_detail?.[0]?.name);
+  const yearCount = Number(profile?.stats?.this_year) || 0;
 
   font(ctx, 18, 700);
-  drawLines(ctx, ['FAV 4 · KİŞİLİK OKUMASI'], 72, 152, 22, '#ff9d3d');
-  font(ctx, 50, 700);
-  drawLines(ctx, ['Sinefil kişiliğim'], 72, 188, 60, '#e0e2e6');
-  font(ctx, 24, 600);
-  drawLines(ctx, [`@${username}`], 72, 254, 30, 'rgba(186,203,182,.7)');
-  await drawPosterStrip(ctx, favorites, 316, '#ff8000', { limit: 4, maxPosterWidth: 210 });
+  drawLines(ctx, ['SİNEFİL HESAP ÖZETİ'], 72, 152, 22, accent);
+  font(ctx, 48, 700);
+  drawLines(ctx, [fitText(ctx, name, 700)], 72, 188, 58, '#e0e2e6');
+  font(ctx, 22, 600);
+  drawLines(ctx, [`@${username}`], 72, 248, 28, 'rgba(186,203,182,.7)');
 
-  fillRounded(ctx, 72, 760, 936, 422, 30, 'rgba(29,32,35,.9)');
-  font(ctx, 18, 700);
-  drawLines(ctx, ['FİLMLERİNİN SÖYLEDİĞİ'], 112, 806, 22, '#ff9d3d');
-  const fitted = fitWrappedBlock(ctx, personality, 856, 278, {
-    maxSize: 36,
-    minSize: 24,
-    weight: 600,
-  });
+  metric(ctx, 72, 302, 292, 'İzlenen film', taste.sample_size || 0, '#e0e2e6');
+  metric(ctx, 394, 302, 292, 'Puanlanan film', taste.rated_count || 0, '#40bcf4');
+  metric(ctx, 716, 302, 292, 'Bu yıl izlenen', yearCount || '—', accent);
+
+  font(ctx, 17, 700);
+  drawLines(ctx, ['EN ÇOK DÖNDÜĞÜ TÜR'], 72, 456, 22, '#00e054');
+  font(ctx, 22, 700);
+  drawLines(ctx, [genres.length ? genres.join(' · ') : 'Tür sinyali oluşuyor'], 72, 486, 28, '#e0e2e6');
+  font(ctx, 17, 700);
+  drawLines(ctx, ['FAVORİ YÖNETMEN'], 72, 530, 22, '#40bcf4');
+  font(ctx, 22, 700);
+  drawLines(ctx, [director || 'Henüz belirleniyor'], 72, 560, 28, '#e0e2e6');
+
+  font(ctx, 17, 700);
+  drawLines(ctx, ['FAV 4'], 72, 612, 22, accent);
+  await drawPosterStrip(ctx, favorites, 646, accent, { limit: 4, maxPosterWidth: 155 });
+
+  fillRounded(ctx, 72, 920, 936, 244, 30, 'rgba(29,32,35,.9)');
+  font(ctx, 17, 700);
+  drawLines(ctx, ['HESABININ SÖYLEDİĞİ'], 112, 958, 22, accent);
+  const fitted = fitWrappedBlock(ctx, summary, 856, 140, { maxSize: 28, minSize: 20, weight: 600 });
   font(ctx, fitted.size, 600);
-  drawLines(ctx, fitted.lines, 112, 856, fitted.lineHeight, '#e0e2e6');
-  drawFooter(ctx, `@${username} · Letterboxd Fav 4`);
+  drawLines(ctx, fitted.lines, 112, 996, fitted.lineHeight, '#e0e2e6');
+  drawFooter(ctx, `@${username} · Movieboxd profil kartı`);
 
   return {
     blob: await canvasBlob(canvas),
-    filename: `movieboxd-fav4-${username}.png`,
-    title: 'Fav 4 kişilik analizim',
-    text: `@${username} · Fav 4 filmimden sinefil kişilik okumam`,
+    filename: `movieboxd-profil-${username}.png`,
+    title: 'Sinefil profil kartım',
+    text: `@${username} · izleme geçmişim, Fav 4'üm ve hesap özetim`,
   };
 }
+
+// Eski çağıranlar için isim korunuyor; çıktı artık profilin tamamını içerir.
+export const renderPersonalityShareCard = renderProfileShareCard;
 
 // Günce kartı: 16:9 çerçevede 5 + 5 afiş. Dikey listede onuncu satır alt
 // bilgiyle çakışıyordu; iki sıralı ızgarada afişler hem büyük hem de çakışmaz.

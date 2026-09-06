@@ -76,7 +76,8 @@ def test_three_png_share_modules_are_wired_to_native_share_and_download():
 
     assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watched')" in app_js
     assert "shareCards.renderBlendShareCard(_currentBlendResult, 'watchlist')" in app_js
-    assert "shareCards.renderPersonalityShareCard(_persistedProfile)" in app_js
+    assert "shareCards.renderProfileShareCard(_persistedProfile)" in app_js
+    assert "function renderProfileShareCard(profile)" in share_js
     assert "function makeCanvas(width = WIDTH, height = HEIGHT)" in share_js
     assert "const WIDTH = 1080" in share_js
     assert "const HEIGHT = 1350" in share_js
@@ -278,8 +279,9 @@ def test_recommendation_and_blend_tools_live_outside_the_profile_screen():
     assert 'id="quick-tools-host"' in html
     assert 'data-rail-action=' not in html
     assert "showView('tools');" in app_js
-    assert "function mountQuickTools()" in app_js
-    assert "$('quick-tools-title').textContent = blend ? 'Blend yap' : 'Ne izlesem?';" in app_js
+    assert "function mountQuickTools(hostId = 'quick-tools-host')" in app_js
+    assert "mountQuickTools('blend-tools-host');" in app_js
+    assert "showView('blends');" in app_js
     assert "$('profile-quick-tools')?.classList.remove('hidden');" not in app_js.split('function openProfilePanel', 1)[1].split('function mountQuickTools', 1)[0]
 
 
@@ -295,7 +297,6 @@ def test_sinefil_letters_are_account_bound_and_keep_inbox_private():
     assert "apiJSON('/api/letters')" in app_js
     assert "cinephile_letters" in schema
     assert "send_cinephile_letter" in schema
-    assert 'id="profile-letters"' in html
     assert 'id="profile-letter-toggle"' in html
     assert "600 karakter kaldı" in html
     assert "/api/letters/send-status" in app_js
@@ -380,9 +381,9 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "fc5e24935453b99038e2b59e8fc190eedc258e516bc918eb4298a98918448dde",
-        "static/app.css": "436fbc0ae0edf4660e87997799edfb7db8cf628d730e599cf8f89deb50a04b04",
-        "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
+        "static/js/app.js": "b76e7e324089a43d595455d080035284d95a013abc0e76f2b268500f90e3217a",
+        "static/app.css": "ca79a637b4278ee42bb6b1eb97e72a7d8c83976e95019491dad28a188ef98310",
+        "static/js/share-cards.js": "b047cfa36b8d216a334471a1642172b2b07548e7f423659c852a9a73978dcdb6",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((ROOT / path).read_bytes()).hexdigest()
@@ -413,11 +414,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.61"
+    css_version = "v=20260906.62"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.62" in html
+    assert "/static/js/app.js?v=20260906.64" in html
     assert app_js.count(f"?{dependency_version}") == 5
-    assert "./share-cards.js?v=20260904.36" in app_js
+    assert "./share-cards.js?v=20260906.37" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js
     assert f"./dom.js?{dependency_version}" in profile_js
@@ -451,6 +452,7 @@ def test_mobile_navigation_keeps_recommendations_and_profile_discoverable():
     assert "data-mobile-tool=\"blend\"" in html
     assert "data-mobile-tool=\"watch\"" in html
     assert "openQuickTool(button.dataset.mobileTool);" in app_js
+    assert 'id="blend-tools-host"' in html
     assert "if (_account?.username && username.toLowerCase() === _account.username.toLowerCase())" in app_js
 
 
@@ -481,6 +483,8 @@ def test_profile_hero_combines_favorites_with_a_full_account_reading():
     assert 'Fav 4 kişilik okuması' not in profile
     assert 'function accountSummaryFromTaste' in app_js
     assert "streamText($('profile-account-summary'), accountSummaryFromTaste(taste));" in app_js
+    assert "Profil kartını paylaş" in profile
+    assert profile.index('id="profile-settings-btn"') < profile.index('profile-rise')
 
 
 def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
@@ -488,7 +492,7 @@ def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
 
     imports = app_js.split("// ── Cinema facts", 1)[0]
     assert "from './share-cards.js" not in imports
-    assert "import('./share-cards.js?v=20260904.36')" in imports
+    assert "import('./share-cards.js?v=20260906.37')" in imports
     assert "const shareCards = await loadShareCardsModule();" in app_js
 
 
