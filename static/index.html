@@ -25,7 +25,7 @@
 <link rel="manifest" href="/static/site.webmanifest?v=20260907.2"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.67"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.68"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -77,6 +77,11 @@
 </div>
 
 <button id="btn-compose-fab" class="hidden fixed bottom-20 right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-xl" type="button" aria-label="Not yaz">
+  <span class="material-symbols-outlined">edit</span>
+</button>
+
+<!-- Mektuplar sekmesinde, Akış'ın kalem aksiyonuyla aynı sabit konumda. -->
+<button id="btn-letter-compose-fab" class="hidden fixed bottom-20 right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-xl transition-transform hover:scale-105 active:scale-95 md:hidden" type="button" aria-label="Mektup yaz" title="Mektup yaz">
   <span class="material-symbols-outlined">edit</span>
 </button>
 
@@ -1294,7 +1299,6 @@
       </section>
     </div>
   </div>
-  <button id="btn-letter-compose-fab" type="button" class="hidden fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-tertiary-container text-on-tertiary-container shadow-[0_12px_30px_rgba(255,128,0,.34)] transition-transform hover:scale-105 active:scale-95 md:hidden" aria-label="Takipçine mektup yaz" title="Takipçine mektup yaz"><span class="material-symbols-outlined text-[24px]">edit_square</span></button>
 </div>
 
 <!-- ═══════════════════════════  VIEW: BLENDLERİM  ═══════════════════════════ -->

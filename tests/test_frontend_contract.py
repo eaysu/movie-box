@@ -464,7 +464,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     """
     expected = {
         "static/js/app.js": "492ce97fde5e7264eca74916e46cecbfb8b20f43e0829104520c3fcb4fd4d2f3",
-        "static/app.css": "4e34011a2907e5b525291cf73c087593216eedb459494999e94b90fd0ac5cb43",
+        "static/app.css": "a977094479ec8e7c40019678b5fcac4a3e2197650262f34e92c7bbe811a4d114",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -496,7 +496,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.67"
+    css_version = "v=20260907.68"
     assert f"/static/app.css?{css_version}" in html
     assert "/static/js/app.js?v=20260907.72" in html
     assert app_js.count(f"?{dependency_version}") == 5
