@@ -344,6 +344,7 @@ movie-box/
 | [REKABET_ANALIZI.md](REKABET_ANALIZI.md) | Competitive research and feature inventory (Turkish) |
 | [OZELLIK_TASARIMI.md](OZELLIK_TASARIMI.md) | Design of the approved next features (Turkish) |
 | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Screening bulletin plan and the Letterboxd API application |
+| [SINEFIL_AKIS_PLANI.md](SINEFIL_AKIS_PLANI.md) | Plan for turning the app into a cinephile timeline (Turkish) |
 
 ## Account rollout
 
