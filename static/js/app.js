@@ -986,13 +986,22 @@ async function toggleDiscoveryVisibility() {
   }
 }
 
+function accountSummaryFromTaste(taste) {
+  const pieces = [taste?.summary, ...(taste?.analysis || [])]
+    .filter(piece => typeof piece === 'string' && piece.trim())
+    .map(piece => piece.trim());
+  return pieces.length
+    ? pieces.slice(0, 4).join(' ')
+    : 'İzleme geçmişin tamamlandıkça bu alan sinema alışkanlıklarını daha ayrıntılı anlatacak.';
+}
+
 function renderPersistedProfile(data) {
   if (!data) return;
   _persistedProfile = data;
   if (data.account) applyAccount(data.account);
   const taste = data.taste;
   if (taste) {
-    streamText($('profile-taste-summary'), taste.summary || 'Zevk analizi hazır.');
+    streamText($('profile-account-summary'), accountSummaryFromTaste(taste));
     const sweptTotal = (data.sync_job && data.sync_job.total) || 0;
     $('profile-sample-size').textContent = String(Math.max(taste.sample_size || 0, sweptTotal));
     $('profile-rated-count').textContent = String(taste.rated_count || 0);
@@ -1005,6 +1014,11 @@ function renderPersistedProfile(data) {
     const dirFallback = (taste.top_directors?.length ? taste.top_directors : [taste.favorite_director])
       .filter(Boolean).slice(0, 10).map(name => ({ name, films: [], count: 0 }));
     const dirRows = dirDetail.length ? dirDetail : dirFallback;
+    const favoriteDirector = dirRows[0] || null;
+    $('profile-favorite-director-name').textContent = favoriteDirector?.name || 'Henüz belirleniyor';
+    $('profile-favorite-director-note').textContent = favoriteDirector?.count
+      ? `${favoriteDirector.count} film ve puanlarınla öne çıkan yönetmen.`
+      : favoriteDirector ? 'İzleme sıklığın ve verdiğin puanlarla öne çıkıyor.' : 'Yeterli yönetmen verisi oluştuğunda burada görünecek.';
 
     if (dirRows.length) {
       renderDirectorDeck(dirRows);
@@ -1012,18 +1026,6 @@ function renderPersistedProfile(data) {
       unregisterProfileCarousel('profile-directors');
       _directorDeck = null;
       $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Yönetmen sıralaması için birkaç film bilgisinin daha tamamlanması gerekiyor.</div>';
-    }
-
-    const analysisLines = (taste.analysis || []).filter(line => typeof line === 'string' && line.trim());
-    if (analysisLines.length) {
-      $('profile-analysis').innerHTML = analysisLines
-        .map((line, i) => `<p class="line-rise font-body-md text-body-md leading-[1.6] text-on-surface-variant flex gap-2.5" style="animation-delay:${i * 90}ms"><span class="mt-2 w-1 h-1 rounded-full bg-primary-container/70 shrink-0"></span><span>${escapeHTML(line)}</span></p>`)
-        .join('');
-      $('profile-analysis').classList.remove('hidden');
-      $('profile-analysis').classList.add('flex');
-    } else {
-      $('profile-analysis').classList.add('hidden');
-      $('profile-analysis').classList.remove('flex');
     }
 
     const syncedAt = taste.updated_at || taste.generated_at;
@@ -1034,18 +1036,14 @@ function renderPersistedProfile(data) {
     unregisterProfileCarousel('profile-directors');
     _directorDeck = null;
     $('profile-directors').innerHTML = '<div class="rounded-2xl border border-dashed border-outline-variant/30 p-5 text-on-surface-variant">Zevk profili hazırlanıyor…</div>';
-    $('profile-analysis').classList.add('hidden');
+    $('profile-account-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
+    $('profile-favorite-director-name').textContent = 'Henüz belirleniyor';
+    $('profile-favorite-director-note').textContent = 'Yönetmen bilgileri tamamlandıkça burada görünecek.';
   }
   const deferAuxiliary = !$('view-onboarding').classList.contains('hidden');
   if (!deferAuxiliary && !_statsLoaded) loadProfileStats();
 
   const personality = (taste && taste.personality || '').trim();
-  if (personality) {
-    streamText($('profile-personality-text'), personality);
-    $('profile-personality').classList.remove('hidden');
-  } else {
-    $('profile-personality').classList.add('hidden');
-  }
 
   const favorites = data.favorite_films || [];
   $('profile-favorites').innerHTML = favorites.length
@@ -3020,7 +3018,7 @@ async function syncProfile(force = false, refreshWatchlist = false) {
   button.disabled = true;
   button.querySelector('span').classList.add('animate-spin');
   $('profile-sync-error').classList.add('hidden');
-  $('profile-taste-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
+  $('profile-account-summary').textContent = 'İzleme geçmişin ve Fav 4 filmlerin analiz ediliyor…';
   try {
     const data = await apiJSON(`/api/profile/sync?force=${force ? 'true' : 'false'}&refresh_watchlist=${refreshWatchlist ? 'true' : 'false'}`, {
       method: 'POST',
@@ -3035,7 +3033,7 @@ async function syncProfile(force = false, refreshWatchlist = false) {
     }
     return data;
   } catch (error) {
-    $('profile-taste-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
+    $('profile-account-summary').textContent = 'Profil senkronu tamamlanamadı. Yenile düğmesiyle tekrar deneyebilirsin.';
     $('profile-sync-error').textContent = error.message || 'Profil senkronu tamamlanamadı.';
     $('profile-sync-error').classList.remove('hidden');
     return null;

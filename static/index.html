@@ -21,7 +21,7 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v3.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap&subset=latin-ext" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260906.59"/>
+<link rel="stylesheet" href="/static/app.css?v=20260906.60"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -419,6 +419,16 @@
             <div id="profile-last-sync" class="flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant/60"></div>
           </div>
 
+          <section class="mt-5 border-t border-outline-variant/15 pt-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-secondary-container">Fav 4</span>
+              <button id="btn-share-personality" type="button" class="hidden min-h-[32px] items-center gap-1.5 rounded-full border border-secondary-container/30 bg-secondary-container/10 px-2.5 py-1.5 font-label-sm text-[9px] uppercase tracking-wide text-secondary-container hover:bg-secondary-container/20 transition-colors">
+                <span class="material-symbols-outlined text-[14px]">ios_share</span><span data-share-label>Paylaş</span>
+              </button>
+            </div>
+            <div id="profile-favorites" class="grid grid-cols-2 gap-2.5"></div>
+          </section>
+
           <div class="mt-4 grid gap-2">
             <div class="flex items-center gap-2 justify-end">
               <button id="profile-inbox" type="button" aria-label="Gelen kutusu" class="hidden relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/50 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
@@ -473,7 +483,7 @@
           </div>
         </aside>
 
-        <!-- taste analysis -->
+        <!-- Account overview -->
         <div class="min-w-0 lg:border-l lg:border-outline-variant/15 lg:pl-10 xl:pl-16">
           <div class="flex flex-wrap items-center gap-2.5">
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinefil profilin</span>
@@ -482,19 +492,11 @@
             </span>
           </div>
 
-          <div class="relative mt-6 pl-5">
-            <span class="absolute left-0 top-1 bottom-1 w-[3px] rounded-full bg-gradient-to-b from-primary-container via-tertiary-container/60 to-transparent"></span>
-            <p id="profile-taste-summary" class="font-headline-md text-[23px] md:text-[29px] xl:text-[33px] leading-[1.28] tracking-[-.025em] text-on-surface">Zevk profili hazırlanıyor…</p>
-            <div id="profile-analysis" class="hidden mt-4 flex-col gap-2.5"></div>
-          </div>
-
-          <div id="profile-genres" class="mt-6 flex flex-wrap gap-2.5"></div>
-
-          <div class="grid grid-cols-3 gap-3 md:gap-4 mt-8">
+          <div class="grid grid-cols-3 gap-3 md:gap-4 mt-6">
             <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
               <span class="material-symbols-outlined text-on-surface-variant/45 text-[20px]">movie</span>
               <strong id="profile-sample-size" class="block mt-2 font-display-lg text-[25px] md:text-[30px] leading-none text-on-surface">—</strong>
-              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Analiz edilen film</span>
+              <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">İzlenen film</span>
             </div>
             <div class="rounded-2xl bg-surface-container/60 border border-outline-variant/20 p-4 md:p-5">
               <span class="material-symbols-outlined text-tertiary-container/60 text-[20px]">star_rate</span>
@@ -507,6 +509,26 @@
               <span class="mt-1.5 block font-label-sm text-[9px] md:text-label-sm uppercase tracking-wide text-on-surface-variant">Bu yıl izlenen</span>
             </div>
           </div>
+
+          <section class="mt-6">
+            <span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">En sevilen türler</span>
+            <div id="profile-genres" class="mt-3 flex flex-wrap gap-2.5"></div>
+          </section>
+
+          <section class="mt-6 rounded-2xl border border-tertiary-container/20 bg-tertiary-container/[0.06] p-4 md:p-5">
+            <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">
+              <span class="material-symbols-outlined text-[16px]">movie_edit</span>Favori yönetmen
+            </span>
+            <strong id="profile-favorite-director-name" class="mt-2 block font-headline-md text-[22px] md:text-[25px] text-on-surface">Henüz belirleniyor</strong>
+            <p id="profile-favorite-director-note" class="mt-1 font-body-md text-body-md text-on-surface-variant"></p>
+          </section>
+
+          <section class="mt-6 rounded-2xl border border-primary-container/20 bg-primary-container/[0.055] p-5 md:p-6">
+            <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">
+              <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1">auto_stories</span>Hesap özeti
+            </span>
+            <p id="profile-account-summary" class="mt-3 font-body-lg text-body-lg leading-[1.72] text-on-surface">İzleme geçmişin analiz ediliyor…</p>
+          </section>
 
           <div id="profile-sync-error" class="hidden mt-5 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
 
@@ -604,30 +626,7 @@
       </div>
     </section>
 
-    <!-- ── 4 · Favori kişisel seçki ────────────────────────────────────── -->
-    <section class="profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.09s">
-      <div class="flex items-end justify-between gap-4 mb-7">
-        <div>
-          <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-secondary-container">Kişisel seçki</span>
-          <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Favori dört film</h2>
-        </div>
-        <div class="flex flex-col items-end gap-2">
-          <span class="hidden sm:block font-label-sm text-label-sm text-on-surface-variant/50 uppercase tracking-wide">Letterboxd Fav 4</span>
-          <button id="btn-share-personality" type="button" class="hidden min-h-[40px] items-center gap-2 rounded-full border border-secondary-container/30 bg-secondary-container/10 px-3.5 py-2 font-label-sm text-label-sm uppercase tracking-wide text-secondary-container hover:bg-secondary-container/20 transition-colors">
-            <span class="material-symbols-outlined text-[17px]">ios_share</span><span data-share-label>PNG paylaş</span>
-          </button>
-        </div>
-      </div>
-      <div id="profile-favorites" class="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-5"></div>
-      <div id="profile-personality" class="hidden mt-6 rounded-2xl border border-secondary-container/20 bg-secondary-container/[0.06] p-5">
-        <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-secondary-container mb-2">
-          <span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">fingerprint</span>Fav 4 kişilik okuması
-        </span>
-        <p id="profile-personality-text" class="font-body-lg text-body-lg leading-[1.6] text-on-surface"></p>
-      </div>
-    </section>
-
-    <!-- ── 5 · Auteur radar · Başucu filmleri · Son filmler ─────────────── -->
+    <!-- ── 4 · Auteur radar · Başucu filmleri · Son filmler ─────────────── -->
     <div class="profile-rise grid items-stretch lg:grid-cols-3 gap-6 mt-6" style="animation-delay:.12s">
       <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col">
         <div class="flex items-start justify-between gap-4 mb-7">
@@ -1329,6 +1328,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260906.60"></script>
+<script type="module" src="/static/js/app.js?v=20260906.61"></script>
 </body>
 </html>

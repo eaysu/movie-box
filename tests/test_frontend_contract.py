@@ -380,8 +380,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "732ba4aaba82ef30805d4fa9999c1bd27de2193a8b3031cfc6e694df33322b33",
-        "static/app.css": "544756e19b1a6dce8c34b4ecba02f693cd6fde47157152820fb238868ab43a0f",
+        "static/js/app.js": "7ace8ec0843566fb915a27da4379f189d37805a53fb63b3c290f878bed7e5fce",
+        "static/app.css": "409bab350ba6b77d0f171fa3e0c8ecdd23b2a205e6fb82cfc02dcfb4f950926e",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
     for path, digest in expected.items():
@@ -413,9 +413,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260906.59"
+    css_version = "v=20260906.60"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.60" in html
+    assert "/static/js/app.js?v=20260906.61" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js
@@ -462,6 +462,20 @@ def test_blend_page_prioritizes_saved_blends_and_moves_blocks_to_settings():
     assert 'id="menu-blocked-users"' in html
     assert "async function openBlockedUsers()" in app_js
     assert "function blendHistoryCard" not in app_js
+
+
+def test_profile_hero_combines_favorites_with_a_full_account_reading():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    profile = html.split('id="view-profile"', 1)[1].split('id="view-tools"', 1)[0]
+
+    assert profile.index('id="profile-favorites"') < profile.index('id="profile-sample-size"')
+    assert 'id="profile-favorites" class="grid grid-cols-2' in profile
+    assert 'id="profile-favorite-director-name"' in profile
+    assert 'id="profile-account-summary"' in profile
+    assert 'Fav 4 kişilik okuması' not in profile
+    assert 'function accountSummaryFromTaste' in app_js
+    assert "streamText($('profile-account-summary'), accountSummaryFromTaste(taste));" in app_js
 
 
 def test_png_share_renderer_is_lazy_loaded_on_first_share_action():
