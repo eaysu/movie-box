@@ -222,7 +222,8 @@ function profileActionError(msg) {
 }
 function showActionError(msg) {
   if (_authEnabled && _account) {
-    showView('profile');
+    const target = !$('view-tools').classList.contains('hidden') ? 'tools' : 'profile';
+    showView(target);
     profileActionError(msg);
     if (msg) $('profile-action-error').scrollIntoView({ block: 'center', behavior: 'smooth' });
   } else {
@@ -236,12 +237,6 @@ function openProfilePanel(which) {
   $('profile-watch-panel').classList.toggle('open', watch);
   $('profile-blend-panel').classList.toggle('open', blend);
   if (watch || blend) resetRecoPanel();
-  $('profile-act-watch')?.classList.toggle('border-primary-container/60', watch);
-  $('profile-act-watch')?.classList.toggle('bg-surface-container/70', watch);
-  $('profile-act-watch')?.classList.toggle('border-outline-variant/25', !watch);
-  $('profile-act-blend')?.classList.toggle('border-secondary-container/60', blend);
-  $('profile-act-blend')?.classList.toggle('bg-surface-container/70', blend);
-  $('profile-act-blend')?.classList.toggle('border-outline-variant/25', !blend);
   profileActionNotice(null);
   profileActionError(null);
   if (watch) {
@@ -263,6 +258,10 @@ function openQuickTool(which) {
   mountQuickTools();
   showView('tools');
   $('profile-quick-tools')?.classList.remove('hidden');
+  const blend = which === 'blend';
+  $('quick-tools-kicker').textContent = blend ? 'İki zevk, tek liste' : 'Bu gece';
+  $('quick-tools-title').textContent = blend ? 'Blend yap' : 'Ne izlesem?';
+  $('quick-tools-icon').textContent = blend ? 'join_inner' : 'local_movies';
   openProfilePanel(which);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -5033,9 +5032,6 @@ $('profile-reco-body').addEventListener('click', event => {
   }
 });
 
-// Profil ana ekranı — "Bu gece" aksiyonları
-$('profile-act-watch').addEventListener('click', () => openProfilePanel('watch'));
-$('profile-act-blend').addEventListener('click', () => openProfilePanel('blend'));
 $('profile-watch-panel').addEventListener('click', event => {
   const button = event.target.closest('[data-watch-mode]');
   if (button) setProfileWatchMode(button.dataset.watchMode);

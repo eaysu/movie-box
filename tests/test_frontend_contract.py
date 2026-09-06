@@ -156,7 +156,7 @@ def test_blend_films_link_out_and_blend_library_has_create_action():
     assert "const href = letterboxdFilmURL(film.slug)" in js
     assert 'target="_blank" rel="noopener"' in js
     assert "$('btn-blends-create').addEventListener" in js
-    assert "openProfilePanel('blend')" in js
+    assert "openQuickTool('blend')" in js
 
 
 def test_new_inline_recommendation_keeps_the_result_panel_open():
@@ -272,12 +272,14 @@ def test_recommendation_and_blend_tools_live_outside_the_profile_screen():
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
 
     assert 'data-nav-action="watch"' in html
-    assert 'data-nav-action="blend"' in html
+    assert 'data-nav-action="blend"' not in html
+    assert 'data-nav="blends" class="nav-item"><span class="material-symbols-outlined">join_inner</span>Blend</button>' in html
     assert 'id="view-tools"' in html
     assert 'id="quick-tools-host"' in html
     assert 'data-rail-action=' not in html
     assert "showView('tools');" in app_js
     assert "function mountQuickTools()" in app_js
+    assert "$('quick-tools-title').textContent = blend ? 'Blend yap' : 'Ne izlesem?';" in app_js
     assert "$('profile-quick-tools')?.classList.remove('hidden');" not in app_js.split('function openProfilePanel', 1)[1].split('function mountQuickTools', 1)[0]
 
 
@@ -378,7 +380,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "ddaa6e07f02c4b504679fcba7735306c6f2a8a0cc26a64e0cd611f6a47a5706f",
+        "static/js/app.js": "6591c04a5a5deb7e92852843507997ecba9063a39eb9e0220ff993e8a73bde9c",
         "static/app.css": "544756e19b1a6dce8c34b4ecba02f693cd6fde47157152820fb238868ab43a0f",
         "static/js/share-cards.js": "ee8cc498bde707ecd37beac6e52bcc3085ead588ffa7c15143a041d86341edc0",
     }
@@ -413,7 +415,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260906.59"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260906.58" in html
+    assert "/static/js/app.js?v=20260906.59" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260904.36" in app_js
     assert "./auth.js?v=20260902.16" in app_js
