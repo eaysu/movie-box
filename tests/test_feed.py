@@ -259,6 +259,15 @@ class ProfilePageTests(unittest.TestCase):
         for field in ("note_count", "follower_count", "following_count", "follows_you", "is_me"):
             self.assertIn(f'"{field}"', block, field)
 
+    def test_follow_member_lists_are_owner_only_while_counts_stay_public(self):
+        route = self.main.split("async def _follow_list", 1)[1].split("@app.", 1)[0]
+        profile = self.auth.split("def public_profile", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn('profile["id"] != account.id', route)
+        self.assertIn('Takip listeleri yalnızca hesap sahibine açık.', route)
+        self.assertIn('"follower_count": self._accepted_follow_count', profile)
+        self.assertIn('"following_count": self._accepted_follow_count', profile)
+
     def test_a_profile_timeline_shows_notes_not_replies(self):
         block = self.auth.split("def list_user_posts", 1)[1].split("\n    def ", 1)[0]
 

@@ -347,6 +347,15 @@ def test_profile_follow_lists_are_dialogs_and_stay_out_of_the_share_card():
     assert "profile-follows-list" not in share_js
 
 
+def test_public_profiles_show_follow_counts_but_never_link_to_member_lists():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    header = app_js.split("function userHeader", 1)[1].split("function renderUserPage", 1)[0]
+
+    assert 'data-follows="followers"' not in header
+    assert 'data-follows="following"' not in header
+    assert "takipçi</span>" in header
+
+
 def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -440,7 +449,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-        "static/js/app.js": "742f858ff5edf92f3eabb258eb93c9a8fdf441330f0225597b353332ddb0fa09",
+        "static/js/app.js": "ca8e212f0fa2fd05a7355cfecb7a7ea5c5815ee746875fcc9d345711872ec4e2",
         "static/app.css": "fb1789b07fddef80aab87144048042caab0def40dedea395a251810f76509c53",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -475,7 +484,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260907.66"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.70" in html
+    assert "/static/js/app.js?v=20260907.71" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js

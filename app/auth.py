@@ -1842,8 +1842,10 @@ class AuthService:
             "letterboxd_stats": (row.get("letterboxd_stats") or {}) if can_view else {},
             "favorites": favorites,
             "note_count": note_count,
-            "follower_count": self._accepted_follow_count("followee_id", user_id) if can_view else None,
-            "following_count": self._accepted_follow_count("follower_id", user_id) if can_view else None,
+            # Counts are a small public profile signal; the underlying member
+            # lists are deliberately owner-only (see ``_follow_list`` route).
+            "follower_count": self._accepted_follow_count("followee_id", user_id),
+            "following_count": self._accepted_follow_count("follower_id", user_id),
             "follow_status": follow_state.get(user_id, "none") if user_id != account.id else "self",
             "following": follow_state.get(user_id) == "accepted",
             "follows_you": follows_you,

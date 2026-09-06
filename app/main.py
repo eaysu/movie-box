@@ -3529,8 +3529,10 @@ async def _follow_list(username: str, request: Request, kind: str) -> dict:
     )
     if not profile:
         raise HTTPException(status_code=404, detail="Bu sinefil bulunamadı.")
-    if not profile.get("can_view"):
-        raise HTTPException(status_code=403, detail="Bu hesabın takip listesi kilitli.")
+    # Follow counts are public, but member names are private relationship
+    # data. Even accepted followers cannot enumerate somebody else's graph.
+    if profile["id"] != account.id:
+        raise HTTPException(status_code=403, detail="Takip listeleri yalnızca hesap sahibine açık.")
     users = await asyncio.to_thread(
         service.list_follow_list, account, profile["id"], kind=kind
     )
