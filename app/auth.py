@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
+from uuid import UUID
 
 from .enrich import EnrichedFilm
 from .scraper import ScrapedProfile
@@ -71,6 +72,7 @@ class Account:
     letterboxd_stats: dict = field(default_factory=dict)
     discoverable: bool = True
     letter_receiving_enabled: bool = False
+    private_account: bool = False
 
 
 @dataclass
@@ -179,7 +181,7 @@ class AuthService:
         """Verify the account schema without exposing or reading user records."""
         service = self._service_client()
         required = {
-            "users": "id,auth_user_id,account_status,onboarding_completed_at,letterboxd_stats,discoverable",
+            "users": "id,auth_user_id,account_status,onboarding_completed_at,letterboxd_stats,discoverable,private_account",
             "taste_profiles": "user_id,source_fingerprint,top_directors",
             "profile_favorites": "user_id,position",
             "blend_requests": "id,status",
@@ -241,6 +243,7 @@ class AuthService:
             letterboxd_stats=row.get("letterboxd_stats") or {},
             discoverable=bool(row.get("discoverable", True)),
             letter_receiving_enabled=bool(row.get("letter_receiving_enabled", False)),
+            private_account=bool(row.get("private_account", False)),
         )
 
     @staticmethod
@@ -254,7 +257,7 @@ class AuthService:
                 .select(
                     "id,auth_user_id,username,display_name,avatar_url,"
                     "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
-                    "discoverable,letter_receiving_enabled"
+                    "discoverable,letter_receiving_enabled,private_account"
                 )
                 .eq("username", username)
                 .limit(1)
@@ -580,7 +583,7 @@ class AuthService:
                 .select(
                     "id,auth_user_id,username,display_name,avatar_url,"
                     "account_status,profile_sync_status,onboarding_completed_at,letterboxd_stats,"
-                    "discoverable,letter_receiving_enabled"
+                    "discoverable,letter_receiving_enabled,private_account"
                 )
                 .eq("auth_user_id", auth_user_id)
                 .eq("account_status", "active")
@@ -696,10 +699,11 @@ class AuthService:
         # bozma; kullanıcı yalnızca varsayılan olarak gizli kalır.
         try:
             visibility = self._first(
-                service.table("users").select("discoverable,letter_receiving_enabled").eq("id", account.id).limit(1).execute()
+                service.table("users").select("discoverable,letter_receiving_enabled,private_account").eq("id", account.id).limit(1).execute()
             ) or {}
             account_data["discoverable"] = bool(visibility.get("discoverable", True))
             account_data["letter_receiving_enabled"] = bool(visibility.get("letter_receiving_enabled", False))
+            account_data["private_account"] = bool(visibility.get("private_account", False))
         except Exception:
             pass
         return {
@@ -717,6 +721,15 @@ class AuthService:
             }
         ).eq("id", account.id).execute()
         return bool(visible)
+
+    def set_private_account(self, account: Account, private: bool) -> bool:
+        self._service_client().table("users").update(
+            {
+                "private_account": bool(private),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", account.id).execute()
+        return bool(private)
 
     # ── Sinefil Mektupları ─────────────────────────────────────────────
     # Letters are stored as ordinary rows the service can read. The privacy
@@ -885,10 +898,9 @@ class AuthService:
 
         candidates_query = (
             service.table("users")
-            .select("id,username,display_name,avatar_url,top_films,letter_receiving_enabled")
+            .select("id,username,display_name,avatar_url,top_films,letter_receiving_enabled,private_account")
             .eq("account_status", "active")
             .eq("profile_sync_status", "ready")
-            .eq("discoverable", True)
             .neq("id", account.id)
             .order("username")
             .limit(250)
@@ -915,6 +927,7 @@ class AuthService:
         ids = [int(row["id"]) for row in candidates]
         if not ids:
             return []
+        follow_states = self.follow_state(account, set(ids))
         favorites_rows = (
             service.table("profile_favorites")
             .select("user_id,position,slug,title,release_year,poster_url")
@@ -989,17 +1002,24 @@ class AuthService:
                     else ("Benzer yönetmenlere dönüyorsunuz" if directors else "Zevk haritalarınız yakın")
                 ),
                 "letters_open": bool(candidate.get("letter_receiving_enabled", False)),
+                "private_account": bool(candidate.get("private_account", False)),
+                "follow_status": follow_states.get(user_id, "none"),
             })
         return sorted(cards, key=lambda card: (-int(card["has_favorite_match"]), -card["match_score"], card["username"]))
 
     def sinefil_personality(self, account: Account, username: str) -> str:
         """Return only the opted-in profile's saved Fav-4 read."""
-        cards = self.list_sinefil_cards(account, query=username)
-        if not any(card["username"] == username for card in cards):
-            raise BlendServiceError("recipient_not_found")
         row = self._first(
-            self._service_client().table("users").select("id").eq("username", username).limit(1).execute()
+            self._service_client().table("users").select("id,private_account,account_status").eq(
+                "username", username
+            ).limit(1).execute()
         ) or {}
+        if (
+            not row
+            or row.get("account_status") != "active"
+            or int(row["id"]) not in self._visible_author_ids(account, {int(row["id"])})
+        ):
+            raise BlendServiceError("recipient_not_found")
         taste = self._first(
             self._service_client().table("taste_profiles").select("personality").eq("user_id", row.get("id")).limit(1).execute()
         ) or {}
@@ -1044,6 +1064,7 @@ class AuthService:
                 .select(self._WATCHED_PICK_COLS)
                 .eq("user_id", user_id)
                 .eq("film_slug", slug)
+                .eq("is_active", True)
                 .limit(1)
                 .execute()
             )
@@ -1342,6 +1363,563 @@ class AuthService:
 
     def count_watched_films(self, user_id: int) -> int:
         return len(self.get_watched_slugs(user_id))
+
+    # ── Sinefil Akışı ───────────────────────────────────────────────────
+    _POST_COLS = (
+        "id,author_id,kind,body,film_slug,tmdb_id,film_title,film_year,payload,"
+        "spoiler,reply_to,like_count,reply_count,created_at"
+    )
+
+    def create_post(self, account: Account, payload: dict) -> dict:
+        row = {
+            "author_id": account.id,
+            "kind": payload.get("kind") or "note",
+            "body": (payload.get("body") or "").strip(),
+            "spoiler": bool(payload.get("spoiler")),
+        }
+        if payload.get("reply_to"):
+            row["reply_to"] = payload["reply_to"]
+        else:
+            # A top-level note without a film is not a thing this product has.
+            slug = str(payload.get("film_slug") or "").strip().lower()
+            if not slug:
+                raise BlendServiceError("post_film_required")
+            # The picker is a convenience, never the security boundary. A raw
+            # HTTP request must not be able to manufacture a film and poison
+            # the community timeline or its trends.
+            film = self.watched_film_by_slug(account.id, slug)
+            if not film:
+                raise BlendServiceError("post_film_not_owned")
+            row.update({
+                "film_slug": film["slug"],
+                "tmdb_id": film.get("tmdb_id"),
+                "film_title": film.get("title") or "",
+                "film_year": film.get("year"),
+            })
+        try:
+            created = self._first(self._service_client().table("posts").insert(row).execute())
+        except Exception as exc:
+            # Surfaced as a clear 503 rather than a bare 500: the member must
+            # know the note was not saved.
+            raise BlendServiceError("post_failed") from exc
+        if not created:
+            raise BlendServiceError("post_failed")
+        return created
+
+    def _hydrate_posts(self, rows: list[dict], viewer_id: int) -> list[dict]:
+        """Attach author, poster and the viewer's own like state in one pass."""
+        if not rows:
+            return []
+        service = self._service_client()
+        authors = self._accounts_by_id(service, {int(r["author_id"]) for r in rows})
+        slugs = [r["film_slug"] for r in rows if r.get("film_slug")]
+        posters: dict[str, dict] = {}
+        if slugs:
+            found = service.table("film_posters").select(
+                "film_slug,poster_url,title,release_year,director"
+            ).in_("film_slug", list(dict.fromkeys(slugs))).execute().data or []
+            posters = {row["film_slug"]: row for row in found}
+        liked: set[str] = set()
+        ids = [r["id"] for r in rows]
+        if ids:
+            mine = service.table("post_likes").select("post_id").eq(
+                "user_id", viewer_id
+            ).in_("post_id", ids).execute().data or []
+            liked = {row["post_id"] for row in mine}
+        out = []
+        for row in rows:
+            poster = posters.get(row.get("film_slug") or "", {})
+            out.append({
+                **row,
+                "author": authors.get(int(row["author_id"])),
+                "film": {
+                    "slug": row.get("film_slug") or "",
+                    "title": poster.get("title") or row.get("film_title") or "",
+                    "year": poster.get("release_year") or row.get("film_year"),
+                    "poster_url": poster.get("poster_url") or "",
+                    "director": poster.get("director") or "",
+                } if row.get("film_slug") else None,
+                "liked": row["id"] in liked,
+                "mine": int(row["author_id"]) == viewer_id,
+            })
+        return out
+
+    def _blocked_ids(self, viewer_id: int) -> set[int]:
+        """Both directions: someone I blocked and someone who blocked me."""
+        service = self._service_client()
+        try:
+                rows = service.table("user_blocks").select(
+                "blocker_user_id,blocked_user_id"
+            ).or_(
+                f"blocker_user_id.eq.{viewer_id},blocked_user_id.eq.{viewer_id}"
+            ).execute().data or []
+        except Exception:
+            return set()
+        out: set[int] = set()
+        for row in rows:
+            out.add(int(row["blocker_user_id"]))
+            out.add(int(row["blocked_user_id"]))
+        out.discard(viewer_id)
+        return out
+
+    @staticmethod
+    def _cursor_parts(cursor: str) -> tuple[str, str] | None:
+        """Validate a composite keyset cursor before it reaches PostgREST."""
+        if not cursor:
+            return None
+        try:
+            created_at, post_id = cursor.rsplit("|", 1)
+            datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            UUID(post_id)
+        except (TypeError, ValueError):
+            raise BlendServiceError("invalid_cursor") from None
+        return created_at, post_id
+
+    @staticmethod
+    def _post_cursor(row: dict) -> str:
+        return f"{row['created_at']}|{row['id']}"
+
+    def _apply_post_cursor(self, query, cursor: str):
+        parsed = self._cursor_parts(cursor)
+        if not parsed:
+            return query
+        created_at, post_id = parsed
+        # created_at alone loses or repeats notes written in the same tick.
+        return query.or_(
+            f"created_at.lt.{created_at},and(created_at.eq.{created_at},id.lt.{post_id})"
+        )
+
+    def _visible_author_ids(self, account: Account, author_ids: set[int]) -> set[int]:
+        """Apply both block directions and private-account access everywhere."""
+        if not author_ids:
+            return set()
+        service = self._service_client()
+        blocked = self._blocked_ids(account.id)
+        candidates = author_ids - blocked
+        if not candidates:
+            return set()
+        rows = service.table("users").select("id,account_status,private_account").in_(
+            "id", list(candidates)
+        ).execute().data or []
+        active = {
+            int(row["id"]): bool(row.get("private_account"))
+            for row in rows if row.get("account_status") == "active"
+        }
+        visible = {user_id for user_id, private in active.items() if not private or user_id == account.id}
+        locked = [user_id for user_id, private in active.items() if private and user_id != account.id]
+        if locked:
+            accepted = service.table("follows").select("followee_id").eq(
+                "follower_id", account.id
+            ).eq("status", "accepted").in_("followee_id", locked).execute().data or []
+            visible.update(int(row["followee_id"]) for row in accepted)
+        return visible
+
+    def _can_view_user(self, account: Account, user_id: int, private: bool) -> bool:
+        return user_id in self._visible_author_ids(account, {user_id}) if private or user_id != account.id else True
+
+    def _visible_rows(self, account: Account, rows: list[dict]) -> list[dict]:
+        visible = self._visible_author_ids(account, {int(row["author_id"]) for row in rows})
+        return [row for row in rows if int(row["author_id"]) in visible]
+
+    def list_feed(
+        self, account: Account, *, scope: str = "community",
+        cursor: str = "", limit: int = 20, film_slug: str = "",
+    ) -> dict:
+        service = self._service_client()
+        following: list[int] | None = None
+        if not film_slug and scope == "following":
+            following = [row["followee_id"] for row in (
+                service.table("follows").select("followee_id").eq(
+                    "follower_id", account.id
+                ).eq("status", "accepted").execute().data or [])]
+            following.append(account.id)
+        scanned_cursor = cursor
+        visible: list[dict] = []
+        exhausted = False
+        # A private/blocked cluster must not make the next visible post
+        # unreachable. Scan a few bounded batches, then hand the cursor of the
+        # last returned visible card back to the caller.
+        for _ in range(6):
+            query = service.table("posts").select(self._POST_COLS).is_(
+                "deleted_at", "null"
+            ).is_("reply_to", "null").order("created_at", desc=True).order("id", desc=True).limit(60)
+            query = self._apply_post_cursor(query, scanned_cursor)
+            if film_slug:
+                query = query.eq("film_slug", film_slug)
+            elif following is not None:
+                query = query.in_("author_id", following)
+            try:
+                rows = self._retry_storage_read(query.execute).data or []
+            except BlendServiceError:
+                raise
+            except Exception as exc:
+                raise TransientStorageError("feed_unavailable") from exc
+            if not rows:
+                exhausted = True
+                break
+            visible.extend(self._visible_rows(account, rows))
+            if len(visible) > limit:
+                break
+            if len(rows) < 60:
+                exhausted = True
+                break
+            scanned_cursor = self._post_cursor(rows[-1])
+        page = visible[:limit]
+        return {
+            "posts": self._hydrate_posts(page, account.id),
+            "next_cursor": self._post_cursor(page[-1]) if page and (len(visible) > limit or not exhausted) else "",
+        }
+
+    def get_post_thread(self, account: Account, post_id: str) -> dict | None:
+        service = self._service_client()
+        root = self._first(
+            service.table("posts").select(self._POST_COLS).eq("id", post_id)
+            .is_("deleted_at", "null").limit(1).execute()
+        )
+        if not root:
+            return None
+        if not self._visible_rows(account, [root]):
+            return None
+        replies = service.table("posts").select(self._POST_COLS).eq(
+            "reply_to", post_id
+        ).is_("deleted_at", "null").order("created_at").limit(100).execute().data or []
+        replies = self._visible_rows(account, replies)
+        hydrated = self._hydrate_posts([root] + replies, account.id)
+        return {"post": hydrated[0], "replies": hydrated[1:]}
+
+    def _count(self, table: str, column: str, value) -> int:
+        try:
+            result = self._service_client().table(table).select(
+                "*", count="exact"
+            ).eq(column, value).limit(1).execute()
+        except Exception:
+            return 0
+        return int(result.count or 0)
+
+    def _accepted_follow_count(self, column: str, user_id: int) -> int:
+        try:
+            result = self._service_client().table("follows").select(
+                "*", count="exact"
+            ).eq(column, user_id).eq("status", "accepted").limit(1).execute()
+        except Exception:
+            return 0
+        return int(result.count or 0)
+
+    def public_profile(self, account: Account, username: str) -> dict | None:
+        """Someone's page: who they are, their tallies, and where the viewer stands.
+
+        Returns None for a stranger the viewer cannot see — no account, closed,
+        or a block in either direction — so the route can answer a flat 404
+        rather than leak that the name exists.
+        """
+        service = self._service_client()
+        row = self._first(
+            service.table("users").select(
+                "id,username,display_name,avatar_url,account_status,letterboxd_stats,"
+                "letter_receiving_enabled,private_account,created_at"
+            ).eq("username", username).limit(1).execute()
+        )
+        if not row or (row.get("account_status") or "") != "active":
+            return None
+        user_id = int(row["id"])
+        if user_id != account.id and user_id in self._blocked_ids(account.id):
+            return None
+        can_view = self._can_view_user(account, user_id, bool(row.get("private_account")))
+
+        try:
+            notes = service.table("posts").select("*", count="exact").eq(
+                "author_id", user_id
+            ).is_("deleted_at", "null").is_("reply_to", "null").limit(1).execute()
+            note_count = int(notes.count or 0) if can_view else None
+        except Exception:
+            note_count = 0 if can_view else None
+        favorites = []
+        if can_view:
+            favorites = service.table("profile_favorites").select(
+                "position,slug,title,release_year,poster_url"
+            ).eq("user_id", user_id).order("position").limit(4).execute().data or []
+
+        follow_state = self.follow_state(account, {user_id}) if user_id != account.id else {}
+        follows_you = bool(
+            can_view and user_id != account.id
+            and (service.table("follows").select("follower_id").eq(
+                "follower_id", user_id
+            ).eq("followee_id", account.id).eq("status", "accepted").limit(1).execute().data or [])
+        )
+        return {
+            "id": user_id,
+            "username": row["username"],
+            "display_name": row.get("display_name") or row["username"],
+            "avatar_url": row.get("avatar_url") or "",
+            "joined_at": row.get("created_at"),
+            "letterboxd_stats": row.get("letterboxd_stats") or {},
+            "favorites": favorites,
+            "note_count": note_count,
+            "follower_count": self._accepted_follow_count("followee_id", user_id) if can_view else None,
+            "following_count": self._accepted_follow_count("follower_id", user_id) if can_view else None,
+            "follow_status": follow_state.get(user_id, "none") if user_id != account.id else "self",
+            "following": follow_state.get(user_id) == "accepted",
+            "follows_you": follows_you,
+            "is_me": user_id == account.id,
+            "letter_receiving_enabled": bool(row.get("letter_receiving_enabled")) if can_view else False,
+            "private_account": bool(row.get("private_account")),
+            "can_view": can_view,
+        }
+
+    def list_user_posts(
+        self, account: Account, user_id: int, *, cursor: str = "", limit: int = 20,
+    ) -> dict:
+        service = self._service_client()
+        if user_id not in self._visible_author_ids(account, {user_id}):
+            return {"posts": [], "next_cursor": ""}
+        query = service.table("posts").select(self._POST_COLS).eq(
+            "author_id", user_id
+        ).is_("deleted_at", "null").is_("reply_to", "null").order(
+            "created_at", desc=True
+        ).order("id", desc=True).limit(limit + 1)
+        query = self._apply_post_cursor(query, cursor)
+        try:
+            rows = self._retry_storage_read(query.execute).data or []
+        except BlendServiceError:
+            raise
+        except Exception:
+            return {"posts": [], "next_cursor": ""}
+        page = rows[:limit]
+        return {
+            "posts": self._hydrate_posts(page, account.id),
+            "next_cursor": self._post_cursor(page[-1]) if len(rows) > limit and page else "",
+        }
+
+    def list_follow_list(
+        self, account: Account, user_id: int, *, kind: str = "followers", limit: int = 100,
+    ) -> list[dict]:
+        """Who follows this member, or who they follow, with the viewer's own state."""
+        service = self._service_client()
+        column, other = (
+            ("followee_id", "follower_id") if kind == "followers"
+            else ("follower_id", "followee_id")
+        )
+        try:
+            rows = service.table("follows").select(other).eq(
+                column, user_id
+            ).eq("status", "accepted").order("created_at", desc=True).limit(limit).execute().data or []
+        except Exception:
+            return []
+        ids = {int(row[other]) for row in rows} - self._blocked_ids(account.id)
+        if not ids:
+            return []
+        accounts = self._accounts_by_id(service, ids)
+        mine = self.follow_state(account, ids)
+        return [
+            {
+                **accounts[int(row[other])],
+                "following": mine.get(int(row[other])) == "accepted",
+                "is_me": int(row[other]) == account.id,
+            }
+            for row in rows
+            if int(row[other]) in accounts
+        ]
+
+    def delete_post(self, account: Account, post_id: str) -> bool:
+        updated = self._service_client().table("posts").update(
+            {"deleted_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("id", post_id).eq("author_id", account.id).is_(
+            "deleted_at", "null"
+        ).execute().data or []
+        return bool(updated)
+
+    def set_post_like(self, account: Account, post_id: str, liked: bool) -> int:
+        service = self._service_client()
+        post = self._first(
+            service.table("posts").select("id,author_id,like_count").eq("id", post_id)
+            .is_("deleted_at", "null").limit(1).execute()
+        )
+        if not post:
+            raise BlendServiceError("post_not_found")
+        if not self._visible_rows(account, [post]):
+            raise BlendServiceError("post_not_found")
+        if liked:
+            existing = service.table("post_likes").select("post_id").eq(
+                "post_id", post_id
+            ).eq("user_id", account.id).limit(1).execute().data or []
+            created = False
+            if not existing:
+                service.table("post_likes").insert(
+                    {"post_id": post_id, "user_id": account.id}
+                ).execute()
+                created = True
+            if created:
+                if int(post["author_id"]) != account.id:
+                    self.notify(int(post["author_id"]), "like", account.id, post_id,
+                                event_key=f"like:{post_id}:{account.id}")
+        else:
+            service.table("post_likes").delete().eq("post_id", post_id).eq(
+                "user_id", account.id
+            ).execute()
+        fresh = self._first(
+            service.table("posts").select("like_count").eq("id", post_id).limit(1).execute()
+        )
+        return int((fresh or {}).get("like_count") or 0)
+
+    def notify(
+        self, user_id: int, kind: str, actor_id: int, post_id: str | None = None,
+        *, event_key: str | None = None,
+    ) -> None:
+        with contextlib.suppress(Exception):
+            self._service_client().table("notifications").insert({
+                "user_id": user_id, "kind": kind,
+                "actor_id": actor_id, "post_id": post_id,
+                "event_key": event_key,
+            }).execute()
+
+    def list_notifications(self, account: Account, limit: int = 30) -> list[dict]:
+        service = self._service_client()
+        try:
+            rows = service.table("notifications").select(
+                "id,kind,actor_id,post_id,read_at,created_at"
+            ).eq("user_id", account.id).order("created_at", desc=True).limit(limit).execute().data or []
+        except Exception:
+            return []
+        blocked = self._blocked_ids(account.id)
+        rows = [row for row in rows if not row.get("actor_id") or int(row["actor_id"]) not in blocked]
+        actors = self._accounts_by_id(service, {int(r["actor_id"]) for r in rows if r.get("actor_id")})
+        # Without the note itself a notification reads "biri notunu beğendi" and
+        # the reader has no idea which one.
+        post_ids = [r["post_id"] for r in rows if r.get("post_id")]
+        posts: dict[str, dict] = {}
+        if post_ids:
+            found = service.table("posts").select(
+                "id,body,film_title,film_slug,reply_to,deleted_at"
+            ).in_("id", list(dict.fromkeys(post_ids))).execute().data or []
+            posts = {
+                row["id"]: {
+                    "id": row["id"],
+                    "body": row.get("body") or "",
+                    "film_title": row.get("film_title") or "",
+                    "thread_id": row.get("reply_to") or row["id"],
+                }
+                for row in found if not row.get("deleted_at")
+            }
+        return [
+            {
+                **row,
+                "actor": actors.get(int(row["actor_id"]) if row.get("actor_id") else 0),
+                "post": posts.get(row.get("post_id") or ""),
+            }
+            for row in rows
+        ]
+
+    def unread_notification_count(self, account: Account) -> int:
+        try:
+            result = self._service_client().table("notifications").select(
+                "id", count="exact"
+            ).eq("user_id", account.id).is_("read_at", "null").limit(1).execute()
+        except Exception:
+            return 0
+        return int(result.count or 0)
+
+    def mark_notifications_read(self, account: Account) -> None:
+        with contextlib.suppress(Exception):
+            self._service_client().table("notifications").update(
+                {"read_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("user_id", account.id).is_("read_at", "null").execute()
+
+    def set_follow(self, account: Account, username: str, following: bool) -> dict:
+        service = self._service_client()
+        target = self._first(
+            service.table("users").select("id,username,display_name,avatar_url,private_account")
+            .eq("username", username).eq("account_status", "active").limit(1).execute()
+        )
+        if not target:
+            raise BlendServiceError("user_not_found")
+        if int(target["id"]) == account.id:
+            raise BlendServiceError("self_follow")
+        if int(target["id"]) in self._blocked_ids(account.id):
+            raise BlendServiceError("user_not_found")
+        if following:
+            existing = self._first(service.table("follows").select("status").eq(
+                "follower_id", account.id
+            ).eq("followee_id", target["id"]).limit(1).execute())
+            if existing:
+                status = existing.get("status") or "accepted"
+            else:
+                status = "pending" if target.get("private_account") else "accepted"
+                service.table("follows").insert(
+                    {"follower_id": account.id, "followee_id": target["id"], "status": status}
+                ).execute()
+                self.notify(
+                    int(target["id"]), "follow_request" if status == "pending" else "follow",
+                    account.id, event_key=f"follow:{account.id}:{target['id']}",
+                )
+        else:
+            service.table("follows").delete().eq("follower_id", account.id).eq(
+                "followee_id", target["id"]
+            ).execute()
+            status = "none"
+        return {
+            "username": target["username"],
+            "following": status == "accepted", "follow_status": status,
+        }
+
+    def decide_follow_request(self, account: Account, username: str, accept: bool) -> dict:
+        service = self._service_client()
+        requester = self._first(service.table("users").select("id,username").eq(
+            "username", username
+        ).eq("account_status", "active").limit(1).execute())
+        if not requester or int(requester["id"]) in self._blocked_ids(account.id):
+            raise BlendServiceError("user_not_found")
+        pending = self._first(service.table("follows").select("follower_id").eq(
+            "follower_id", requester["id"]
+        ).eq("followee_id", account.id).eq("status", "pending").limit(1).execute())
+        if not pending:
+            raise BlendServiceError("follow_request_not_found")
+        if accept:
+            service.table("follows").update({"status": "accepted"}).eq(
+                "follower_id", requester["id"]
+            ).eq("followee_id", account.id).eq("status", "pending").execute()
+            self.notify(int(requester["id"]), "follow_accepted", account.id,
+                        event_key=f"follow-accepted:{requester['id']}:{account.id}")
+        else:
+            service.table("follows").delete().eq("follower_id", requester["id"]).eq(
+                "followee_id", account.id).eq("status", "pending").execute()
+        return {"username": requester["username"], "follow_status": "accepted" if accept else "none"}
+
+    def follow_state(self, account: Account, user_ids: set[int]) -> dict[int, str]:
+        if not user_ids:
+            return {}
+        rows = self._service_client().table("follows").select("followee_id,status").eq(
+            "follower_id", account.id
+        ).in_("followee_id", list(user_ids)).execute().data or []
+        return {int(row["followee_id"]): row.get("status") or "accepted" for row in rows}
+
+    def trending_films(self, days: int = 7, limit: int = 5) -> list[dict]:
+        """Most talked-about films. The mandatory film anchor makes this free."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        try:
+            rows = self._service_client().table("posts").select("film_slug").is_(
+            "deleted_at", "null"
+            ).is_("reply_to", "null").gte("created_at", since).limit(2000).execute().data or []
+        except Exception:
+            return []
+        counts: dict[str, int] = {}
+        for row in rows:
+            slug = row.get("film_slug")
+            if slug:
+                counts[slug] = counts.get(slug, 0) + 1
+        top = sorted(counts.items(), key=lambda item: -item[1])[:limit]
+        if not top:
+            return []
+        posters = self._service_client().table("film_posters").select(
+            "film_slug,title,release_year,poster_url"
+        ).in_("film_slug", [slug for slug, _ in top]).execute().data or []
+        by_slug = {row["film_slug"]: row for row in posters}
+        return [{
+            "slug": slug,
+            "count": count,
+            "title": (by_slug.get(slug) or {}).get("title") or slug,
+            "year": (by_slug.get(slug) or {}).get("release_year"),
+            "poster_url": (by_slug.get(slug) or {}).get("poster_url") or "",
+        } for slug, count in top]
 
     # ── Sinema gündemi ──────────────────────────────────────────────────
     def claim_venue_ingest(
@@ -1686,6 +2264,22 @@ class AuthService:
     ) -> str:
         service = self._service_client()
         try:
+            recipient = self._first(service.table("users").select("id").eq(
+                "username", recipient_username
+            ).eq("account_status", "active").limit(1).execute())
+            if not recipient:
+                raise BlendServiceError("recipient_not_found")
+            recipient_id = int(recipient["id"])
+            if recipient_id in self._blocked_ids(account.id):
+                raise BlendServiceError("blend_user_blocked")
+            mutual = service.table("follows").select("follower_id,followee_id").eq(
+                "status", "accepted"
+            ).or_(
+                f"and(follower_id.eq.{account.id},followee_id.eq.{recipient_id}),"
+                f"and(follower_id.eq.{recipient_id},followee_id.eq.{account.id})"
+            ).execute().data or []
+            if len({(int(row["follower_id"]), int(row["followee_id"])) for row in mutual}) != 2:
+                raise BlendServiceError("blend_follow_required")
             result = service.rpc(
                 "create_blend_request",
                 {
@@ -1705,6 +2299,7 @@ class AuthService:
                 "blend_already_accepted",
                 "pending_quota_reached",
                 "blend_user_blocked",
+                "blend_follow_required",
             )
             code = next((item for item in known if item in message), "blend_request_failed")
             raise BlendServiceError(code) from exc
@@ -2078,3 +2673,35 @@ class AuthService:
             )
             code = next((item for item in known if item in message), "report_failed")
             raise BlendServiceError(code) from exc
+
+    def report_post(
+        self, account: Account, post_id: str, category: str, detail: str
+    ) -> str:
+        service = self._service_client()
+        post = self._first(service.table("posts").select("id,author_id").eq(
+            "id", post_id
+        ).is_("deleted_at", "null").limit(1).execute())
+        if not post or not self._visible_rows(account, [post]):
+            raise BlendServiceError("post_not_found")
+        if int(post["author_id"]) == account.id:
+            raise BlendServiceError("self_report")
+        since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        count = service.table("user_reports").select("id", count="exact").eq(
+            "reporter_user_id", account.id
+        ).gte("created_at", since).limit(1).execute()
+        if int(count.count or 0) >= 10:
+            raise BlendServiceError("report_quota_reached")
+        try:
+            created = self._first(service.table("user_reports").insert({
+                "reporter_user_id": account.id,
+                "reported_user_id": int(post["author_id"]),
+                "post_id": post_id,
+                "category": category,
+                "detail": detail[:500],
+            }).execute())
+        except Exception as exc:
+            if "duplicate" in str(exc).lower():
+                raise BlendServiceError("post_already_reported") from exc
+            raise BlendServiceError("report_failed") from exc
+        self._audit(service, account.id, "post_reported")
+        return str((created or {}).get("id") or "")

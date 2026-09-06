@@ -36,6 +36,9 @@ WHERE account_status = 'active' AND (discoverable IS NULL OR discoverable = FALS
 -- kutusu kapalı bir hesap mektup yollayamaz.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS letter_receiving_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE public.users ALTER COLUMN letter_receiving_enabled SET DEFAULT TRUE;
+-- Kilitli hesaplar Sinefil Sineması'nda kart olarak görünür; notları ve
+-- ayrıntılı profilleri ancak kabul edilmiş takipçilerine açılır.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS private_account BOOLEAN NOT NULL DEFAULT FALSE;
 -- Var olan hesaplar bir kereliğine `scripts.open_letterboxes` ile açıldı.
 -- Toplu UPDATE bilerek burada değil: şema her uygulandığında çalışır ve
 -- kutusunu kapatanların tercihini sessizce geri alırdı.
@@ -671,6 +674,7 @@ CREATE TABLE IF NOT EXISTS public.user_reports (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (reporter_user_id <> reported_user_id)
 );
+
 
 CREATE INDEX IF NOT EXISTS idx_user_reports_status_time
   ON public.user_reports (status, created_at DESC);
@@ -1398,6 +1402,14 @@ BEGIN
   DELETE FROM public.cinephile_letters
   WHERE (sender_user_id = p_blocker_user_id AND recipient_user_id = v_blocked_user_id)
      OR (sender_user_id = v_blocked_user_id AND recipient_user_id = p_blocker_user_id);
+  -- A block severs the social edge as well: no pending request, accepted
+  -- follow, or old alert can become a side door back to the profile.
+  DELETE FROM public.follows
+  WHERE (follower_id = p_blocker_user_id AND followee_id = v_blocked_user_id)
+     OR (follower_id = v_blocked_user_id AND followee_id = p_blocker_user_id);
+  DELETE FROM public.notifications
+  WHERE (user_id = p_blocker_user_id AND actor_id = v_blocked_user_id)
+     OR (user_id = v_blocked_user_id AND actor_id = p_blocker_user_id);
   RETURN v_blocked_user_id;
 END;
 $$;
@@ -1546,6 +1558,152 @@ GRANT EXECUTE ON FUNCTION public.unblock_user(BIGINT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.report_user(BIGINT, TEXT, TEXT, TEXT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.send_cinephile_letter(BIGINT, TEXT, TEXT, JSONB) TO service_role;
 
+-- ── Sinefil Akışı ──────────────────────────────────────────────────────────
+-- Her üst not bir filme bağlıdır: film seçmeden gönderi atılamaz. Bu, akışın
+-- konudan sapmasını tasarımla engeller ve "en çok konuşulan filmler" trendini
+-- ek bir veri yapısı olmadan mümkün kılar. Cevaplar filmi üstteki nottan
+-- devraldığı için kendi film alanlarını taşımaz.
+CREATE TABLE IF NOT EXISTS public.posts (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  author_id     BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL DEFAULT 'note' CHECK (kind IN ('note', 'log')),
+  body          TEXT NOT NULL DEFAULT '' CHECK (char_length(body) <= 280),
+  film_slug     TEXT,
+  tmdb_id       INTEGER,
+  film_title    TEXT NOT NULL DEFAULT '',
+  film_year     INTEGER,
+  payload       JSONB,
+  spoiler       BOOLEAN NOT NULL DEFAULT FALSE,
+  reply_to      UUID REFERENCES public.posts(id) ON DELETE CASCADE,
+  like_count    INTEGER NOT NULL DEFAULT 0,
+  reply_count   INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at    TIMESTAMPTZ,
+  CHECK ((reply_to IS NULL AND film_slug IS NOT NULL) OR reply_to IS NOT NULL),
+  CHECK (kind = 'log' OR char_length(trim(body)) > 0)
+);
+
+-- Bir notu doğrudan bildirmek, sosyal akışın moderasyon bağlamını korur.
+-- Not silinse bile rapor satırı kalsın; post_id yalnızca NULL olur.
+ALTER TABLE public.user_reports
+  ADD COLUMN IF NOT EXISTS post_id UUID REFERENCES public.posts(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_posts_feed
+  ON public.posts (created_at DESC, id DESC)
+  WHERE deleted_at IS NULL AND reply_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_author
+  ON public.posts (author_id, created_at DESC)
+  WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_film
+  ON public.posts (film_slug, created_at DESC)
+  WHERE deleted_at IS NULL AND film_slug IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_thread
+  ON public.posts (reply_to, created_at)
+  WHERE deleted_at IS NULL AND reply_to IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.post_likes (
+  post_id    UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+  user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (post_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.follows (
+  follower_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  followee_id BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  source      TEXT NOT NULL DEFAULT 'app' CHECK (source IN ('app', 'letterboxd')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower_id, followee_id),
+  CHECK (follower_id <> followee_id)
+);
+
+-- Eski takipler, geçmişte zaten kurulmuş ilişkiler olduğu için kabul edilmiş
+-- sayılır. Yeni kilitli hesaplarda aynı satır bekleyen istek olarak kullanılır.
+ALTER TABLE public.follows ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'accepted';
+UPDATE public.follows SET status = 'accepted' WHERE status IS NULL;
+DO $$ BEGIN
+  ALTER TABLE public.follows ADD CONSTRAINT follows_status_check
+    CHECK (status IN ('pending', 'accepted'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_follows_followee
+  ON public.follows (followee_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_follows_follower_status
+  ON public.follows (follower_id, status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_reports_one_post_per_reporter
+  ON public.user_reports (reporter_user_id, post_id) WHERE post_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted')),
+  actor_id   BIGINT REFERENCES public.users(id) ON DELETE CASCADE,
+  post_id    UUID REFERENCES public.posts(id) ON DELETE CASCADE,
+  event_key  TEXT,
+  read_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS event_key TEXT;
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
+DO $$ BEGIN
+  ALTER TABLE public.notifications ADD CONSTRAINT notifications_kind_check
+    CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_notifications_unread
+  ON public.notifications (user_id, created_at DESC) WHERE read_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notifications_event_key
+  ON public.notifications (user_id, event_key) WHERE event_key IS NOT NULL;
+
+-- Counters are denormalized because every feed card would otherwise run its own
+-- COUNT(*). Triggers keep them true no matter which path writes.
+CREATE OR REPLACE FUNCTION public.posts_like_counter() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE public.posts SET like_count = like_count + 1 WHERE id = NEW.post_id;
+  ELSE
+    UPDATE public.posts SET like_count = GREATEST(0, like_count - 1) WHERE id = OLD.post_id;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_post_likes_counter ON public.post_likes;
+CREATE TRIGGER trg_post_likes_counter
+  AFTER INSERT OR DELETE ON public.post_likes
+  FOR EACH ROW EXECUTE FUNCTION public.posts_like_counter();
+
+CREATE OR REPLACE FUNCTION public.posts_reply_counter() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.reply_to IS NOT NULL THEN
+    UPDATE public.posts SET reply_count = reply_count + 1 WHERE id = NEW.reply_to;
+  ELSIF TG_OP = 'DELETE' AND OLD.reply_to IS NOT NULL THEN
+    UPDATE public.posts SET reply_count = GREATEST(0, reply_count - 1) WHERE id = OLD.reply_to;
+  ELSIF TG_OP = 'UPDATE' AND NEW.reply_to IS NOT NULL THEN
+    -- Silme yumuşak: satır kalır, deleted_at damgalanır. Sayaç bunu görmezse
+    -- başlıkta "3 cevap" yazar ama tek cevap görünür. Geri alma da simetrik.
+    IF OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL THEN
+      UPDATE public.posts SET reply_count = GREATEST(0, reply_count - 1) WHERE id = NEW.reply_to;
+    ELSIF OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS NULL THEN
+      UPDATE public.posts SET reply_count = reply_count + 1 WHERE id = NEW.reply_to;
+    END IF;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- UPDATE OF deleted_at: sayaç güncellemesi bu sütuna dokunmadığı için tetikleyici
+-- kendini yeniden çağırmaz.
+DROP TRIGGER IF EXISTS trg_posts_reply_counter ON public.posts;
+CREATE TRIGGER trg_posts_reply_counter
+  AFTER INSERT OR UPDATE OF deleted_at OR DELETE ON public.posts
+  FOR EACH ROW EXECUTE FUNCTION public.posts_reply_counter();
+
 -- TMDb API önbelleği: SQLite'ın üretim ortamındaki yedeği.
 CREATE TABLE IF NOT EXISTS public.tmdb_cache (
   namespace   TEXT         NOT NULL,
@@ -1572,6 +1730,10 @@ ALTER TABLE public.blend_results ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cinephile_letters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.post_likes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.screenings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bulletin_digests ENABLE ROW LEVEL SECURITY;
@@ -1594,6 +1756,11 @@ REVOKE ALL ON TABLE public.blend_results FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_blocks FROM anon, authenticated;
 REVOKE ALL ON TABLE public.user_reports FROM anon, authenticated;
 REVOKE ALL ON TABLE public.cinephile_letters FROM anon, authenticated;
+REVOKE ALL ON TABLE public.posts FROM anon, authenticated;
+REVOKE ALL ON TABLE public.post_likes FROM anon, authenticated;
+REVOKE ALL ON TABLE public.follows FROM anon, authenticated;
+REVOKE ALL ON TABLE public.notifications FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE public.notifications_id_seq FROM anon, authenticated;
 REVOKE ALL ON TABLE public.venues FROM anon, authenticated;
 REVOKE ALL ON TABLE public.screenings FROM anon, authenticated;
 REVOKE ALL ON TABLE public.bulletin_digests FROM anon, authenticated;
@@ -1617,6 +1784,11 @@ GRANT ALL ON TABLE public.blend_results TO service_role;
 GRANT ALL ON TABLE public.user_blocks TO service_role;
 GRANT ALL ON TABLE public.user_reports TO service_role;
 GRANT ALL ON TABLE public.cinephile_letters TO service_role;
+GRANT ALL ON TABLE public.posts TO service_role;
+GRANT ALL ON TABLE public.post_likes TO service_role;
+GRANT ALL ON TABLE public.follows TO service_role;
+GRANT ALL ON TABLE public.notifications TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE public.notifications_id_seq TO service_role;
 GRANT ALL ON TABLE public.venues TO service_role;
 GRANT ALL ON TABLE public.screenings TO service_role;
 GRANT ALL ON TABLE public.bulletin_digests TO service_role;

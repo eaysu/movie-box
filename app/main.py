@@ -1096,6 +1096,51 @@ class DiscoveryVisibilityRequest(BaseModel):
     visible: bool
 
 
+class AccountPrivacyRequest(BaseModel):
+    private: bool
+
+
+class FollowRequestDecision(BaseModel):
+    decision: str
+
+    @field_validator("decision", mode="before")
+    @classmethod
+    def validate_decision(cls, value: str) -> str:
+        decision = str(value or "").strip().lower()
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("Karar accepted veya rejected olmalı.")
+        return decision
+
+
+class PostRequest(BaseModel):
+    body: str
+    film_slug: str = ""
+    tmdb_id: int | None = None
+    film_title: str = ""
+    film_year: int | None = None
+    spoiler: bool = False
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not 1 <= len(value) <= 280:
+            raise ValueError("Not 1–280 karakter arasında olmalı.")
+        return value
+
+
+class ReplyRequest(BaseModel):
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        value = str(value or "").strip()
+        if not 1 <= len(value) <= 280:
+            raise ValueError("Cevap 1–280 karakter arasında olmalı.")
+        return value
+
+
 class LetterReceivingRequest(BaseModel):
     enabled: bool
 
@@ -1558,6 +1603,26 @@ async def update_discovery_settings(
         service, account, "sinefil_visibility_changed", {"visible": visible}
     )
     return {"ok": True, "discoverable": visible}
+
+
+@app.post("/api/profile/privacy-settings")
+async def update_account_privacy(
+    req: AccountPrivacyRequest, request: Request
+) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        private = await asyncio.to_thread(
+            _auth_service().set_private_account, account, req.private
+        )
+    except Exception as exc:
+        log.warning("account privacy update failed account=%s", account.id, exc_info=True)
+        raise HTTPException(status_code=503, detail="Hesap gizliliği şu an kaydedilemedi.") from exc
+    account.private_account = private
+    await _record_activity_event(
+        _auth_service(), account, "account_privacy_changed", {"private": private}
+    )
+    return {"ok": True, "private_account": private}
 
 
 @app.post("/api/letters/receiving")
@@ -3089,6 +3154,238 @@ async def sync_my_profile(
     return result
 
 
+# Posting is meant to feel immediate, so the ceiling only exists to stop scripts
+# and runaway clients — it is nowhere near what a person types in a day.
+_post_rate_limiter = SlidingWindowRateLimiter(
+    limit=40, window_seconds=24 * 60 * 60, burst=6, burst_seconds=60,
+)
+
+
+async def _enforce_post_rate_limit(request: Request) -> None:
+    allowed, retry_after = await _post_rate_limiter.check(_client_ip(request))
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Bugünlük not sınırına ulaştın. Yarın devam edebilirsin.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
+def _raise_post_http(exc: BlendServiceError) -> None:
+    mapping = {
+        "post_film_required": (422, "Not yazmadan önce bir film seçmelisin."),
+        "post_film_not_owned": (422, "Yalnızca izlediğin bir film hakkında not yazabilirsin."),
+        "post_not_found": (404, "Bu not bulunamadı."),
+        "post_already_reported": (409, "Bu notu zaten bildirdin."),
+        "post_failed": (503, "Not kaydedilemedi. Lütfen tekrar dene."),
+        "user_not_found": (404, "Bu kullanıcı bulunamadı."),
+        "self_follow": (422, "Kendini takip edemezsin."),
+        "follow_request_not_found": (404, "Takip isteği bulunamadı."),
+        "blend_follow_required": (403, "Blend için karşılıklı takip gerekiyor."),
+        "invalid_cursor": (422, "Geçersiz akış sayfalaması."),
+    }
+    status, detail = mapping.get(str(exc), (400, "İşlem tamamlanamadı."))
+    raise HTTPException(status_code=status, detail=detail)
+
+
+@app.get("/api/feed")
+async def read_feed(
+    request: Request, scope: str = "community", cursor: str = "", film: str = "",
+) -> dict:
+    account = await _require_account(request)
+    service = _auth_service()
+    scope = scope if scope in ("community", "following") else "community"
+    try:
+        feed = await asyncio.to_thread(
+            service.list_feed, account, scope=scope, cursor=cursor, limit=20,
+            film_slug=film.strip()[:120],
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    except TransientStorageError as exc:
+        # Better an honest "tekrar dene" than an empty timeline that reads as
+        # "nobody has written anything".
+        raise HTTPException(
+            status_code=503, detail="Akış şu an yüklenemedi. Tekrar dene.",
+        ) from exc
+    return {
+        "scope": scope,
+        "film": film.strip()[:120],
+        "posts": feed["posts"],
+        # Composite keyset: timestamp ties never duplicate or hide a note.
+        "next_cursor": feed["next_cursor"],
+    }
+
+
+@app.post("/api/posts")
+async def create_post(req: PostRequest, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_post_rate_limit(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    if account.profile_sync_status not in ("ready", "stale"):
+        # Raising the cost of a throwaway account: a profile has to exist first.
+        raise HTTPException(
+            status_code=409,
+            detail="Profilin hazırlanınca not yazabilirsin.",
+        )
+    try:
+        post = await asyncio.to_thread(service.create_post, account, req.model_dump())
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    await _record_activity_event(service, account, "post_created", {"spoiler": req.spoiler})
+    return {"ok": True, "post": post}
+
+
+@app.get("/api/posts/{post_id}")
+async def read_post(post_id: str, request: Request) -> dict:
+    account = await _require_account(request)
+    thread = await asyncio.to_thread(_auth_service().get_post_thread, account, post_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Bu not bulunamadı.")
+    return thread
+
+
+@app.post("/api/posts/{post_id}/replies")
+async def reply_to_post(post_id: str, req: ReplyRequest, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_post_rate_limit(request)
+    account = await _require_account(request)
+    service = _auth_service()
+    parent = await asyncio.to_thread(service.get_post_thread, account, post_id)
+    if not parent:
+        raise HTTPException(status_code=404, detail="Bu not bulunamadı.")
+    try:
+        reply = await asyncio.to_thread(
+            service.create_post, account,
+            {"body": req.body, "reply_to": post_id},
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    author_id = int(parent["post"]["author_id"])
+    if author_id != account.id:
+        await asyncio.to_thread(
+            service.notify, author_id, "reply", account.id, post_id,
+            event_key=f"reply:{reply['id']}",
+        )
+    return {"ok": True, "reply": reply}
+
+
+@app.delete("/api/posts/{post_id}")
+async def delete_post(post_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    removed = await asyncio.to_thread(_auth_service().delete_post, account, post_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Bu not bulunamadı.")
+    return {"ok": True}
+
+
+@app.post("/api/posts/{post_id}/like")
+async def like_post(post_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        count = await asyncio.to_thread(
+            _auth_service().set_post_like, account, post_id, True
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, "like_count": count, "liked": True}
+
+
+@app.delete("/api/posts/{post_id}/like")
+async def unlike_post(post_id: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        count = await asyncio.to_thread(
+            _auth_service().set_post_like, account, post_id, False
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, "like_count": count, "liked": False}
+
+
+@app.post("/api/posts/{post_id}/report")
+async def report_post(post_id: str, req: ReportUserRequest, request: Request) -> dict:
+    _require_csrf(request)
+    await _enforce_auth_rate_limit(request)
+    account = await _require_account(request)
+    try:
+        report_id = await asyncio.to_thread(
+            _auth_service().report_post, account, post_id, req.category, req.detail
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, "report_id": report_id}
+
+
+@app.get("/api/feed/trending")
+async def trending_films(request: Request) -> dict:
+    await _require_account(request)
+    films = await asyncio.to_thread(_auth_service().trending_films)
+    return {"films": films}
+
+
+@app.post("/api/users/{username}/follow")
+async def follow_user(username: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        result = await asyncio.to_thread(
+            _auth_service().set_follow, account, _normalize_username(username), True
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, **result}
+
+
+@app.delete("/api/users/{username}/follow")
+async def unfollow_user(username: str, request: Request) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        result = await asyncio.to_thread(
+            _auth_service().set_follow, account, _normalize_username(username), False
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, **result}
+
+
+@app.post("/api/users/{username}/follow-request")
+async def decide_follow_request(
+    username: str, req: FollowRequestDecision, request: Request
+) -> dict:
+    _require_csrf(request)
+    account = await _require_account(request)
+    try:
+        result = await asyncio.to_thread(
+            _auth_service().decide_follow_request,
+            account, _normalize_username(username), req.decision == "accepted",
+        )
+    except BlendServiceError as exc:
+        _raise_post_http(exc)
+    return {"ok": True, **result}
+
+
+@app.get("/api/notifications")
+async def read_notifications(request: Request) -> dict:
+    account = await _require_account(request)
+    service = _auth_service()
+    items = await asyncio.to_thread(service.list_notifications, account)
+    await asyncio.to_thread(service.mark_notifications_read, account)
+    return {"notifications": items}
+
+
+@app.get("/api/notifications/unread-count")
+async def unread_notifications(request: Request) -> dict:
+    account = await _require_account(request)
+    count = await asyncio.to_thread(_auth_service().unread_notification_count, account)
+    return {"count": count}
+
+
 @app.get("/api/users/search")
 async def search_registered_users(q: str, request: Request) -> dict:
     account = await _require_account(request)
@@ -3100,6 +3397,59 @@ async def search_registered_users(q: str, request: Request) -> dict:
         _auth_service().search_accounts, account, query
     )
     return {"users": users}
+
+
+def _clean_username(value: str) -> str:
+    try:
+        return _normalize_username(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# Declared after /api/users/search so the literal path keeps winning the match.
+@app.get("/api/users/{username}")
+async def read_user_page(username: str, request: Request, cursor: str = "") -> dict:
+    account = await _require_account(request)
+    service = _auth_service()
+    profile = await asyncio.to_thread(
+        service.public_profile, account, _clean_username(username)
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Bu sinefil bulunamadı.")
+    timeline = await asyncio.to_thread(
+        service.list_user_posts, account, profile["id"], cursor=cursor, limit=20
+    )
+    return {
+        "profile": profile,
+        "posts": timeline["posts"],
+        "next_cursor": timeline["next_cursor"],
+    }
+
+
+@app.get("/api/users/{username}/followers")
+async def read_followers(username: str, request: Request) -> dict:
+    return await _follow_list(username, request, "followers")
+
+
+@app.get("/api/users/{username}/following")
+async def read_following(username: str, request: Request) -> dict:
+    return await _follow_list(username, request, "following")
+
+
+async def _follow_list(username: str, request: Request, kind: str) -> dict:
+    account = await _require_account(request)
+    service = _auth_service()
+    profile = await asyncio.to_thread(
+        service.public_profile, account, _clean_username(username)
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Bu sinefil bulunamadı.")
+    if not profile.get("can_view"):
+        raise HTTPException(status_code=403, detail="Bu hesabın takip listesi kilitli.")
+    users = await asyncio.to_thread(
+        service.list_follow_list, account, profile["id"], kind=kind
+    )
+    return {"kind": kind, "profile": profile, "users": users}
 
 
 @app.post("/api/users/{username}/block")
