@@ -25,7 +25,7 @@
 <link rel="manifest" href="/static/site.webmanifest?v=20260907.3"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.71"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.73"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -83,13 +83,15 @@
     <button id="btn-home" class="font-headline-md text-base sm:text-headline-md tracking-tighter text-gradient-green transition-opacity hover:opacity-80 active:scale-95 whitespace-nowrap" aria-label="Movieboxd ana sayfa">
       MOVIEBOXD
     </button>
-    <button id="btn-open-feed" class="hidden absolute right-margin-mobile md:right-margin-desktop items-center gap-1.5 rounded-full border border-primary-container/30 bg-primary-container/10 px-3 py-1.5 font-label-md text-[11px] sm:text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
-      <span class="material-symbols-outlined text-[16px]">forum</span>Akış
-      <span id="feed-notification-badge" class="hidden ml-1 rounded-full bg-secondary-container px-1.5 text-[10px] font-bold text-on-secondary-container"></span>
-    </button>
-    <button id="btn-header-profile" class="hidden absolute right-margin-mobile h-10 w-10 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button" aria-label="Profilim">
-      <span class="material-symbols-outlined text-[22px]">person</span>
-    </button>
+    <!-- Sağ blok: akış kısayolu ve profil avatarı yan yana durur; profil
+         düğmesi giriş yapılmış her ekranda görünür. -->
+    <div class="absolute right-margin-mobile md:right-margin-desktop flex items-center gap-2">
+      <button id="btn-open-feed" class="hidden items-center gap-1.5 rounded-full border border-primary-container/30 bg-primary-container/10 px-3 py-1.5 font-label-md text-[11px] sm:text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
+        <span class="material-symbols-outlined text-[16px]">forum</span>Akış
+        <span id="feed-notification-badge" class="hidden ml-1 rounded-full bg-secondary-container px-1.5 text-[10px] font-bold text-on-secondary-container"></span>
+      </button>
+      <button id="btn-header-profile" class="avatar-button hidden h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" type="button" aria-label="Profilim"></button>
+    </div>
     <button id="header-privacy" class="hidden absolute right-margin-mobile md:right-margin-desktop font-label-md text-[10px] sm:text-label-md text-on-surface-variant hover:text-primary transition-colors" type="button">Gizlilik</button>
   </div>
 </header>
@@ -486,7 +488,9 @@
             <div id="profile-favorites" class="grid grid-cols-2 gap-2.5"></div>
           </section>
 
-          <div class="mt-4 grid gap-2">
+          <div class="mt-4" data-fold="kisayollar">
+            <button type="button" class="fold-head py-1" aria-expanded="true"><span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-on-surface-variant/70">Kısayollar</span><span class="fold-chevron material-symbols-outlined shrink-0 text-[20px] text-on-surface-variant/60">expand_more</span></button>
+            <div class="fold-body"><div class="mt-4 grid gap-2">
             <div class="flex items-center gap-2 justify-end">
               <button id="profile-inbox" type="button" aria-label="Gelen kutusu" class="hidden relative inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-outline-variant/30 bg-surface-container/50 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors">
                 <span class="material-symbols-outlined text-[16px]">inbox</span>Gelen kutusu
@@ -515,6 +519,7 @@
             <button id="profile-invite-friend" type="button" class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
               <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1">group_add</span>Bir arkadaşına öner
             </button>
+          </div></div>
           </div>
         </aside>
 
@@ -545,26 +550,26 @@
             </div>
           </div>
 
-          <section class="mt-6">
-            <span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">En sevilen türler</span>
-            <div id="profile-genres" class="mt-3 flex flex-wrap gap-2.5"></div>
+          <section class="mt-6" data-fold="turler">
+            <button type="button" class="fold-head" aria-expanded="true"><span class="font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">En sevilen türler</span><span class="fold-chevron material-symbols-outlined shrink-0 text-[20px] text-on-surface-variant/60">expand_more</span></button>
+            <div class="fold-body"><div id="profile-genres" class="mt-3 flex flex-wrap gap-2.5"></div></div>
           </section>
 
-          <section class="mt-6 rounded-2xl border border-tertiary-container/20 bg-tertiary-container/[0.06] p-4 md:p-5">
-            <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">
+          <section class="mt-6 rounded-2xl border border-tertiary-container/20 bg-tertiary-container/[0.06] p-4 md:p-5" data-fold="yonetmen">
+            <button type="button" class="fold-head" aria-expanded="true"><span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-tertiary-container">
               <span class="material-symbols-outlined text-[16px]">movie_edit</span>Favori yönetmen
-            </span>
-            <div class="mt-3 flex items-center gap-3.5">
+            </span><span class="fold-chevron material-symbols-outlined shrink-0 text-[20px] text-on-surface-variant/60">expand_more</span></button>
+            <div class="fold-body"><div class="mt-3 flex items-center gap-3.5">
               <span id="profile-favorite-director-avatar" class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-tertiary-container/25 bg-surface-container text-tertiary-container"><span class="material-symbols-outlined">person</span></span>
               <div class="min-w-0"><strong id="profile-favorite-director-name" class="block font-headline-md text-[22px] md:text-[25px] text-on-surface">Henüz belirleniyor</strong><p id="profile-favorite-director-note" class="mt-1 font-body-md text-body-md text-on-surface-variant"></p></div>
-            </div>
+            </div></div>
           </section>
 
-          <section class="mt-6 rounded-2xl border border-primary-container/20 bg-primary-container/[0.055] p-5 md:p-6">
-            <span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">
+          <section class="mt-6 rounded-2xl border border-primary-container/20 bg-primary-container/[0.055] p-5 md:p-6" data-fold="ozet">
+            <button type="button" class="fold-head" aria-expanded="true"><span class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">
               <span class="material-symbols-outlined text-[16px]" style="font-variation-settings:'FILL' 1">auto_stories</span>Hesap özeti
-            </span>
-            <p id="profile-account-summary" class="mt-3 font-body-lg text-body-lg leading-[1.72] text-on-surface">İzleme geçmişin analiz ediliyor…</p>
+            </span><span class="fold-chevron material-symbols-outlined shrink-0 text-[20px] text-on-surface-variant/60">expand_more</span></button>
+            <div class="fold-body"><p id="profile-account-summary" class="mt-3 font-body-lg text-body-lg leading-[1.72] text-on-surface">İzleme geçmişin analiz ediliyor…</p></div>
           </section>
 
           <div id="profile-sync-error" class="hidden mt-5 rounded-xl px-4 py-3 bg-error-container/30 text-error font-body-md text-body-md"></div>
@@ -665,18 +670,18 @@
 
     <!-- ── 4 · Auteur radar · Başucu filmleri · Son filmler ─────────────── -->
     <div class="profile-rise grid items-stretch lg:grid-cols-3 gap-6 mt-6" style="animation-delay:.12s">
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col">
+      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="auteur">
         <div class="flex items-start justify-between gap-4 mb-7">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Auteur radar</span>
             <h2 class="font-headline-md text-[23px] md:text-[26px] text-on-surface mt-2 leading-tight">Favori yönetmenlerin</h2>
           </div>
           <span class="material-symbols-outlined text-tertiary-container/40 text-[28px]">movie_edit</span>
-        </div>
+        <button type="button" class="fold-toggle shrink-0 rounded-full p-1 text-on-surface-variant/60 hover:text-on-surface transition-colors" aria-expanded="true" aria-label="Bölümü aç/kapat"><span class="fold-chevron material-symbols-outlined text-[22px]">expand_more</span></button></div><div class="fold-body">
         <div id="profile-directors" class="profile-carousel flex-grow flex flex-col overflow-hidden"></div>
-      </section>
+      </div></section>
 
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col">
+      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="basucu">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Başucu filmleri</span>
@@ -685,11 +690,11 @@
           <button id="profile-top-films-edit" type="button" class="w-9 h-9 shrink-0 rounded-full border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/60 transition-colors flex items-center justify-center" aria-label="Listeyi düzenle" title="Listeyi düzenle">
             <span class="material-symbols-outlined text-[18px]">edit</span>
           </button>
-        </div>
+        <button type="button" class="fold-toggle shrink-0 rounded-full p-1 text-on-surface-variant/60 hover:text-on-surface transition-colors" aria-expanded="true" aria-label="Bölümü aç/kapat"><span class="fold-chevron material-symbols-outlined text-[22px]">expand_more</span></button></div><div class="fold-body">
         <div id="profile-top-films" class="profile-carousel flex-grow flex flex-col overflow-hidden"></div>
-      </section>
+      </div></section>
 
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col">
+      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="gunce">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Günce</span>
@@ -698,19 +703,19 @@
           <button id="profile-recent-share" type="button" class="w-9 h-9 shrink-0 rounded-full border border-outline-variant/30 bg-surface-container/50 text-on-surface-variant hover:text-tertiary-container hover:border-tertiary-container/50 transition-colors flex items-center justify-center" aria-label="Son 10 filmi PNG olarak indir" title="Son 10 filmi PNG olarak indir">
             <span class="material-symbols-outlined text-[18px]">image</span>
           </button>
-        </div>
+        <button type="button" class="fold-toggle shrink-0 rounded-full p-1 text-on-surface-variant/60 hover:text-on-surface transition-colors" aria-expanded="true" aria-label="Bölümü aç/kapat"><span class="fold-chevron material-symbols-outlined text-[22px]">expand_more</span></button></div><div class="fold-body">
         <div id="profile-recent-films" class="profile-carousel flex-grow flex flex-col overflow-hidden"></div>
-      </section>
+      </div></section>
     </div>
   </main>
 </div>
 
 <!-- ═══════════════════════════  VIEW: ARAÇLAR  ═══════════════════════════ -->
 <div id="view-tools" class="hidden flex-grow pt-20 pb-24">
-  <div class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
+  <div class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop flex items-center justify-between gap-3">
     <button id="btn-tools-back" type="button" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
       <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span><span id="tools-back-label">Akışa dön</span>
-    </button>
+    </button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button>
   </div>
   <section id="tools-directory" class="mt-6 w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
     <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinema araçları</span>
@@ -1208,9 +1213,7 @@
       <h1 class="font-headline-md text-headline-md text-on-surface">Akış</h1>
       <div class="flex shrink-0 items-center gap-1">
         <button id="btn-feed-film-filter" type="button" title="Akışı filtrele" aria-label="Akışı filtrele" aria-expanded="false" class="rounded-full p-2 text-on-surface-variant hover:text-primary-container transition-colors"><span class="material-symbols-outlined text-[22px]">filter_alt</span></button>
-        <button id="btn-feed-mine" type="button" title="Profilim" class="rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors">
-          <span class="material-symbols-outlined text-[22px]">person</span>
-        </button>
+        <button id="btn-feed-mine" type="button" title="Profilim" class="avatar-button h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50 flex"></button>
       </div>
     </div>
     <div class="flex" role="tablist">
@@ -1262,7 +1265,7 @@
 </div>
 
 <div id="view-thread" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
-  <button id="btn-thread-back" type="button" class="mx-4 mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button>
+  <div class="mx-4 mb-4 flex items-center justify-between gap-3"><button id="btn-thread-back" type="button" class="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></div>
   <div id="thread-root" class="border-b border-outline-variant/25"></div>
   <div class="border-b border-outline-variant/25 px-4 py-4">
     <textarea id="thread-reply-text" maxlength="280" rows="2" placeholder="Bir not yaz…" class="w-full resize-none rounded-xl border border-outline-variant/30 bg-surface px-4 py-3 text-on-surface outline-none"></textarea>
@@ -1275,7 +1278,7 @@
 </div>
 
 <div id="view-user" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
-  <button id="btn-user-back" type="button" class="mx-4 mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Geri</button>
+  <div class="mx-4 mb-4 flex items-center justify-between gap-3"><button id="btn-user-back" type="button" class="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Geri</button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></div>
   <div id="user-header" class="px-4"></div>
   <div id="user-favorites" class="mt-5 px-4"></div>
   <div class="mt-6 border-b border-outline-variant/25 px-4 pb-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container">Notlar</div>
@@ -1284,13 +1287,13 @@
 </div>
 
 <div id="view-follows" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
-  <button id="btn-follows-back" type="button" class="mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Profile dön</button>
+  <div class="mb-4 flex items-center justify-between gap-3"><button id="btn-follows-back" type="button" class="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Profile dön</button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></div>
   <h1 id="follows-title" class="font-headline-md text-headline-md text-on-surface"></h1>
   <div id="follows-list" class="mt-5 flex flex-col gap-2"></div>
 </div>
 
 <div id="view-notifications" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
-  <button id="btn-notifications-back" type="button" class="mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button>
+  <div class="mb-4 flex items-center justify-between gap-3"><button id="btn-notifications-back" type="button" class="flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></div>
   <h1 class="font-headline-md text-headline-md text-on-surface">Bildirimler</h1>
   <div id="notifications-list" class="mt-5 flex flex-col gap-2"></div>
 </div>
@@ -1301,7 +1304,7 @@
       <button id="btn-inbox-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
         <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
       </button>
-      <button id="btn-inbox-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
+      <span class="flex items-center gap-2"><button id="btn-inbox-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></span>
     </div>
     <div>
       <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Sosyal alan</span>
@@ -1329,7 +1332,7 @@
       <button id="btn-blends-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
         <span class="material-symbols-outlined text-[18px]">arrow_back</span><span id="blends-back-label">Akışa dön</span>
       </button>
-      <button id="btn-blends-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
+      <span class="flex items-center gap-2"><button id="btn-blends-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></span>
     </div>
     <div>
       <div>
@@ -1362,7 +1365,7 @@
   <div class="relative z-10 max-w-[1120px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg">
     <div class="flex items-center justify-between mt-stack-md">
       <button id="btn-sinefil-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa</button>
-      <button id="btn-sinefil-refresh" type="button" class="text-on-surface-variant hover:text-tertiary-container" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
+      <span class="flex items-center gap-2"><button id="btn-sinefil-refresh" type="button" class="text-on-surface-variant hover:text-tertiary-container" title="Yenile"><span class="material-symbols-outlined">refresh</span></button><button type="button" data-open-profile class="avatar-button flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-outline-variant/30 bg-surface-container text-on-surface-variant transition-colors hover:border-primary-container/50" aria-label="Profilim"></button></span>
     </div>
     <div class="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
@@ -1395,6 +1398,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.80"></script>
+<script type="module" src="/static/js/app.js?v=20260907.83"></script>
 </body>
 </html>

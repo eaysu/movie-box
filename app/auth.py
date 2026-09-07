@@ -2338,7 +2338,7 @@ class AuthService:
             rows = self._retry_storage_read(
                 lambda: self._service_client().table("screenings").select(
                     "title_raw,year,tmdb_id,film_slug,poster_url,starts_at,url,match_status,updated_at,"
-                    "venues!inner(slug,name,city,kind,active)"
+                    "venues!inner(slug,name,city,kind,active,source_url)"
                 ).eq("match_status", "matched").gte(
                     "updated_at", fresh_after
                 ).limit(limit).execute()
@@ -2358,6 +2358,7 @@ class AuthService:
                 "venue_name": venue.get("name") or "",
                 "venue_city": venue.get("city") or "",
                 "venue_kind": venue.get("kind") or "",
+                "venue_source_url": venue.get("source_url") or "",
             })
         return self._hydrate_screenings(out)
 

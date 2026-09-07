@@ -806,7 +806,11 @@ function showView(name) {
   feedButton.classList.toggle('hidden', !showFeed);
   feedButton.classList.toggle('flex', showFeed);
   const headerProfile = $('btn-header-profile');
-  const showHeaderProfile = Boolean(_account) && SHELL_VIEWS.includes(name) && !OWN_HEADER_VIEWS.includes(name);
+  // Her ekranda: kabuk dışındaki sonuç/öneri ekranlarında da profile tek
+  // dokunuşla dönülebilmeli. Akış ailesi kendi başlığındaki avatarı taşıyor.
+  const showHeaderProfile = Boolean(_account)
+    && !['auth', 'onboarding', 'loading', 'blend-loading'].includes(name)
+    && !OWN_HEADER_VIEWS.includes(name);
   headerProfile.classList.toggle('hidden', !showHeaderProfile);
   headerProfile.classList.toggle('flex', showHeaderProfile);
   const letterComposeFab = $('btn-letter-compose-fab');
@@ -856,6 +860,58 @@ function paintShell(name) {
   fab.classList.toggle('hidden', !showFab);
   fab.classList.toggle('flex', showFab);
   if (on) paintNavAccount();
+  paintAvatarButtons();
+  if (name === 'profile') applyFolds();
+}
+
+// Profil düğmesi her ekranda aynı görünsün: ikon değil, kişinin kendi avatarı.
+// ── Katlanır bölümler ────────────────────────────────────────────────────
+// Telefonda profil panosu on bir kart uzunluğundaydı. Ağır bölümler dar
+// ekranda kapalı başlar; hangisinin açık kaldığını kullanıcı seçer ve seçim
+// cihazda saklanır.
+// Kısayollar zaten alt çubukta ve kenar çubuğunda var; panoda kapalı başlar.
+const FOLDED_ON_PHONE = ['kisayollar', 'turler', 'yonetmen', 'ozet', 'auteur', 'basucu', 'gunce'];
+
+function _foldPrefs() {
+  try { return JSON.parse(localStorage.getItem('mb_folds') || '{}'); }
+  catch (_) { return {}; }
+}
+
+function applyFolds() {
+  const phone = window.matchMedia('(max-width: 1023px)').matches;
+  const prefs = _foldPrefs();
+  document.querySelectorAll('[data-fold]').forEach(section => {
+    const key = section.dataset.fold;
+    const folded = key in prefs
+      ? Boolean(prefs[key])
+      : phone && FOLDED_ON_PHONE.includes(key);
+    section.classList.toggle('is-folded', folded);
+    const toggle = section.querySelector('.fold-head, .fold-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', String(!folded));
+  });
+}
+
+function toggleFold(section) {
+  const folded = !section.classList.contains('is-folded');
+  section.classList.toggle('is-folded', folded);
+  const toggle = section.querySelector('.fold-head, .fold-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', String(!folded));
+  try {
+    const prefs = _foldPrefs();
+    prefs[section.dataset.fold] = folded;
+    localStorage.setItem('mb_folds', JSON.stringify(prefs));
+  } catch (_) {}
+}
+
+function paintAvatarButtons() {
+  const avatar = safeImageURL(_account?.avatar_url);
+  const name = _account?.display_name || _account?.username || '';
+  const inner = avatar
+    ? `<img src="${avatar}" alt="" class="h-full w-full object-cover"/>`
+    : `<span class="font-bold text-primary-container">${escapeHTML((name[0] || '?').toUpperCase())}</span>`;
+  document.querySelectorAll('.avatar-button').forEach(button => {
+    button.innerHTML = inner;
+  });
 }
 
 function paintNavAccount() {
@@ -1002,6 +1058,7 @@ function setImage(img, fallback, value, alt) {
 
 function applyAccount(account) {
   _account = account;
+  paintAvatarButtons();
   $('username-input').value = account.username;
   $('primary-username-field').classList.add('hidden');
   $('profile-display-name').textContent = account.display_name || account.username;
@@ -1896,7 +1953,7 @@ function bulletinFilmCard(film) {
   const action = venues.length > 1
     ? `<button type="button" data-bulletin-venues="${escapeHTML(String(film.tmdb_id || film.slug || film.title))}" class="mt-2 w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues.length} sinema</button>`
     : (venues[0]?.url
-      ? `<a href="${escapeHTML(venues[0].url)}" target="_blank" rel="noopener" class="mt-2 block w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-center text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">Program</a>`
+      ? `<a href="${escapeHTML(venues[0].url)}" target="_blank" rel="noopener" class="mt-2 block w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-center text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues[0].film_page ? 'Filmin sayfası' : 'Sinema programı'}</a>`
       : '');
   const highlight = film.priority < 3 ? 'ring-1 ring-tertiary-container/40' : '';
   return `<article class="shrink-0 w-[150px] sm:w-[168px] rounded-2xl ${highlight} p-2">
@@ -1986,7 +2043,10 @@ function openBulletinVenues(key) {
         weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
       }))}`
       : '';
-    const label = `${escapeHTML(venue.name)}${when}`;
+    // Kadıköy gibi bazı sitelerde filme özel adres yok; satır neyi açacağını
+    // söylemezse kullanıcı sinemanın programına düşünce şaşırıyor.
+    const kind = venue.film_page ? 'Filmin sayfası' : 'Sinema programı';
+    const label = `<span class="min-w-0"><strong class="block truncate">${escapeHTML(venue.name)}${when}</strong><small class="text-on-surface-variant/60">${kind}</small></span>`;
     return venue.url
       ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/25 px-4 py-3 text-sm text-on-surface hover:border-tertiary-container/45 hover:text-tertiary-container transition-colors">${label}<span class="material-symbols-outlined text-[18px]">open_in_new</span></a>`
       : `<span class="rounded-xl border border-outline-variant/20 px-4 py-3 text-sm text-on-surface-variant/60">${label}</span>`;
@@ -5209,6 +5269,17 @@ $('notifications-list').addEventListener('click', event => {
 $('btn-feed-mine').addEventListener('click', () => {
   showView('profile');
   if (!_persistedProfile) loadProfile();
+});
+document.addEventListener('click', event => {
+  const fold = event.target.closest('.fold-head, .fold-toggle');
+  if (fold) {
+    const section = fold.closest('[data-fold]');
+    if (section) { toggleFold(section); return; }
+  }
+  // Her ekrandaki avatar aynı yere gider: kenar çubuğundaki "Profil" ile
+  // başlıktaki düğmenin ikisi de panoyu açıyor.
+  const button = event.target.closest('[data-open-profile]');
+  if (button && _account) goNav('profile');
 });
 $('btn-header-profile').addEventListener('click', () => {
   showView('profile');

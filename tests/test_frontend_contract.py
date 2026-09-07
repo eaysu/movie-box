@@ -439,6 +439,42 @@ def test_a_shell_page_starts_at_its_top_and_does_not_scroll_for_nothing():
     assert "window.scrollTo(0, 0);" in app_js.split("function showView", 1)[1][:400]
 
 
+def test_the_profile_dashboard_folds_its_heavy_sections_on_a_phone():
+    """Reported: eleven stacked cards made the dashboard endless on mobile.
+
+    Folded, the page measured 1970px instead of 4288px on a 390px screen.
+    """
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    for section in ("kisayollar", "turler", "yonetmen", "ozet", "auteur", "basucu", "gunce"):
+        assert f'data-fold="{section}"' in html, section
+        assert f"'{section}'" in app_js.split("FOLDED_ON_PHONE = [", 1)[1].split("]", 1)[0], section
+    # Only phones start folded, and the reader's own choice outlives that.
+    assert "matchMedia('(max-width: 1023px)')" in app_js
+    assert "mb_folds" in app_js
+    assert "[data-fold].is-folded .fold-body { display: none; }" in css
+    # The dashboard cards are pinned to 42rem; folded they have to let go.
+    assert ".profile-dashboard-card.is-folded" in css
+
+
+def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
+    """Reported: the button showed a generic person icon and went missing."""
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    # One painter fills every avatar button, header and column headers alike.
+    assert "function paintAvatarButtons" in app_js
+    assert html.count("avatar-button") >= 2
+    assert html.count("data-open-profile") == 8  # her ekranın kendi üst satırı
+    # Hidden only where there is no account yet.
+    block = app_js.split("const showHeaderProfile", 1)[1].split(";", 1)[0]
+    for view in ("'auth'", "'onboarding'", "'loading'", "'blend-loading'"):
+        assert view in block, view
+    assert "OWN_HEADER_VIEWS.includes(name)" in block
+
+
 def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -532,8 +568,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "1891adcf1698d0bb8461c66e102a71f20340145415bc36c2e0a00806e9add63c",
-            "static/app.css": "d36ba107ad68c0a43eb5e66886174a6a036f3c0dd2b73e24050b6773355df4af",
+            "static/js/app.js": "40486da76f358fa98b7a4d27e5a027387548e9783d59b67198f1e897a6b1a406",
+            "static/app.css": "a34ff82caf118e0bc17381f531abe7f9099e950cc245846c4a71452084b5d6a8",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -565,9 +601,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.71"
+    css_version = "v=20260907.73"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.80" in html
+    assert "/static/js/app.js?v=20260907.83" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js

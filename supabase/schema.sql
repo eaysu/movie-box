@@ -390,7 +390,7 @@ INSERT INTO public.venues (slug, name, city, kind, source_url, config) VALUES
   ('paribu-cineverse', 'Paribu Cineverse', '', 'repertory',
    'https://www.paribucineverse.com/vizyondakiler',
    '{"strategy":"attr","item_selector":"div.movie-list-banner-item",
-     "title_attr":"data-movie-title","link_attr":"data-slug-url","limit":60,
+     "title_attr":"data-movie-title","link_selector":"a[href*=\'-filmi-izle\']","limit":60,
      "robots":{"checked":"2026-09-04","allowed":true,
                "note":"Allow: / ; only /biletleme/ is disallowed and we never fetch it."}}'::jsonb),
   ('baska-sinema', 'Başka Sinema', '', 'repertory',

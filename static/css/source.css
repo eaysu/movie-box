@@ -486,6 +486,12 @@
     min-height: 42rem;
     overflow: hidden;
   }
+  /* Katlanmış kart sabit yüksekliğini bırakmalı, yoksa kapanmış bölüm de
+     ekranın yarısı kadar yer kaplamaya devam ediyor. */
+  .profile-dashboard-card.is-folded {
+    height: auto;
+    min-height: 0;
+  }
   .profile-carousel-frame {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
@@ -636,3 +642,17 @@
     width: 60%; max-width: 8rem; height: 4px; border-radius: 9999px;
     background: rgb(var(--color-primary-container));
   }
+
+  /* ── Katlanır bölümler ────────────────────────────────────────────────
+     Profil panosu telefonda on bir kartın alt alta dizildiği bir sütuna
+     dönüşüyordu. Ağır bölümler dar ekranda kapalı açılır; başlığa dokunmak
+     açar. Masaüstünde hepsi açık kalır. */
+  .fold-head {
+    display: flex; width: 100%; align-items: center; justify-content: space-between;
+    gap: .75rem; text-align: left;
+  }
+  .fold-chevron { transition: transform .2s ease; }
+  [data-fold].is-folded .fold-body { display: none; }
+  [data-fold].is-folded .fold-chevron { transform: rotate(-90deg); }
+  [data-fold].is-folded .fold-head,
+  [data-fold].is-folded > .flex { margin-bottom: 0 !important; }

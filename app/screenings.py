@@ -310,6 +310,72 @@ async def fetch_venue_page(venue: dict) -> str:
         return response.text
 
 
+_SOFT_404 = re.compile(r"/(?:404|not-?found)(?:[/?]|$)", re.IGNORECASE)
+
+
+async def verify_links(rows: list[dict], *, venue_url: str, client=None) -> int:
+    """Replace links that do not open a film page with the venue's programme.
+
+    A site changes shape more often than it changes address, so a selector that
+    still matches can hand back a URL that does not exist: Paribu's card carries
+    a `data-slug-url` that reads like a path but 404s, and 23 of its 24 links
+    were dead. Checking each link once per ingest costs a few dozen requests
+    every twelve hours and keeps dead ends off the bulletin.
+
+    Only definite evidence counts. A 4xx, or a 200 that landed on the site's own
+    404 page (Biletinial answers those with a redirect and a 200), is broken.
+    A timeout or a connection error is not: the link stays, because the site
+    being briefly unreachable says nothing about the address.
+    """
+    import httpx
+
+    targets = [row for row in rows if row.get("url") and row["url"] != venue_url]
+    if not targets:
+        return 0
+
+    owns_client = client is None
+    if owns_client:
+        client = httpx.AsyncClient(
+            timeout=15, follow_redirects=True,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; MovieboxdBot/1.0; "
+                    "+https://movieboxd.onrender.com)"
+                ),
+                "Accept-Language": "tr,en;q=0.8",
+            },
+        )
+    gate = asyncio.Semaphore(5)
+
+    async def broken(url: str) -> bool:
+        async with gate:
+            try:
+                response = await client.get(url)
+            except Exception:  # noqa: BLE001 - unreachable now ≠ wrong address
+                return False
+        if response.status_code >= 400:
+            return True
+        return bool(_SOFT_404.search(str(response.url)))
+
+    try:
+        verdicts = await asyncio.gather(*[broken(row["url"]) for row in targets])
+    finally:
+        if owns_client:
+            await client.aclose()
+
+    dropped = 0
+    for row, is_broken in zip(targets, verdicts):
+        if is_broken:
+            row["url"] = venue_url
+            dropped += 1
+    if dropped:
+        log.warning(
+            "bulletin: %s/%s links did not resolve, fell back to %s",
+            dropped, len(targets), venue_url,
+        )
+    return dropped
+
+
 async def ingest_venues(service, *, enricher, catalog=None) -> int:
     """Refresh every active repertory/festival venue, independently.
 
@@ -340,6 +406,7 @@ async def _fetch_and_parse(venue: dict) -> list[dict]:
     for row in rows:
         if not row.get("url"):
             row["url"] = source
+    await verify_links(rows, venue_url=source)
     return rows
 
 
@@ -387,7 +454,8 @@ _GENRE_TR = {
 }
 
 
-PAYLOAD_VERSION = 3
+# 4: kart artık linkin filme mi sinemaya mı gittiğini taşıyor.
+PAYLOAD_VERSION = 4
 
 
 def _film_card(row: dict, extra: dict | None = None) -> dict:
@@ -403,6 +471,10 @@ def _film_card(row: dict, extra: dict | None = None) -> dict:
             "slug": row.get("venue_slug") or "",
             "city": row.get("venue_city") or "",
             "url": row.get("url") or "",
+            # Kadıköy's listing has no per-film address at all, and a checked
+            # link can fall back to the programme page. The card says which of
+            # the two it is opening instead of promising a film page.
+            "film_page": bool(row.get("url")) and row.get("url") != row.get("venue_source_url"),
             "starts_at": row.get("starts_at"),
         }] if row.get("venue_name") else [],
     }

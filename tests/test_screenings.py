@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from app.screenings import (
     LOCAL_TZ,
     parse_programme,
+    verify_links,
     build_bulletin,
     ingest_release_layer,
     normalize_title,
@@ -437,3 +438,84 @@ class DigestCacheTests(unittest.TestCase):
 
         self.assertIn("clear_bulletin_digests", main)
         self.assertIn("def clear_bulletin_digests", auth)
+
+
+class LinkVerificationTests(unittest.TestCase):
+    """A link that 404s is worse than no link at all.
+
+    Paribu's cards carry a `data-slug-url` that reads like a path but is not
+    one: 23 of its 24 bulletin links answered 404 before this check existed.
+    """
+
+    class _Client:
+        def __init__(self, answers):
+            self.answers = answers
+            self.asked = []
+
+        async def get(self, url):
+            self.asked.append(url)
+            answer = self.answers[url]
+            if isinstance(answer, Exception):
+                raise answer
+            status, final = answer
+            return SimpleNamespace(status_code=status, url=final)
+
+    def test_a_dead_link_falls_back_to_the_venue_programme(self):
+        rows = [
+            {"title_raw": "Var", "url": "https://x.test/film/var"},
+            {"title_raw": "Yok", "url": "https://x.test/film/yok"},
+        ]
+        client = self._Client({
+            "https://x.test/film/var": (200, "https://x.test/film/var"),
+            "https://x.test/film/yok": (404, "https://x.test/film/yok"),
+        })
+
+        dropped = asyncio.run(
+            verify_links(rows, venue_url="https://x.test/programme", client=client)
+        )
+
+        self.assertEqual(dropped, 1)
+        self.assertEqual(rows[0]["url"], "https://x.test/film/var")
+        self.assertEqual(rows[1]["url"], "https://x.test/programme")
+
+    def test_a_soft_404_counts_as_broken(self):
+        """Biletinial answers an unknown path with a redirect and a 200."""
+        rows = [{"title_raw": "Kış Uykusu", "url": "https://b.test/filmler/kis-uykusu"}]
+        client = self._Client({
+            "https://b.test/filmler/kis-uykusu":
+                (200, "https://b.test/404?aspxerrorpath=/filmler/kis-uykusu"),
+        })
+
+        asyncio.run(verify_links(rows, venue_url="https://b.test/mekan/x", client=client))
+
+        self.assertEqual(rows[0]["url"], "https://b.test/mekan/x")
+
+    def test_an_unreachable_site_does_not_cost_its_links(self):
+        """A timeout says nothing about whether the address is right."""
+        rows = [{"title_raw": "Var", "url": "https://x.test/film/var"}]
+        client = self._Client({"https://x.test/film/var": TimeoutError("slow")})
+
+        dropped = asyncio.run(
+            verify_links(rows, venue_url="https://x.test/programme", client=client)
+        )
+
+        self.assertEqual(dropped, 0)
+        self.assertEqual(rows[0]["url"], "https://x.test/film/var")
+
+    def test_the_venues_own_page_is_never_checked(self):
+        rows = [{"title_raw": "Kış Uykusu", "url": "https://x.test/programme"}]
+        client = self._Client({})
+
+        asyncio.run(verify_links(rows, venue_url="https://x.test/programme", client=client))
+
+        self.assertEqual(client.asked, [])
+
+    def test_the_card_says_whether_it_opens_a_film_page(self):
+        """Kadıköy's listing has no per-film address, so the label must differ."""
+        screenings_py = (Path(__file__).parents[1] / "app" / "screenings.py").read_text()
+        app_js = (Path(__file__).parents[1] / "static" / "js" / "app.js").read_text()
+
+        self.assertIn('"film_page": bool(row.get("url"))', screenings_py)
+        self.assertIn("venue_source_url", screenings_py)
+        self.assertIn("Filmin sayfası", app_js)
+        self.assertIn("Sinema programı", app_js)
