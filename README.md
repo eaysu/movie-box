@@ -166,10 +166,13 @@ repertory layer parses venue programmes using selectors stored in
 `venues.config`, so a site redesign is a row edit rather than a deploy; a venue
 that fails records `last_error` and the bulletin still ships with the rest.
 
-There is no worker service, so ingest is nudged by the first member to open the
-bulletin and runs in the background under a per-venue DB lease
-(`claim_venue_ingest`), at most once per `BULLETIN_INGEST_INTERVAL_HOURS`. The
-digest itself is stored per `(user, week, city)` and served from there.
+While the web service is awake, a lightweight hourly scheduler nudges the
+programme ingest. The per-venue DB lease (`claim_venue_ingest`) ensures external
+sources are actually read at most once per `BULLETIN_INGEST_INTERVAL_HOURS`.
+UptimeRobot keeps the free Render service awake; its health checks therefore also
+keep this daily refresh loop alive. Personalised digests expire after
+`BULLETIN_DIGEST_TTL_HOURS` (six hours by default), and rows older than two
+missed refreshes are hidden instead of being advertised as still in cinemas.
 
 Turkish distribution titles are matched to films through `tmdb_id`, searching
 `tr-TR` first and falling back to English; anything that cannot be resolved

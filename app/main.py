@@ -23,7 +23,7 @@ import secrets
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
@@ -79,8 +79,18 @@ from . import profile_sync
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app):
-    yield
-    await close_tmdb_client()
+    scheduler = None
+    settings = get_settings()
+    if getattr(settings, "bulletin_enabled", False) and getattr(settings, "has_tmdb", False):
+        scheduler = asyncio.create_task(_bulletin_refresh_loop())
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler
+        await close_tmdb_client()
 
 
 app = FastAPI(title="Movieboxd", version="0.4.0", lifespan=_lifespan)
@@ -2204,6 +2214,22 @@ async def profile_recent_films(
 
 
 _bulletin_ingest_task: asyncio.Task | None = None
+_bulletin_scheduler_task: asyncio.Task | None = None
+
+
+async def _bulletin_refresh_loop() -> None:
+    """Keep the cinema programme current while Render is kept awake.
+
+    UptimeRobot already keeps the free Render web service alive. This light
+    hourly tick does no external work unless the DB's per-venue lease says the
+    configured refresh interval has elapsed, so restarts and multiple workers
+    remain harmless.
+    """
+    settings = get_settings()
+    service = _auth_service()
+    while True:
+        _kick_bulletin_ingest(settings, service)
+        await asyncio.sleep(60 * 60)
 
 
 def _kick_bulletin_ingest(settings, service) -> None:
@@ -2223,12 +2249,14 @@ def _kick_bulletin_ingest(settings, service) -> None:
         try:
             supabase_client, cache = _make_cache(settings)
             enricher = Enricher(settings.tmdb_api_key, cache, asset_store=service)
-            await screenings.ingest_release_layer(service, settings, enricher=enricher)
+            release_written = await screenings.ingest_release_layer(
+                service, settings, enricher=enricher
+            )
             # Venues run after the release layer so their titles can match
             # against films it has just resolved.
             written = await screenings.ingest_venues(service, enricher=enricher)
-            # A changed programme invalidates every card built from the old one.
-            if written:
+            # A refreshed source invalidates every card built from the old one.
+            if release_written or written:
                 await asyncio.to_thread(
                     service.clear_bulletin_digests, screenings.week_start().isoformat()
                 )
@@ -2251,7 +2279,17 @@ async def bulletin(request: Request) -> dict:
 
     cached = await asyncio.to_thread(service.get_bulletin_digest, account.id, week, "")
     # A payload written by an older shape is stale, not usable.
-    if cached and cached.get("version") == screenings.PAYLOAD_VERSION:
+    cached_at = None
+    with contextlib.suppress(TypeError, ValueError):
+        cached_at = datetime.fromisoformat(
+            str((cached or {}).get("generated_at") or "").replace("Z", "+00:00")
+        )
+    digest_fresh = bool(
+        cached_at and cached_at >= datetime.now(timezone.utc) - timedelta(
+            hours=max(1, settings.bulletin_digest_ttl_hours)
+        )
+    )
+    if cached and cached.get("version") == screenings.PAYLOAD_VERSION and digest_fresh:
         _kick_bulletin_ingest(settings, service)
         return {"enabled": True, **cached}
 
@@ -2280,6 +2318,7 @@ async def bulletin(request: Request) -> dict:
     payload = screenings.build_bulletin(
         rows, watched, watchlist, (stored or {}).get("taste") or {}
     )
+    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     # An empty listing means the ingest is still running; that is not worth a
     # week of cache, and it heals on its own.
     if payload.get("total"):

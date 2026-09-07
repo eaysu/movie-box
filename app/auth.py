@@ -2307,13 +2307,26 @@ class AuthService:
             return []
 
     def list_screenings(self, *, city: str = "", limit: int = 400) -> list[dict]:
-        """Current programme rows, joined to their venue for attribution."""
+        """Current, recently verified programme rows with venue attribution.
+
+        A failed source must make a film disappear rather than leaving it
+        advertised as still in cinemas indefinitely. Two missed scheduled
+        refreshes plus a small buffer gives venue sites enough room to recover.
+        """
         try:
+            max_age_hours = max(
+                30, int(self.settings.bulletin_ingest_interval_hours) * 2 + 6
+            )
+            fresh_after = (
+                datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+            ).isoformat()
             rows = self._retry_storage_read(
                 lambda: self._service_client().table("screenings").select(
-                    "title_raw,year,tmdb_id,film_slug,poster_url,starts_at,url,match_status,"
+                    "title_raw,year,tmdb_id,film_slug,poster_url,starts_at,url,match_status,updated_at,"
                     "venues!inner(slug,name,city,kind,active)"
-                ).eq("match_status", "matched").limit(limit).execute()
+                ).eq("match_status", "matched").gte(
+                    "updated_at", fresh_after
+                ).limit(limit).execute()
             ).data or []
         except Exception:
             return []

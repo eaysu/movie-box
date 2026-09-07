@@ -193,8 +193,8 @@ async def ingest_release_layer(service, settings, *, enricher) -> int:
             for film in films
             if film.get("title")
         ]
-        if not rows:
-            return 0
+        # An empty but successful TMDb response is still authoritative: it must
+        # clear yesterday's nationwide "now playing" rows.
         written = await asyncio.to_thread(
             service.upsert_screenings, RELEASE_VENUE_SLUG, rows, run_id
         )
@@ -367,8 +367,8 @@ async def ingest_repertory_venue(service, venue, *, fetch_page, enricher, catalo
                 enricher=enricher,
             )
             rows.append({**entry, **resolved})
-        if not rows:
-            return 0
+        # A reachable venue page with no programme means its former rows have
+        # left the programme. ``upsert_screenings`` clears that venue by run id.
         return await asyncio.to_thread(service.upsert_screenings, slug, rows, run_id)
     except Exception as exc:  # noqa: BLE001
         await asyncio.to_thread(service.record_venue_failure, slug, str(exc)[:500])
@@ -387,7 +387,7 @@ _GENRE_TR = {
 }
 
 
-PAYLOAD_VERSION = 2
+PAYLOAD_VERSION = 3
 
 
 def _film_card(row: dict, extra: dict | None = None) -> dict:

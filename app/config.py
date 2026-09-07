@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     bulletin_cities: str = "İstanbul,Ankara,İzmir"
     # A venue is re-fetched at most this often, whoever triggers it.
     bulletin_ingest_interval_hours: int = 12
+    # A card is cheap to rebuild; keeping it short prevents a morning refresh
+    # from being hidden behind a week-old personalised digest.
+    bulletin_digest_ttl_hours: int = 6
 
     # --- Scraper ---
     # Letterboxd sayfaları doğrudan, curl-cffi ile okunur. Ücretli veya harici
