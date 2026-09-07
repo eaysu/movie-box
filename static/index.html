@@ -25,9 +25,9 @@
 <link rel="manifest" href="/static/site.webmanifest?v=20260907.3"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.73"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.74"/>
 </head>
-<body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
+<body class="is-booting bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
 <!-- ═══════════════  SOL GEZİNME (masaüstü)  ═══════════════ -->
 <nav id="app-sidebar" class="hidden fixed inset-y-0 left-0 z-50 w-[248px] flex-col border-r border-outline-variant/25 bg-surface px-3 py-5">
@@ -59,8 +59,8 @@
 <!-- ═══════════════  ALT SEKME ÇUBUĞU (mobil)  ═══════════════ -->
 <nav id="app-tabbar" class="hidden fixed bottom-0 inset-x-0 z-50 items-stretch justify-around border-t border-outline-variant/25 bg-surface/95 backdrop-blur-xl">
   <button type="button" data-nav="feed" class="tab-item"><span class="material-symbols-outlined">home</span></button>
-  <button id="tab-tools-toggle" type="button" class="tab-item" aria-label="Sinema araçları"><span class="material-symbols-outlined">theaters</span></button>
-  <button type="button" data-nav="sinefil" class="tab-item"><span class="material-symbols-outlined">explore</span></button>
+  <button type="button" data-nav="sinefil" class="tab-item" aria-label="Keşfet"><span class="material-symbols-outlined">explore</span></button>
+  <button id="tab-tools-toggle" type="button" class="tab-item" aria-label="Sinema araçları"><span class="material-symbols-outlined">movie</span></button>
   <button type="button" data-nav="notifications" class="tab-item relative"><span class="material-symbols-outlined">notifications</span><span id="tab-badge-notifications" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
   <button type="button" data-nav="inbox" class="tab-item relative"><span class="material-symbols-outlined">mail</span><span id="tab-badge-inbox" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
 </nav>
@@ -440,13 +440,13 @@
     </div>
 
     <!-- ── HERO · kimlik + sinematik DNA ─────────────────────────────── -->
-    <section class="profile-rise relative overflow-hidden rounded-[28px] border border-outline-variant/25 bg-surface/70 backdrop-blur-2xl shadow-[0_36px_120px_-28px_rgba(0,0,0,.6)]">
+    <section class="mobile-flat profile-rise relative overflow-hidden rounded-[28px] border border-outline-variant/25 bg-surface/70 backdrop-blur-2xl shadow-[0_36px_120px_-28px_rgba(0,0,0,.6)]">
       <div class="absolute -top-36 -right-28 w-[26rem] h-[26rem] rounded-full bg-primary-container/12 blur-[130px] pointer-events-none"></div>
       <div class="absolute -bottom-44 -left-28 w-[26rem] h-[26rem] rounded-full bg-tertiary-container/8 blur-[130px] pointer-events-none"></div>
 
       <div class="relative grid lg:grid-cols-[286px_minmax(0,1fr)] xl:grid-cols-[312px_minmax(0,1fr)] gap-8 xl:gap-12 p-5 md:p-8 xl:p-10">
         <!-- identity -->
-        <aside class="self-start rounded-[24px] border border-outline-variant/20 bg-surface-container-low/70 p-4 md:p-5 shadow-[0_18px_56px_-30px_rgba(0,0,0,.9)]">
+        <aside class="mobile-flat mobile-flat--tight self-start rounded-[24px] border border-outline-variant/20 bg-surface-container-low/70 p-4 md:p-5 shadow-[0_18px_56px_-30px_rgba(0,0,0,.9)]">
           <div class="flex items-center gap-4">
             <div class="relative shrink-0">
               <div class="absolute -inset-4 rounded-full bg-primary-container/20 blur-xl pointer-events-none"></div>
@@ -592,7 +592,7 @@
     </section>
 
     <!-- ── 2 · ARAÇLAR · ne izlesen? / Blend ─────────────────────────── -->
-    <section id="profile-quick-tools" class="hidden profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.06s">
+    <section id="profile-quick-tools" class="mobile-flat hidden profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.06s">
       <div class="flex items-start justify-between gap-4 mb-6">
         <div>
           <span id="quick-tools-kicker" class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Bu gece</span>
@@ -625,7 +625,7 @@
       </div>
 
       <!-- inline öneri sonucu — ayrı sayfaya geçmeden -->
-      <div id="profile-reco-panel" class="collapse-y mt-4"><div class="collapse-inner"><div id="profile-reco-body" class="rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5"></div></div></div>
+      <div id="profile-reco-panel" class="collapse-y mt-4"><div class="collapse-inner"><div id="profile-reco-body" class="mobile-flat mobile-flat--tight rounded-2xl border border-outline-variant/20 bg-surface-container/35 p-5"></div></div></div>
 
       <!-- alt panel: blend -->
       <div id="profile-blend-panel" class="collapse-y mt-4">
@@ -648,7 +648,7 @@
     </section>
 
     <!-- ── 3 · Sinema gündemi — bu hafta perdede ───────────────────────── -->
-    <section id="profile-bulletin" class="hidden profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.08s">
+    <section id="profile-bulletin" class="mobile-flat hidden profile-rise rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 mt-6" style="animation-delay:.08s">
       <div class="flex items-end justify-between gap-4 mb-6 flex-wrap">
         <div>
           <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Sinema gündemi</span>
@@ -670,7 +670,7 @@
 
     <!-- ── 4 · Auteur radar · Başucu filmleri · Son filmler ─────────────── -->
     <div class="profile-rise grid items-stretch lg:grid-cols-3 gap-6 mt-6" style="animation-delay:.12s">
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="auteur">
+      <section class="mobile-flat profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="auteur">
         <div class="flex items-start justify-between gap-4 mb-7">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Auteur radar</span>
@@ -681,7 +681,7 @@
         <div id="profile-directors" class="profile-carousel flex-grow flex flex-col overflow-hidden"></div>
       </div></section>
 
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="basucu">
+      <section class="mobile-flat profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="basucu">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Başucu filmleri</span>
@@ -694,7 +694,7 @@
         <div id="profile-top-films" class="profile-carousel flex-grow flex flex-col overflow-hidden"></div>
       </div></section>
 
-      <section class="profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="gunce">
+      <section class="mobile-flat profile-dashboard-card rounded-[28px] border border-outline-variant/25 bg-surface/65 backdrop-blur-2xl p-6 md:p-8 flex flex-col" data-fold="gunce">
         <div class="flex items-start justify-between gap-4 mb-5">
           <div>
             <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Günce</span>
@@ -1309,15 +1309,14 @@
     <div>
       <span class="font-label-sm text-label-sm text-secondary-container uppercase tracking-wider">Sosyal alan</span>
       <h1 class="font-headline-lg text-headline-lg text-on-surface mt-1">Mektuplar <span id="inbox-letters-badge" class="hidden align-middle ml-1 rounded-full bg-secondary-container px-2 py-0.5 text-[11px] font-bold text-on-secondary-container"></span></h1>
-      <p class="font-body-md text-body-md text-on-surface-variant mt-1">Yeni mektupların hesabına bağlıdır; mobilde ve webde aynı konuşmaları okuyabilirsin. Blend istekleri Blend sekmesinde.</p>
     </div>
     <div id="inbox-letters-panel" class="flex flex-col gap-gutter">
       <p id="letters-error" class="hidden rounded-xl border border-error/25 bg-error-container/20 px-4 py-3 text-sm text-error"></p>
       <p id="letters-notice" class="hidden rounded-xl border border-primary-container/25 bg-primary-container/10 px-4 py-3 text-sm text-primary-container"></p>
-      <section id="letters-workspace" class="grid min-h-[520px] overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container-low/40 md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.55fr)]">
-        <aside id="letters-sidebar" class="border-b border-outline-variant/20 md:border-b-0 md:border-r">
+      <section id="letters-workspace" class="mobile-flat overflow-hidden rounded-2xl border border-outline-variant/25 bg-surface-container-low/40">
+        <aside id="letters-sidebar">
           <div class="flex items-center justify-between border-b border-outline-variant/20 px-4 py-4"><h2 class="font-headline-md text-[18px] text-on-surface">Mektupların</h2><button id="btn-letter-help" type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-full border border-outline-variant/30 text-[13px] font-bold text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container" aria-label="Mektuplar nasıl çalışır?">?</button></div>
-          <div id="letters-list" class="max-h-[42vh] overflow-y-auto p-2 md:max-h-[620px]"></div>
+          <div id="letters-list" class="p-2"></div>
         </aside>
         <section id="letters-conversation" class="min-w-0 bg-surface-container-low/20"></section>
       </section>
@@ -1371,7 +1370,6 @@
       <div>
         <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-tertiary-container">Topluluk</span>
         <h1 class="mt-1 font-headline-lg text-headline-lg text-on-surface">Sinefil Sineması</h1>
-        <p class="mt-2 max-w-[620px] font-body-md text-body-md text-on-surface-variant">Fav 4’ün ve başucu filmlerinle kesişen sinefilleri keşfet. Profilini yalnızca görünürlüğü açarsan diğerleri görür.</p>
       </div>
       <label class="relative block w-full md:w-[280px]">
         <span class="sr-only">Sinefil ara</span>
@@ -1398,6 +1396,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.83"></script>
+<script type="module" src="/static/js/app.js?v=20260907.86"></script>
 </body>
 </html>

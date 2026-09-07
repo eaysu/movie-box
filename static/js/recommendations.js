@@ -21,7 +21,7 @@ function overviewBlock(film) {
 // "Sana neden önerdik?" — the LLM's reasoning for this pick.
 function whyBlock(film) {
   if (!film.reason) return '';
-  return `<div class="rounded-xl border border-primary-container/25 bg-primary-container/[0.07] p-4">
+  return `<div class="mobile-flat mobile-flat--tight rounded-xl border border-primary-container/25 bg-primary-container/[0.07] p-4">
       <p class="flex items-center gap-2 font-label-sm text-label-sm uppercase tracking-[.18em] text-primary-container mb-1.5">
         <span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">auto_awesome</span>Sana neden önerdik?
       </p>

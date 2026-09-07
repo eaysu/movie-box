@@ -475,6 +475,62 @@ def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
     assert "OWN_HEADER_VIEWS.includes(name)" in block
 
 
+def test_a_refresh_reopens_the_page_you_were_on():
+    """Reported: refreshing anywhere landed back on the feed, after a flash of
+    the Movieboxd-headed shell."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    html = (ROOT / "static" / "index.html").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    # The open screen is written to the address bar, without touching history.
+    assert "history.replaceState(null, '', next)" in app_js
+    assert "async function restoreRoute" in app_js
+    assert "restoreRoute()" in app_js
+    for route in ("akis", "bildirimler", "mektuplar", "blend", "kesfet", "profil", "araclar"):
+        assert f"'{route}'" in app_js.split("const ROUTE_OF_VIEW", 1)[1].split("}", 1)[0], route
+    # And the shell stays invisible until the first real screen is painted.
+    assert 'class="is-booting' in html
+    assert "body.is-booting #app-header" in css
+    assert "classList.remove('is-booting')" in app_js
+
+
+def test_mobile_drops_a_layer_of_card_chrome():
+    """Reported: cards inside cards inside cards, three deep on a phone."""
+    html = (ROOT / "static" / "index.html").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+    reco_js = (ROOT / "static" / "js" / "recommendations.js").read_text()
+
+    assert "@media (max-width: 767px)" in css
+    flat = css.split(".mobile-flat {", 1)[1].split("}", 1)[0]
+    for rule in ("border: 0", "background: transparent", "box-shadow: none"):
+        assert rule in flat, rule
+    # The outer wrappers give up their frame; the film card itself keeps one.
+    assert html.count("mobile-flat") >= 8
+    assert "mobile-flat" in reco_js
+
+
+def test_the_letter_screen_is_one_pane_on_every_size():
+    """Reported: tapping a person should hand the whole screen to that letter."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    html = (ROOT / "static" / "index.html").read_text()
+
+    block = app_js.split("function renderLetterWorkspace", 1)[1].split("\n}", 1)[0]
+    assert "const open = Boolean(_openLetterThread)" in block
+    assert "'hidden', open" in block
+    # No leftover two-column grid or capped heights to scroll past.
+    assert "md:grid-cols-[minmax(220px,0.72fr)_minmax(0,1.55fr)]" not in html
+    assert "max-h-[42vh]" not in html
+    assert "isCompactLetterWorkspace" not in app_js
+
+
+def test_the_compose_button_only_shows_where_there_is_something_to_write():
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "const showFab = on && ['feed', 'thread'].includes(name);" in app_js
+    # And the letter button steps aside once a conversation is open.
+    assert "name === 'inbox' && !_openLetterThread" in app_js
+
+
 def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -568,8 +624,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "40486da76f358fa98b7a4d27e5a027387548e9783d59b67198f1e897a6b1a406",
-            "static/app.css": "a34ff82caf118e0bc17381f531abe7f9099e950cc245846c4a71452084b5d6a8",
+            "static/js/app.js": "4b784f0f2795ac1b38eadeaac9af004dcf8e35a1f3b4989f7354c9a43c0f7865",
+            "static/app.css": "a6f0c573f6e175d7efb0bf4ec6e62ae80f0b2f8d46e65d18e40bbbd3206eac10",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -601,10 +657,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.73"
+    css_version = "v=20260907.74"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.83" in html
-    assert app_js.count(f"?{dependency_version}") == 5
+    assert "/static/js/app.js?v=20260907.86" in html
+    assert app_js.count(f"?{dependency_version}") == 4
+    assert "./recommendations.js?v=20260907.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

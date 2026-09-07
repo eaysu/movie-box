@@ -18,7 +18,7 @@ import {
 } from './auth.js?v=20260902.16';
 import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js?v=20260902.15';
 import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
-import { createRecommendationCards } from './recommendations.js?v=20260902.15';
+import { createRecommendationCards } from './recommendations.js?v=20260907.1';
 
 let _shareCardsModule;
 function loadShareCardsModule() {
@@ -786,6 +786,8 @@ function stopFeedNotificationPolling() {
 let _shownView = '';
 
 function showView(name) {
+  // İlk gerçek ekran çizildiği anda açılış perdesi kalkar.
+  document.body.classList.remove('is-booting');
   // Yeni bir sayfa her zaman başından açılır; önceki sayfanın kaydırma
   // konumu devralınınca sayfa boşluktan başlıyormuş gibi görünüyordu.
   if (name !== _shownView) {
@@ -815,12 +817,62 @@ function showView(name) {
   headerProfile.classList.toggle('flex', showHeaderProfile);
   const letterComposeFab = $('btn-letter-compose-fab');
   if (letterComposeFab) {
-    const showLetterComposeFab = name === 'inbox';
+    // Bir mektuplaşma açıkken zaten "…kişisine yaz" düğmesi var; kayan
+    // düğme onun üstüne biniyordu.
+    const showLetterComposeFab = name === 'inbox' && !_openLetterThread;
     letterComposeFab.classList.toggle('hidden', !showLetterComposeFab);
     letterComposeFab.classList.toggle('flex', showLetterComposeFab);
   }
   paintShell(name);
+  rememberRoute(name);
   applyProfileTheme();
+}
+
+// ── Adres yönlendirmesi ──────────────────────────────────────────────────
+// Yenilediğinde bulunduğun sayfa açılsın diye ekran adı adres çubuğunda
+// tutuluyor. `replaceState` kullanılıyor: geçmişe kayıt eklenmiyor, yani
+// tarayıcının geri tuşu bugünkü davranışını koruyor.
+const ROUTE_OF_VIEW = {
+  feed: 'akis', notifications: 'bildirimler', inbox: 'mektuplar',
+  blends: 'blend', sinefil: 'kesfet', profile: 'profil', tools: 'araclar',
+};
+const VIEW_OF_ROUTE = Object.fromEntries(
+  Object.entries(ROUTE_OF_VIEW).map(([view, route]) => [route, view])
+);
+let _routeRestoring = false;
+
+function currentRoute(name) {
+  if (name === 'user') return _userPage.username ? `u/${_userPage.username}` : 'akis';
+  if (name === 'thread') return _threadId ? `not/${_threadId}` : 'akis';
+  if (name === 'follows') return _followsFrom ? `takip/${_followsFrom}` : 'akis';
+  return ROUTE_OF_VIEW[name] || '';
+}
+
+function rememberRoute(name) {
+  if (_routeRestoring || !_account) return;
+  const route = currentRoute(name);
+  if (!route) return;
+  const next = `#/${route}`;
+  if (location.hash !== next) history.replaceState(null, '', next);
+}
+
+// Açılışta adresteki ekranı geri getirir. Bilinmeyen adres akışa düşer.
+async function restoreRoute() {
+  const raw = (location.hash || '').replace(/^#\/?/, '');
+  const [head, ...rest] = raw.split('/').filter(Boolean);
+  if (!head) return false;
+  _routeRestoring = true;
+  try {
+    if (head === 'u' && rest[0]) { await openUserPage(rest[0], { from: 'feed' }); return true; }
+    if (head === 'not' && rest[0]) { await openThread(rest[0], { from: 'feed' }); return true; }
+    if (head === 'takip' && rest[0]) { await openFollows(rest[0], 'followers'); return true; }
+    const view = VIEW_OF_ROUTE[head];
+    if (!view) return false;
+    goNav(NAV_OF_VIEW[view] || 'feed');
+    return true;
+  } finally {
+    _routeRestoring = false;
+  }
 }
 
 // ── Uygulama kabuğu: sol gezinme, alt sekme çubuğu, sağ raf ─────────────
@@ -856,7 +908,7 @@ function paintShell(name) {
     button.classList.toggle('is-active', button.dataset.nav === active);
   });
   const fab = $('btn-compose-fab');
-  const showFab = on && ['feed', 'thread', 'user', 'follows', 'notifications'].includes(name);
+  const showFab = on && ['feed', 'thread'].includes(name);
   fab.classList.toggle('hidden', !showFab);
   fab.classList.toggle('flex', showFab);
   if (on) paintNavAccount();
@@ -2740,7 +2792,7 @@ function renderLetterConversation(username = _openLetterThread) {
   const panel = $('letters-conversation');
   const group = _letterThreads.find(thread => thread.peer?.username === username);
   if (!group) {
-    panel.innerHTML = '<div class="flex min-h-[360px] flex-col items-center justify-center px-6 text-center text-on-surface-variant"><span class="material-symbols-outlined text-[36px] text-tertiary-container/45">mail</span><strong class="mt-4 text-on-surface">Bir mektup seç</strong><p class="mt-2 max-w-xs text-sm leading-relaxed">Konuştuğun sinefiller solda. Birini seçtiğinde tüm mektuplarınız burada açılır.</p></div>';
+    panel.innerHTML = '<div class="flex flex-col items-center justify-center px-6 py-10 text-center text-on-surface-variant"><span class="material-symbols-outlined text-[36px] text-tertiary-container/45">mail</span><strong class="mt-4 text-on-surface">Bir mektup seç</strong><p class="mt-2 max-w-xs text-sm leading-relaxed">Konuştuğun sinefiller solda. Birini seçtiğinde tüm mektuplarınız burada açılır.</p></div>';
     return;
   }
   _openLetterThread = group.peer.username;
@@ -2748,19 +2800,24 @@ function renderLetterConversation(username = _openLetterThread) {
   const name = escapeHTML(peer.display_name || peer.username || 'Sinefil');
   const usernameLabel = escapeHTML(peer.username || '');
   const details = group.items.map(({ item, payload }) => letterCard(item, payload)).join('');
-  panel.innerHTML = `<div class="flex min-h-[420px] flex-col"><header class="flex items-center gap-3 border-b border-outline-variant/20 px-5 py-4"><button type="button" data-letter-mobile-back class="-ml-2 rounded-full p-2 text-on-surface-variant hover:text-on-surface md:hidden" aria-label="Mektuplara dön"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="block truncate text-xs text-on-surface-variant">@${usernameLabel} · ${group.items.length} mektup</span></span></header><div class="flex-1 space-y-3 overflow-y-auto p-4 md:max-h-[510px]">${details}</div><div class="border-t border-outline-variant/20 p-4">${letterReplyBar(peer)}</div></div>`;
+  panel.innerHTML = `<div class="flex flex-col"><header class="flex items-center gap-3 border-b border-outline-variant/20 px-5 py-4"><button type="button" data-letter-mobile-back class="-ml-2 rounded-full p-2 text-on-surface-variant hover:text-on-surface" aria-label="Mektuplara dön"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><span class="shrink-0">${peerAvatar(peer)}</span><span class="min-w-0 flex-1"><strong class="block truncate text-on-surface">${name}</strong><span class="block truncate text-xs text-on-surface-variant">@${usernameLabel} · ${group.items.length} mektup</span></span></header><div class="flex-1 space-y-3 p-4">${details}</div><div class="border-t border-outline-variant/20 p-4">${letterReplyBar(peer)}</div></div>`;
   $('letters-list').innerHTML = _letterThreads.map(letterThreadCard).join('');
   renderLetterWorkspace();
 }
 
-function isCompactLetterWorkspace() {
-  return window.matchMedia('(max-width: 767px)').matches;
-}
-
 function renderLetterWorkspace() {
-  const mobile = isCompactLetterWorkspace();
-  $('letters-sidebar').classList.toggle('hidden', mobile && Boolean(_openLetterThread));
-  $('letters-conversation').classList.toggle('hidden', mobile && !_openLetterThread);
+  const fab = $('btn-letter-compose-fab');
+  if (fab) {
+    const show = !_openLetterThread && !$('view-inbox').classList.contains('hidden');
+    fab.classList.toggle('hidden', !show);
+    fab.classList.toggle('flex', show);
+  }
+  // Bir kişiye dokunulduğunda ekranın tamamı o mektuplaşmaya ayrılır —
+  // masaüstünde de. Yan yana iki sütun, dar ekranda da geniş ekranda da
+  // mektubun kendisine kalan yeri daraltıyordu.
+  const open = Boolean(_openLetterThread);
+  $('letters-sidebar').classList.toggle('hidden', open);
+  $('letters-conversation').classList.toggle('hidden', !open);
 }
 
 async function loadLetters() {
@@ -2820,7 +2877,7 @@ async function loadLetters() {
     });
     _letterThreads = sortedThreads;
     if (!_openLetterThread || !sortedThreads.some(thread => thread.peer?.username === _openLetterThread)) {
-      _openLetterThread = isCompactLetterWorkspace() ? '' : (sortedThreads[0]?.peer?.username || '');
+      _openLetterThread = '';
     }
     $('letters-list').innerHTML = sortedThreads.length
       ? sortedThreads.map(letterThreadCard).join('')
@@ -3122,7 +3179,7 @@ async function loadBlendInbox(show = true) {
 // Gelen kutusu artık yalnız mektuplar; Blend tarafı kendi sekmesinde.
 async function openLetterInbox() {
   showView('inbox');
-  if (isCompactLetterWorkspace()) _openLetterThread = '';
+  _openLetterThread = '';
   await loadLetters();
 }
 
@@ -3477,9 +3534,11 @@ function enterApp(account, opts = {}) {
     startOnboarding();
     return;
   }
-  // The feed is where the app opens now. The dashboard still prepares itself in
-  // the background so switching to "Profil" is instant.
-  openFeed().then(loadProfile);
+  // Yenilendiğinde aynı ekrana dönülür; adres yoksa ev akıştır. Pano arka
+  // planda hazırlanmaya devam eder, "Profil"e geçiş anlık olsun diye.
+  restoreRoute()
+    .then(restored => (restored ? null : openFeed()))
+    .then(loadProfile);
   showInstallAppDialog();
 }
 
@@ -4239,7 +4298,7 @@ function sinefilCard(profile) {
   }).join('') || '<div class="col-span-4 py-5 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</div>';
   const shared = (profile.shared_titles || []).map(title => `<span class="rounded-full bg-tertiary-container/15 px-2 py-1 text-[10px] text-tertiary-container">${escapeHTML(title)}</span>`).join('');
   const match = profile.has_favorite_match
-    ? `<div class="mt-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 p-3"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Film zevkiniz benziyor</p>${shared ? `<div class="mt-2 flex flex-wrap gap-1.5">${shared}</div>` : ''}</div>`
+    ? `<div class="mobile-flat mobile-flat--tight mt-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 p-3"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Film zevkiniz benziyor</p>${shared ? `<div class="mt-2 flex flex-wrap gap-1.5">${shared}</div>` : ''}</div>`
     : `<p class="mt-4 font-label-sm text-label-sm text-on-surface-variant">${escapeHTML(profile.match_note || 'Zevk haritalarınız yakın')}</p>`;
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl">
     <div class="flex items-center gap-3">
@@ -4346,7 +4405,7 @@ async function loadSinefilArea(page = 1) {
       renderSinefilPagination({ pages: 1, page: 1, total: 0 });
       return;
     }
-    sinefilMessage('notice', 'Sinefil Sineması’nda tüm kayıtlı sinefiller var. Kilitli hesapların ayrıntıları yalnız kabul ettiği takipçilere görünür.');
+    sinefilMessage('notice');
     $('sinefil-grid').innerHTML = profiles.map(sinefilCard).join('');
     renderSinefilPagination(pagination);
   } catch (error) {

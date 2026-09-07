@@ -656,3 +656,30 @@
   [data-fold].is-folded .fold-chevron { transform: rotate(-90deg); }
   [data-fold].is-folded .fold-head,
   [data-fold].is-folded > .flex { margin-bottom: 0 !important; }
+
+  /* Açılış: oturum çözülene kadar üst başlık ve altbilgi çizilmez. Eskiden
+     Movieboxd başlıklı boş bir sayfa bir an görünüp kayboluyordu. */
+  body.is-booting #app-header,
+  body.is-booting #main-footer,
+  body.is-booting #app-tabbar,
+  body.is-booting #app-sidebar { visibility: hidden; }
+
+  /* ── Telefonda kart katmanlarını düşür ────────────────────────────────
+     Panoda kartın içinde kart, onun içinde kart vardı: her katman kenarlık,
+     dolgu ve gölge ekleyip okunacak alanı daraltıyordu. Dar ekranda dıştaki
+     kapsayıcı çerçevesini bırakır, içindeki asıl kart kalır. */
+  @media (max-width: 767px) {
+    .mobile-flat {
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      border-radius: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    .mobile-flat.mobile-flat--tight {
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
+  }
