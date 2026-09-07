@@ -367,6 +367,8 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
 
     assert 'id="dialog-install-app"' in html
     assert 'href="/static/site.webmanifest?v=20260907.2"' in html
+    assert 'href="/static/movieboxd-mark.png?v=20260907.1"' in html
+    assert 'src="/static/movieboxd-mark.png"' in html
     assert "beforeinstallprompt" in app_js
     assert "requestMovieboxdInstall" in app_js
     assert "register('/push-sw.js')" in app_js
@@ -468,7 +470,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     """
     expected = {
         "static/js/app.js": "959ab4888d73bd4e5ef63d971d3099952ed08bf02645b55d89c57835e0dde59d",
-        "static/app.css": "a977094479ec8e7c40019678b5fcac4a3e2197650262f34e92c7bbe811a4d114",
+        "static/app.css": "40f7c19115234aef1b1aebacc6cc132d698eb6a9ad55dfa8569a6fd61789c6f0",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -500,7 +502,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.68"
+    css_version = "v=20260907.69"
     assert f"/static/app.css?{css_version}" in html
     assert "/static/js/app.js?v=20260907.73" in html
     assert app_js.count(f"?{dependency_version}") == 5
