@@ -11,6 +11,7 @@ import contextlib
 import hashlib
 import hmac
 import json
+import logging
 import re
 import secrets
 import threading
@@ -23,6 +24,9 @@ from uuid import UUID
 from .enrich import EnrichedFilm
 from .scraper import ScrapedProfile
 from .taste_profile import TasteProfileSnapshot
+
+
+logger = logging.getLogger(__name__)
 
 try:  # Optional locally; Render installs the pinned package for real delivery.
     from pywebpush import WebPushException, webpush
@@ -827,8 +831,8 @@ class AuthService:
         if not 1 <= len(text) <= 600:
             raise BlendServiceError("invalid_letter_body")
         gift = self._letter_film_payload(film)
+        service = self._service_client()
         try:
-            service = self._service_client()
             result = service.rpc("send_cinephile_letter", {
                 "p_sender_user_id": account.id,
                 "p_recipient_username": recipient_username,
@@ -840,6 +844,35 @@ class AuthService:
                 "p_film": None,
             }).execute()
             letter_id = str(self._rpc_value(result))
+        except Exception as exc:
+            message = str(exc)
+            known = (
+                "letter_sender_closed",
+                "letter_recipient_unavailable",
+                "letter_send_cooldown",
+                "letter_blocked",
+                "invalid_letter_body",
+            )
+            code = next((item for item in known if item in message), "")
+            if code:
+                raise BlendServiceError(code) from exc
+            # A pre-existing database function used the unsupported PostgreSQL
+            # overload ``pg_advisory_xact_lock(bigint, bigint)``. Keep letters
+            # working while that database migration rolls out, but retain all
+            # of the same recipient, block and per-pair 24-hour checks.
+            try:
+                letter_id = self._send_letter_write_fallback(
+                    service, account, recipient_username, text, gift
+                )
+            except BlendServiceError:
+                raise
+            except Exception as fallback_exc:
+                logger.exception(
+                    "Letter send failed for sender=%s recipient=%s; RPC error: %s",
+                    account.id, recipient_username, message,
+                )
+                raise BlendServiceError("letter_send_failed") from fallback_exc
+        try:
             if gift:
                 # The letter has already passed all pair/cooldown/block checks.
                 # Attachment storage is best-effort so a malformed old schema
@@ -858,15 +891,71 @@ class AuthService:
                 )
             return letter_id
         except Exception as exc:
-            message = str(exc)
-            known = (
-                "letter_sender_closed",
-                "letter_recipient_unavailable",
-                "letter_send_cooldown",
-                "letter_blocked",
-                "invalid_letter_body",
-            )
-            raise BlendServiceError(next((item for item in known if item in message), "letter_send_failed")) from exc
+            # The letter itself was already stored. A follow-up metadata or
+            # notification problem must not tell its sender that it failed.
+            logger.exception("Letter follow-up failed for letter=%s", letter_id)
+            return letter_id
+
+    def _send_letter_write_fallback(
+        self,
+        service,
+        account: Account,
+        recipient_username: str,
+        body: str,
+        film: dict | None,
+    ) -> str:
+        """Compatibility write for an unavailable legacy RPC.
+
+        This path is deliberately narrow: it is used only after an unexpected
+        RPC infrastructure error, and mirrors the policy checks in the SQL
+        function. The corrected SQL function remains the race-safe primary.
+        """
+        sender = self._first(
+            service.table("users").select("id,account_status,letter_receiving_enabled").eq(
+                "id", account.id
+            ).limit(1).execute()
+        ) or {}
+        if sender.get("account_status") != "active" or not sender.get("letter_receiving_enabled"):
+            raise BlendServiceError("letter_sender_closed")
+
+        username = str(recipient_username or "").strip().lstrip("@").lower()
+        recipient = self._first(
+            service.table("users").select("id,account_status,letter_receiving_enabled").eq(
+                "username", username
+            ).limit(1).execute()
+        ) or {}
+        recipient_id = recipient.get("id")
+        if (
+            not recipient_id
+            or int(recipient_id) == account.id
+            or recipient.get("account_status") != "active"
+            or not recipient.get("letter_receiving_enabled")
+        ):
+            raise BlendServiceError("letter_recipient_unavailable")
+
+        blocks = service.table("user_blocks").select("blocker_user_id").or_(
+            f"and(blocker_user_id.eq.{account.id},blocked_user_id.eq.{recipient_id}),"
+            f"and(blocker_user_id.eq.{recipient_id},blocked_user_id.eq.{account.id})"
+        ).limit(1).execute().data or []
+        if blocks:
+            raise BlendServiceError("letter_blocked")
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        recent = service.table("cinephile_letters").select("id").eq(
+            "sender_user_id", account.id
+        ).eq("recipient_user_id", recipient_id).gte("created_at", cutoff).limit(1).execute().data or []
+        if recent:
+            raise BlendServiceError("letter_send_cooldown")
+
+        created = self._first(service.table("cinephile_letters").insert({
+            "sender_user_id": account.id,
+            "recipient_user_id": recipient_id,
+            "body": body,
+            "film": film,
+        }).execute()) or {}
+        if not created.get("id"):
+            raise RuntimeError("letter fallback insert did not return an id")
+        return str(created["id"])
 
     @staticmethod
     def _letter_film_payload(film: dict | None) -> dict | None:

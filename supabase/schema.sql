@@ -1465,8 +1465,9 @@ BEGIN
   IF v_recipient_user_id = p_sender_user_id THEN RAISE EXCEPTION 'letter_recipient_unavailable'; END IF;
 
   -- The quota belongs to this exact pair, so a user can write to another
-  -- sinefil without waiting. The pair lock keeps double clicks race-safe.
-  PERFORM pg_advisory_xact_lock(p_sender_user_id, v_recipient_user_id);
+  -- sinefil without waiting. PostgreSQL's two-key lock only accepts INTEGER
+  -- values; lock this sender through the supported BIGINT overload instead.
+  PERFORM pg_advisory_xact_lock(p_sender_user_id);
 
   IF EXISTS (
     SELECT 1 FROM public.user_blocks b

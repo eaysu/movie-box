@@ -1625,6 +1625,13 @@ function userHeaderMarkup(profile) {
   const stats = profile.letterboxd_stats || {};
   const watched = Number(stats.films || stats.watched || 0);
   const locked = Boolean(profile.private_account) && !profile.can_view && !profile.is_me;
+  const canLetter = !profile.is_me && !locked && Boolean(profile.letter_receiving_enabled);
+  const canBlend = !profile.is_me && !locked
+    && profile.follow_status === 'accepted' && Boolean(profile.follows_you);
+  const actions = (canLetter || canBlend) ? `<div class="mt-4 flex flex-wrap gap-2">
+    ${canLetter ? `<button type="button" data-user-letter="${escapeHTML(profile.username)}" class="rounded-xl border border-secondary-container/45 bg-secondary-container/10 px-3 py-2 font-label-sm text-label-sm text-secondary-container transition-colors hover:bg-secondary-container/20"><span class="material-symbols-outlined mr-1 align-[-3px] text-[16px]">mail</span>Mektup yaz</button>` : ''}
+    ${canBlend ? `<button type="button" data-user-blend="${escapeHTML(profile.username)}" class="rounded-xl border border-primary-container/45 bg-primary-container/10 px-3 py-2 font-label-sm text-label-sm text-primary-container transition-colors hover:bg-primary-container/20"><span class="material-symbols-outlined mr-1 align-[-3px] text-[16px]">hub</span>Blend yap</button>` : ''}
+  </div>` : '';
   return `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/60 p-5">
     <div class="flex items-start gap-4">
       ${avatar
@@ -1646,7 +1653,7 @@ function userHeaderMarkup(profile) {
       <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.follower_count || 0}</strong> takipçi</span>
       <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.following_count || 0}</strong> takip</span>
       ${watched ? `<span class="text-on-surface-variant"><strong class="text-on-surface">${watched}</strong> film izlemiş</span>` : ''}
-    </div>`}
+    </div>${actions}`}
   </div>`;
 }
 
@@ -5152,6 +5159,10 @@ $('btn-user-more').addEventListener('click', loadMoreUserPosts);
 $('user-header').addEventListener('click', event => {
   const follow = event.target.closest('[data-follow]');
   if (follow) { toggleFollow(follow); return; }
+  const letter = event.target.closest('[data-user-letter]');
+  if (letter) { openLetterCompose(letter.dataset.userLetter); return; }
+  const blend = event.target.closest('[data-user-blend]');
+  if (blend) { requestSinefilBlend(blend.dataset.userBlend, blend); return; }
   const list = event.target.closest('[data-follows]');
   if (list) openFollows(_userPage.username, list.dataset.follows);
 });
