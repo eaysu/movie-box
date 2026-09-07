@@ -2564,7 +2564,7 @@ function renderLetterSettings() {
   }
 }
 
-function letterFilmMarkup(film) {
+function letterFilmMarkup(film, { link = true } = {}) {
   if (!film) return '';
   const title = escapeHTML(film.title || 'Film');
   const year = film.release_year || film.year || '';
@@ -2572,7 +2572,7 @@ function letterFilmMarkup(film) {
   const poster = safeImageURL(film.poster_url);
   const href = letterboxdFilmURL(film.slug || film.film_slug);
   const text = `<span class="min-w-0"><strong class="block truncate">${title}${year ? ` <span class="text-on-surface-variant">(${escapeHTML(year)})</span>` : ''}</strong>${director ? `<span class="mt-0.5 block truncate text-xs text-on-surface-variant">${director}</span>` : ''}</span>`;
-  return `<div class="flex min-w-0 items-center gap-3">${poster ? `<img src="${poster}" alt="" class="h-12 w-9 rounded object-cover"/>` : ''}${href ? `<a href="${href}" target="_blank" rel="noopener" class="min-w-0 hover:underline">${text}</a>` : text}</div>`;
+  return `<div class="flex min-w-0 items-center gap-3">${poster ? `<img src="${poster}" alt="" class="h-12 w-9 rounded object-cover"/>` : ''}${link && href ? `<a href="${href}" target="_blank" rel="noopener" class="min-w-0 hover:underline">${text}</a>` : text}</div>`;
 }
 
 function letterCard(item, payload) {
@@ -2767,7 +2767,7 @@ async function openLetterCompose(username) {
 function renderPickedLetterFilm() {
   const target = $('letter-film-picked');
   if (!_letterPickedFilm) { target.classList.add('hidden'); target.innerHTML = ''; return; }
-  target.innerHTML = `<div class="flex items-center justify-between gap-3"><div>${letterFilmMarkup(_letterPickedFilm)}</div><button type="button" data-letter-film-clear class="rounded-md px-2 py-1 text-xs text-tertiary-container">Kaldır</button></div>`;
+  target.innerHTML = `<div class="flex items-center justify-between gap-3"><div>${letterFilmMarkup(_letterPickedFilm, { link: false })}</div><button type="button" data-letter-film-clear class="rounded-md px-2 py-1 text-xs text-tertiary-container">Kaldır</button></div>`;
   target.classList.remove('hidden');
 }
 
@@ -2777,7 +2777,7 @@ async function searchLetterFilms() {
   try {
     const data = await apiJSON(`/api/profile/watched?q=${encodeURIComponent(query)}`);
     const films = (data.films || []).slice(0, 6).map(film => ({ ...film, slug: film.slug || film.film_slug || '' }));
-    $('letter-film-results').innerHTML = films.map((film, index) => `<button type="button" data-letter-film-index="${index}" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-variant">${letterFilmMarkup(film)}</button>`).join('');
+    $('letter-film-results').innerHTML = films.map((film, index) => `<button type="button" data-letter-film-index="${index}" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-variant">${letterFilmMarkup(film, { link: false })}</button>`).join('');
     $('letter-film-results')._letterFilms = films;
   } catch (_) { $('letter-film-results').innerHTML = ''; }
 }
