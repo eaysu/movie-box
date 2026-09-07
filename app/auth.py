@@ -833,9 +833,21 @@ class AuthService:
                 "p_sender_user_id": account.id,
                 "p_recipient_username": recipient_username,
                 "p_body": text,
-                "p_film": gift,
+                # Keep the durable letter write independent from optional film
+                # metadata. Some deployed PostgREST versions are fragile when
+                # JSONB RPC input carries a poster URL; a gift must never make
+                # the actual letter unsendable.
+                "p_film": None,
             }).execute()
             letter_id = str(self._rpc_value(result))
+            if gift:
+                # The letter has already passed all pair/cooldown/block checks.
+                # Attachment storage is best-effort so a malformed old schema
+                # cannot turn a successfully written private letter into 503.
+                with contextlib.suppress(Exception):
+                    service.table("cinephile_letters").update({"film": gift}).eq(
+                        "id", letter_id
+                    ).eq("sender_user_id", account.id).execute()
             recipient = self._first(service.table("users").select("id").eq(
                 "username", recipient_username
             ).limit(1).execute()) or {}

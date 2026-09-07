@@ -211,6 +211,13 @@ class FeedApiTests(unittest.TestCase):
         self.assertIn('event_key=f"blend-request:{request_id}"', blend)
         self.assertIn('event_key=f"letter:{letter_id}"', letters)
 
+    def test_optional_letter_film_cannot_block_the_private_letter_write(self):
+        letters = self.auth.split("def send_letter", 1)[1].split("\n    def ", 1)[0]
+
+        self.assertIn('"p_film": None', letters)
+        self.assertIn('service.table("cinephile_letters").update({"film": gift})', letters)
+        self.assertIn('contextlib.suppress(Exception)', letters)
+
     def test_live_letter_setting_is_read_separately_from_migration_safe_login(self):
         route = self.main.split('@app.get("/api/letters/settings")', 1)[1].split("@app.", 1)[0]
         status = self.auth.split("def letter_receiving_status", 1)[1].split("\n    def ", 1)[0]
