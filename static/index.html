@@ -21,11 +21,11 @@
 <meta name="twitter:image"       content="https://raw.githubusercontent.com/eaysu/movie-box/main/static/og-image-v4.png"/>
 <meta name="theme-color" content="#0b0f11"/>
 <link rel="icon" type="image/png" href="/static/movieboxd-mark.png?v=20260907.1"/>
-<link rel="apple-touch-icon" href="/static/movieboxd-icon.png?v=20260907.1"/>
-<link rel="manifest" href="/static/site.webmanifest?v=20260907.2"/>
+<link rel="apple-touch-icon" href="/static/movieboxd-icon-512.png?v=20260907.3"/>
+<link rel="manifest" href="/static/site.webmanifest?v=20260907.3"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.70"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.71"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -1201,7 +1201,7 @@
 </div>
 
 <!-- ═══════════════════════════  VIEW: BLEND INBOX  ═══════════════════════════ -->
-<div id="view-feed" class="hidden w-full max-w-2xl mx-auto min-h-screen border-outline-variant/20 px-0 pt-0 pb-20 lg:border-x">
+<div id="view-feed" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-0 pt-0 pb-20 lg:border-x">
   <!-- Sabit başlık: Twitter'ın orta sütun başlığı gibi, kaydırırken kalır. -->
   <div class="sticky top-0 z-30 border-b border-outline-variant/25 bg-surface/85 backdrop-blur-xl">
     <div class="flex items-center justify-between gap-3 px-4 py-4">
@@ -1261,7 +1261,7 @@
   <button id="btn-feed-more" type="button" class="hidden w-full border-t border-outline-variant/25 py-4 text-sm text-primary-container hover:bg-surface-container/40 transition-colors">Daha fazla göster</button>
 </div>
 
-<div id="view-thread" class="hidden w-full max-w-2xl mx-auto min-h-screen border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
+<div id="view-thread" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
   <button id="btn-thread-back" type="button" class="mx-4 mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button>
   <div id="thread-root" class="border-b border-outline-variant/25"></div>
   <div class="border-b border-outline-variant/25 px-4 py-4">
@@ -1274,7 +1274,7 @@
   <div id="thread-replies" class="flex flex-col"></div>
 </div>
 
-<div id="view-user" class="hidden w-full max-w-2xl mx-auto min-h-screen border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
+<div id="view-user" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-0 pt-4 pb-20 lg:border-x">
   <button id="btn-user-back" type="button" class="mx-4 mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Geri</button>
   <div id="user-header" class="px-4"></div>
   <div id="user-favorites" class="mt-5 px-4"></div>
@@ -1283,13 +1283,13 @@
   <button id="btn-user-more" type="button" class="hidden mt-4 w-full rounded-xl border border-outline-variant/30 py-3 text-sm text-on-surface-variant hover:text-on-surface transition-colors">Daha fazla</button>
 </div>
 
-<div id="view-follows" class="hidden w-full max-w-2xl mx-auto min-h-screen border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
+<div id="view-follows" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
   <button id="btn-follows-back" type="button" class="mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Profile dön</button>
   <h1 id="follows-title" class="font-headline-md text-headline-md text-on-surface"></h1>
   <div id="follows-list" class="mt-5 flex flex-col gap-2"></div>
 </div>
 
-<div id="view-notifications" class="hidden w-full max-w-2xl mx-auto min-h-screen border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
+<div id="view-notifications" class="hidden w-full max-w-2xl mx-auto shell-column border-outline-variant/20 px-4 pt-6 pb-20 lg:border-x">
   <button id="btn-notifications-back" type="button" class="mb-4 flex items-center gap-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">arrow_back</span>Akışa dön</button>
   <h1 class="font-headline-md text-headline-md text-on-surface">Bildirimler</h1>
   <div id="notifications-list" class="mt-5 flex flex-col gap-2"></div>
@@ -1395,6 +1395,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.78"></script>
+<script type="module" src="/static/js/app.js?v=20260907.80"></script>
 </body>
 </html>

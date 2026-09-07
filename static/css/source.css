@@ -589,6 +589,22 @@
 
   /* Kabuk açıkken içerik gezinmenin altına girmesin. */
   body.has-shell { padding-bottom: 4.5rem; }
+
+  /* Kabuk açıkken üstteki sabit başlık gizleniyor; onun için ayrılmış boşluk
+     da kalkmalı, yoksa her sayfa bir başlık yüksekliği kadar aşağıdan
+     başlıyor. */
+  body.has-shell #view-profile,
+  body.has-shell #view-tools,
+  body.has-shell #view-inbox,
+  body.has-shell #view-blends,
+  body.has-shell #view-sinefil { padding-top: .75rem; }
+
+  /* Sütun yüksekliği tam ekran + alt çubuk olunca sayfa içerik kısa olsa bile
+     kaydırılabiliyordu; çubuğun payını düşüyoruz. */
+  .shell-column { min-height: calc(100dvh - 4.5rem); }
+  @media (min-width: 1024px) {
+    .shell-column { min-height: 100dvh; }
+  }
   @media (min-width: 1024px) {
     body.has-shell { padding-left: 248px; padding-bottom: 0; }
     body.has-shell #app-sidebar { display: flex; }

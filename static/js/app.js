@@ -765,7 +765,7 @@ async function refreshFeedBadge() {
       && Notification.permission === 'granted') {
       new Notification('Movieboxd', {
         body: `${count - _lastUnreadNotificationCount} yeni bildirimin var.`,
-        icon: '/static/movieboxd-icon.png?v=20260907.1',
+        icon: '/static/movieboxd-icon-192.png?v=20260907.3',
       });
     }
     _lastUnreadNotificationCount = count;
@@ -783,7 +783,15 @@ function stopFeedNotificationPolling() {
   _lastUnreadNotificationCount = null;
 }
 
+let _shownView = '';
+
 function showView(name) {
+  // Yeni bir sayfa her zaman başından açılır; önceki sayfanın kaydırma
+  // konumu devralınınca sayfa boşluktan başlıyormuş gibi görünüyordu.
+  if (name !== _shownView) {
+    _shownView = name;
+    window.scrollTo(0, 0);
+  }
   ['auth', 'onboarding', 'profile', 'tools', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
@@ -821,9 +829,12 @@ const SHELL_VIEWS = [
 // The feed family carries its own column header, so the global logo bar would
 // be a second, redundant band above it — Twitter has one.
 const OWN_HEADER_VIEWS = ['feed', 'thread', 'user', 'follows', 'notifications'];
+// Kabuk açıkken alt çubuk zaten ekranın dibinde duruyor; altına bir de site
+// altbilgisi koymak her sayfaya birkaç yüz piksel gereksiz kaydırma ekliyordu.
 const NO_FOOTER_VIEWS = [
   'auth', 'onboarding', 'loading', 'blend-loading',
   'feed', 'thread', 'user', 'follows', 'notifications',
+  'profile', 'tools', 'inbox', 'blends', 'sinefil',
 ];
 // Which nav item lights up for a given view.
 const NAV_OF_VIEW = {
@@ -1235,6 +1246,7 @@ let _feedCursor = '';
 let _feedPickedFilm = null;
 let _feedFilmPickerMode = 'compose';
 let _feedAuthor = '';
+let _feedFollowFilterOpen = false;
 let _feedFollowingUsers = [];
 // When set, the feed is narrowed to one film — the trend behaves like a
 // destination rather than a decoration.
@@ -1466,7 +1478,9 @@ function openFilmFeed(slug, title) {
 
 function renderFeedFollowingFilter() {
   const filter = $('feed-follow-filter');
-  const show = _feedScope === 'following';
+  // Kişi şeridi sekmenin altında hep durmaz: filtre ikonundan açılır. Seçili
+  // bir kişi varken açık kalır, yoksa kullanıcı neye baktığını göremezdi.
+  const show = _feedScope === 'following' && (_feedFollowFilterOpen || Boolean(_feedAuthor));
   filter.classList.toggle('hidden', !show);
   if (!show) return;
   const pill = (label, username = '') => `<button type="button" data-feed-author="${escapeHTML(username)}" class="shrink-0 rounded-full border px-3 py-1.5 text-xs transition-colors ${_feedAuthor === username ? 'border-primary-container/50 bg-primary-container/15 text-primary-container' : 'border-outline-variant/30 text-on-surface-variant hover:border-outline-variant/60 hover:text-on-surface'}">${label}</button>`;
@@ -1482,9 +1496,10 @@ async function loadFeedFollowingUsers() {
   renderFeedFollowingFilter();
 }
 
-async function setFeedScope(scope) {
+async function setFeedScope(scope, { openFollowFilter = false } = {}) {
   _feedScope = scope;
   _feedAuthor = '';
+  _feedFollowFilterOpen = openFollowFilter;
   $('feed-sort-note').classList.toggle('hidden', scope !== 'community');
   document.querySelectorAll('[data-feed-scope]').forEach(button => {
     button.classList.toggle('is-active', button.dataset.feedScope === scope);
@@ -5009,6 +5024,8 @@ $('feed-follow-filter').addEventListener('click', event => {
   const button = event.target.closest('[data-feed-author]');
   if (!button) return;
   _feedAuthor = button.dataset.feedAuthor || '';
+  // "Tümü" filtreyi kaldırır, dolayısıyla şeridi de kapatır.
+  if (!_feedAuthor) _feedFollowFilterOpen = false;
   renderFeedFollowingFilter();
   loadFeed();
 });
@@ -5044,6 +5061,7 @@ $('feed-film-results').addEventListener('click', event => {
   if (_feedFilmPickerMode === 'filter') {
     _feedScope = 'community';
     _feedAuthor = '';
+    _feedFollowFilterOpen = false;
     document.querySelectorAll('[data-feed-scope]').forEach(tab => {
       tab.classList.toggle('is-active', tab.dataset.feedScope === 'community');
     });
@@ -5131,7 +5149,7 @@ $('feed-filter-menu').addEventListener('click', event => {
   $('feed-filter-menu').classList.add('hidden');
   $('btn-feed-film-filter').setAttribute('aria-expanded', 'false');
   if (option.dataset.feedFilterKind === 'film') { openFilmPicker('filter'); return; }
-  setFeedScope('following');
+  setFeedScope('following', { openFollowFilter: true });
 });
 
 document.querySelectorAll('[data-nav]').forEach(button => {

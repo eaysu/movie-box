@@ -372,7 +372,7 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     manifest = (ROOT / "static" / "site.webmanifest").read_text()
 
     assert 'id="dialog-install-app"' in html
-    assert 'href="/static/site.webmanifest?v=20260907.2"' in html
+    assert 'href="/static/site.webmanifest?v=20260907.3"' in html
     assert 'href="/static/movieboxd-mark.png?v=20260907.1"' in html
     assert 'src="/static/movieboxd-mark.png"' in html
     assert "beforeinstallprompt" in app_js
@@ -380,6 +380,63 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     assert "register('/push-sw.js')" in app_js
     assert '"192x192"' in manifest
     assert '"512x512"' in manifest
+
+
+def test_the_installed_app_opens_on_the_brand_mark_not_the_flat_icon():
+    """Reported: the splash screen showed the plain icon, not the brand mark."""
+    import hashlib
+
+    mark = (ROOT / "static" / "movieboxd-mark.png").read_bytes()
+    manifest = (ROOT / "static" / "site.webmanifest").read_text()
+    html = (ROOT / "static" / "index.html").read_text()
+
+    # Both launcher sizes are cut from the same artwork as the favicon.
+    for name in ("movieboxd-icon-192.png", "movieboxd-icon-512.png"):
+        icon = (ROOT / "static" / name).read_bytes()
+        assert icon, name
+        # A resize keeps the mark's white ground: the flat dark icon is 1254px
+        # of near-black, so a corner pixel tells them apart.
+        assert icon[:8] == mark[:8], name
+        assert f'"/static/{name}?v=' in manifest, name
+    # The splash paints `background_color` behind the icon; a white-ground mark
+    # on the dark surface read as a white card.
+    assert '"background_color": "#ffffff"' in manifest
+    assert 'apple-touch-icon" href="/static/movieboxd-icon-512.png' in html
+
+
+def test_the_people_you_follow_live_behind_the_filter_button():
+    """Reported: the follow chips sat under the tabs on every visit.
+
+    They belong to the filter menu, so the timeline header stays quiet until
+    somebody actually asks to narrow it.
+    """
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    block = app_js.split("function renderFeedFollowingFilter", 1)[1].split("\nasync function ", 1)[0]
+    assert "_feedFollowFilterOpen || Boolean(_feedAuthor)" in block
+    # Choosing "kullanıcıya göre" from the filter menu is what opens it.
+    assert "setFeedScope('following', { openFollowFilter: true })" in app_js
+    # Changing tabs closes it again.
+    assert "_feedFollowFilterOpen = openFollowFilter;" in app_js
+
+
+def test_a_shell_page_starts_at_its_top_and_does_not_scroll_for_nothing():
+    """Reported: pages opened with a header-sized gap and a stray scroll."""
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    # The fixed header is hidden inside the shell, so its reserved space goes.
+    assert "body.has-shell #view-profile" in css
+    assert "body.has-shell #view-sinefil { padding-top: .75rem; }" in css
+    # A full-height column plus the tab bar was always 4.5rem too tall.
+    assert ".shell-column { min-height: calc(100dvh - 4.5rem); }" in css
+    assert "min-h-screen border-outline-variant/20" not in html
+    # And the site footer no longer stacks under the tab bar.
+    footer = app_js.split("const NO_FOOTER_VIEWS = [", 1)[1].split("]", 1)[0]
+    for view in ("'profile'", "'tools'", "'inbox'", "'blends'", "'sinefil'"):
+        assert view in footer, view
+    assert "window.scrollTo(0, 0);" in app_js.split("function showView", 1)[1][:400]
 
 
 def test_feed_can_filter_to_visible_film_notes_and_explains_community_ordering():
@@ -475,8 +532,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "e92284ca00ef9585a8e006918f229cab246433dcab165c35927273a834a0e028",
-            "static/app.css": "4a12962444e39b8f42c1338ec737ba69e18f1c3c75dc769212462898027cbdfa",
+            "static/js/app.js": "1891adcf1698d0bb8461c66e102a71f20340145415bc36c2e0a00806e9add63c",
+            "static/app.css": "d36ba107ad68c0a43eb5e66886174a6a036f3c0dd2b73e24050b6773355df4af",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -508,9 +565,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.70"
+    css_version = "v=20260907.71"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.78" in html
+    assert "/static/js/app.js?v=20260907.80" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
