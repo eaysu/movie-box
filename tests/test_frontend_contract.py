@@ -475,8 +475,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "cc39043a04508ab1799c9c458aac2b3aff0a8d407dc9b4a810ec8d895a68451f",
-        "static/app.css": "40f7c19115234aef1b1aebacc6cc132d698eb6a9ad55dfa8569a6fd61789c6f0",
+            "static/js/app.js": "bfb505486f5b59e8926ec476f170529f8041fa21c60d9fdc698335d3628fafd1",
+            "static/app.css": "4a12962444e39b8f42c1338ec737ba69e18f1c3c75dc769212462898027cbdfa",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -508,9 +508,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.69"
+    css_version = "v=20260907.70"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.76" in html
+    assert "/static/js/app.js?v=20260907.77" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
@@ -537,14 +537,14 @@ def test_mobile_navigation_keeps_recommendations_and_profile_discoverable():
 
     tabbar = html.split('id="app-tabbar"', 1)[1].split("</nav>", 1)[0]
     assert 'id="tab-tools-toggle"' in tabbar
-    assert 'id="mobile-tools-menu"' in html
+    assert 'id="tools-directory"' in html
     assert 'data-nav="profile"' not in tabbar
     assert 'id="btn-header-profile"' in html
     assert "headerProfile.classList.toggle('flex', showHeaderProfile);" in app_js
-    assert "function setMobileToolsMenu(open)" in app_js
-    assert "data-mobile-tool=\"blend\"" in html
-    assert "data-mobile-tool=\"watch\"" in html
-    assert "openQuickTool(button.dataset.mobileTool);" in app_js
+    assert "function openToolsDirectory()" in app_js
+    assert "data-tools-page=\"blend\"" in html
+    assert "data-tools-page=\"watch\"" in html
+    assert "openQuickTool(button.dataset.toolsPage);" in app_js
     assert 'id="blend-tools-host"' in html
     assert "if (_account?.username && username.toLowerCase() === _account.username.toLowerCase())" in app_js
 

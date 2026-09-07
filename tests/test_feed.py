@@ -316,7 +316,7 @@ class ProfilePageTests(unittest.TestCase):
             self.assertIn(f'data-nav="{target}"', sidebar, target)
             self.assertIn(f'data-nav="{target}"', tabbar, target)
         self.assertIn('id="tab-tools-toggle"', tabbar)
-        self.assertIn('id="mobile-tools-menu"', self.html)
+        self.assertIn('id="tools-directory"', self.html)
         self.assertNotIn('data-nav="profile"', tabbar)
         self.assertIn('id="btn-header-profile"', self.html)
 

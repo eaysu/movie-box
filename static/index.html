@@ -25,7 +25,7 @@
 <link rel="manifest" href="/static/site.webmanifest?v=20260907.2"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260907.69"/>
+<link rel="stylesheet" href="/static/app.css?v=20260907.70"/>
 </head>
 <body class="bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -59,22 +59,11 @@
 <!-- ═══════════════  ALT SEKME ÇUBUĞU (mobil)  ═══════════════ -->
 <nav id="app-tabbar" class="hidden fixed bottom-0 inset-x-0 z-50 items-stretch justify-around border-t border-outline-variant/25 bg-surface/95 backdrop-blur-xl">
   <button type="button" data-nav="feed" class="tab-item"><span class="material-symbols-outlined">home</span></button>
-  <button id="tab-tools-toggle" type="button" class="tab-item" aria-label="Sinema araçları" aria-expanded="false"><span class="material-symbols-outlined">movie_filter</span></button>
+  <button id="tab-tools-toggle" type="button" class="tab-item" aria-label="Sinema araçları"><span class="material-symbols-outlined">theaters</span></button>
   <button type="button" data-nav="sinefil" class="tab-item"><span class="material-symbols-outlined">explore</span></button>
   <button type="button" data-nav="notifications" class="tab-item relative"><span class="material-symbols-outlined">notifications</span><span id="tab-badge-notifications" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
   <button type="button" data-nav="inbox" class="tab-item relative"><span class="material-symbols-outlined">mail</span><span id="tab-badge-inbox" class="hidden absolute right-[26%] top-1.5 h-2 w-2 rounded-full bg-secondary-container"></span></button>
 </nav>
-
-<div id="mobile-tools-menu" class="hidden fixed inset-x-4 bottom-24 z-50 rounded-2xl border border-outline-variant/30 bg-surface-container/95 p-2 shadow-2xl backdrop-blur-xl lg:hidden">
-  <button type="button" data-mobile-tool="watch" class="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-on-surface hover:bg-primary-container/10 transition-colors">
-    <span class="material-symbols-outlined text-primary-container">auto_awesome</span>
-    <span><strong class="block font-label-md text-label-md uppercase tracking-wide">Ne izlesem?</strong><small class="mt-0.5 block font-body-md text-body-md text-on-surface-variant">Zevkine göre ya da rastgele bir film seç.</small></span>
-  </button>
-  <button type="button" data-mobile-tool="blend" class="mt-1 flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-left text-on-surface hover:bg-secondary-container/10 transition-colors">
-    <span class="material-symbols-outlined text-secondary-container">join_inner</span>
-    <span><strong class="block font-label-md text-label-md uppercase tracking-wide">Blend yap</strong><small class="mt-0.5 block font-body-md text-body-md text-on-surface-variant">Karşılıklı takip ettiğin biriyle film zevkini buluştur.</small></span>
-  </button>
-</div>
 
 <button id="btn-compose-fab" class="hidden fixed bottom-20 right-4 z-40 h-14 w-14 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-xl" type="button" aria-label="Not yaz">
   <span class="material-symbols-outlined">edit</span>
@@ -718,6 +707,23 @@
 
 <!-- ═══════════════════════════  VIEW: ARAÇLAR  ═══════════════════════════ -->
 <div id="view-tools" class="hidden flex-grow pt-20 pb-24">
+  <section id="tools-directory" class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
+    <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinema araçları</span>
+    <h1 class="mt-2 font-headline-lg text-headline-lg text-on-surface">Bu akşam ne yapalım?</h1>
+    <p class="mt-2 max-w-[560px] font-body-md text-body-md text-on-surface-variant">Zevkine göre bir film bul ya da takip ettiğin biriyle ortak bir liste çıkar.</p>
+    <div class="mt-6 grid gap-3 sm:grid-cols-2">
+      <button type="button" data-tools-page="watch" class="group rounded-2xl border border-primary-container/30 bg-primary-container/10 p-5 text-left transition-colors hover:bg-primary-container/15">
+        <span class="material-symbols-outlined text-[28px] text-primary-container">auto_awesome</span>
+        <strong class="mt-4 block font-headline-md text-[22px] text-on-surface">Ne izlesem?</strong>
+        <span class="mt-1.5 block font-body-md text-body-md text-on-surface-variant">Watchlist’inden zevkine uygun ya da rastgele bir seçim yap.</span>
+      </button>
+      <button type="button" data-tools-page="blend" class="group rounded-2xl border border-secondary-container/30 bg-secondary-container/10 p-5 text-left transition-colors hover:bg-secondary-container/15">
+        <span class="material-symbols-outlined text-[28px] text-secondary-container">join_inner</span>
+        <strong class="mt-4 block font-headline-md text-[22px] text-on-surface">Blend</strong>
+        <span class="mt-1.5 block font-body-md text-body-md text-on-surface-variant">Takipleştiğin bir sinefille ortak izleme listenizi keşfedin.</span>
+      </button>
+    </div>
+  </section>
   <main id="quick-tools-host" class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop"></main>
 </div>
 
@@ -1190,7 +1196,7 @@
     <div class="flex items-center justify-between gap-3 px-4 py-4">
       <h1 class="font-headline-md text-headline-md text-on-surface">Akış</h1>
       <div class="flex shrink-0 items-center gap-1">
-        <button id="btn-feed-film-filter" type="button" title="Film notlarında ara" class="rounded-full p-2 text-on-surface-variant hover:text-primary-container transition-colors"><span class="material-symbols-outlined text-[22px]">movie_filter</span></button>
+        <button id="btn-feed-film-filter" type="button" title="Akışı filtrele" aria-label="Akışı filtrele" aria-expanded="false" class="rounded-full p-2 text-on-surface-variant hover:text-primary-container transition-colors"><span class="material-symbols-outlined text-[22px]">filter_alt</span></button>
         <button id="btn-feed-mine" type="button" title="Profilim" class="rounded-full p-2 text-on-surface-variant hover:text-on-surface transition-colors">
           <span class="material-symbols-outlined text-[22px]">person</span>
         </button>
@@ -1202,6 +1208,10 @@
       <button type="button" data-feed-scope="mine" class="feed-tab">Notların</button>
     </div>
     <div id="feed-follow-filter" class="hidden border-t border-outline-variant/15 px-4 py-2"></div>
+    <div id="feed-filter-menu" class="hidden border-t border-outline-variant/15 bg-surface-container-low/70 p-2">
+      <button type="button" data-feed-filter-kind="film" class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface"><span class="material-symbols-outlined text-[18px] text-primary-container">movie</span><span><strong class="block text-on-surface">Filme göre filtrele</strong><small>Belirli bir film hakkındaki notları gör.</small></span></button>
+      <button type="button" data-feed-filter-kind="user" class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-on-surface-variant hover:bg-surface-container hover:text-on-surface"><span class="material-symbols-outlined text-[18px] text-secondary-container">person_search</span><span><strong class="block text-on-surface">Kullanıcıya göre filtrele</strong><small>Takip ettiklerinin notlarını kişi bazında daralt.</small></span></button>
+    </div>
   </div>
 
   <!-- Yazma kutusu: sakin bir yüzey, film ve spoiler araçları tek akışta. -->
@@ -1374,6 +1384,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.76"></script>
+<script type="module" src="/static/js/app.js?v=20260907.77"></script>
 </body>
 </html>

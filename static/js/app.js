@@ -305,6 +305,14 @@ function mountQuickTools(hostId = 'quick-tools-host') {
   if (host && tools && tools.parentElement !== host) host.appendChild(tools);
 }
 
+function openToolsDirectory() {
+  mountQuickTools();
+  showView('tools');
+  $('tools-directory')?.classList.remove('hidden');
+  $('profile-quick-tools')?.classList.add('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function openQuickTool(which) {
   if (which === 'blend') {
     mountQuickTools('blend-tools-host');
@@ -320,6 +328,7 @@ function openQuickTool(which) {
   }
   mountQuickTools();
   showView('tools');
+  $('tools-directory')?.classList.add('hidden');
   $('profile-quick-tools')?.classList.remove('hidden');
   $('quick-tools-kicker').textContent = 'Bu gece';
   $('quick-tools-title').textContent = 'Ne izlesem?';
@@ -738,15 +747,13 @@ function stopFeedNotificationPolling() {
 }
 
 function showView(name) {
-  setMobileToolsMenu(false);
   ['auth', 'onboarding', 'profile', 'tools', 'idle', 'loading', 'results', 'random-result', 'blend-loading', 'blend-result', 'inbox', 'blends', 'sinefil', 'feed', 'thread', 'user', 'follows', 'notifications'].forEach(v => {
     $(`view-${v}`).classList.toggle('hidden', v !== name);
   });
   $('main-footer').classList.toggle('hidden', NO_FOOTER_VIEWS.includes(name));
   // Onboarding is a locked, full-screen takeover — no header to click away with.
   $('app-header').classList.toggle(
-    'hidden',
-    name === 'onboarding' || (Boolean(_account) && OWN_HEADER_VIEWS.includes(name)),
+    'hidden', name === 'onboarding' || (Boolean(_account) && SHELL_VIEWS.includes(name)),
   );
   setAuthHeaderLinks(name === 'auth' && _authEnabled && !_account);
   const feedButton = $('btn-open-feed');
@@ -828,15 +835,6 @@ function goNav(target) {
     case 'profile': showView('profile'); break;
     default: openFeed();
   }
-}
-
-function setMobileToolsMenu(open) {
-  const menu = $('mobile-tools-menu');
-  const toggle = $('tab-tools-toggle');
-  if (!menu || !toggle) return;
-  menu.classList.toggle('hidden', !open);
-  toggle.setAttribute('aria-expanded', String(open));
-  toggle.classList.toggle('text-primary-container', open);
 }
 
 // ── App-wide light/dark theme (opt-in, per viewer) ─────────────────────
@@ -5084,7 +5082,20 @@ $('feed-film-filter').addEventListener('click', event => {
   if (event.target.closest('#feed-film-clear')) openFilmFeed('', '');
   if (event.target.closest('#feed-film-change')) openFilmPicker('filter');
 });
-$('btn-feed-film-filter').addEventListener('click', () => openFilmPicker('filter'));
+$('btn-feed-film-filter').addEventListener('click', () => {
+  const menu = $('feed-filter-menu');
+  const open = menu.classList.contains('hidden');
+  menu.classList.toggle('hidden', !open);
+  $('btn-feed-film-filter').setAttribute('aria-expanded', String(open));
+});
+$('feed-filter-menu').addEventListener('click', event => {
+  const option = event.target.closest('[data-feed-filter-kind]');
+  if (!option) return;
+  $('feed-filter-menu').classList.add('hidden');
+  $('btn-feed-film-filter').setAttribute('aria-expanded', 'false');
+  if (option.dataset.feedFilterKind === 'film') { openFilmPicker('filter'); return; }
+  setFeedScope('following');
+});
 
 document.querySelectorAll('[data-nav]').forEach(button => {
   button.addEventListener('click', () => goNav(button.dataset.nav));
@@ -5093,13 +5104,12 @@ document.querySelectorAll('[data-nav-action]').forEach(button => {
   button.addEventListener('click', () => openQuickTool(button.dataset.navAction));
 });
 $('tab-tools-toggle').addEventListener('click', () => {
-  setMobileToolsMenu($('mobile-tools-menu').classList.contains('hidden'));
+  openToolsDirectory();
 });
-$('mobile-tools-menu').addEventListener('click', event => {
-  const button = event.target.closest('[data-mobile-tool]');
+$('tools-directory').addEventListener('click', event => {
+  const button = event.target.closest('[data-tools-page]');
   if (!button) return;
-  setMobileToolsMenu(false);
-  openQuickTool(button.dataset.mobileTool);
+  openQuickTool(button.dataset.toolsPage);
 });
 $('nav-logo').addEventListener('click', () => goNav('feed'));
 $('app-rail').addEventListener('click', event => {
@@ -5242,7 +5252,6 @@ $('menu-delete-data').addEventListener('click', () => {
 });
 document.addEventListener('click', event => {
   toggleProfileMenu(false);
-  if (!event.target.closest('#tab-tools-toggle, #mobile-tools-menu')) setMobileToolsMenu(false);
 });
 $('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
