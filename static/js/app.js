@@ -247,6 +247,38 @@ function setMode(mode) {
 let _profileWatchMode = 'taste';
 let _profileBlendTimer = null;
 
+// Uygulama hiyerarşisi: Akış kök sayfa; araç kataloğu mobilde aradaki
+// sayfadır. Araç sonucu hiçbir zaman varsayılan olarak Profile'a dönmez.
+// Kaynağı burada tutmak, aynı aracı hem sol menüden hem mobil katalogdan
+// açtığımızda "Geri"nin doğal üst sayfaya dönmesini sağlar.
+const _toolParents = { watch: 'feed', blend: 'feed' };
+
+function _setToolBackCopy(kind, parent) {
+  const destination = parent === 'tools' ? 'Araçlara dön' : 'Akışa dön';
+  if (kind === 'blend') {
+    const label = $('blend-result-back-label');
+    if (label) label.textContent = destination;
+    const pageBack = $('blends-back-label');
+    if (pageBack) pageBack.textContent = destination;
+    return;
+  }
+  const label = $('tools-back-label');
+  if (label) label.textContent = destination;
+}
+
+function returnToToolParent(kind) {
+  const parent = _toolParents[kind] || 'feed';
+  if (parent === 'tools') {
+    openToolsDirectory();
+    return;
+  }
+  openFeed();
+}
+
+function returnToWatchTool() {
+  openQuickTool('watch', { parent: _toolParents.watch || 'feed' });
+}
+
 function homeView() {
   // The feed is the home screen, the way a timeline is on Twitter. The
   // recommender dashboard is now reached as "Profil".
@@ -307,13 +339,18 @@ function mountQuickTools(hostId = 'quick-tools-host') {
 
 function openToolsDirectory() {
   mountQuickTools();
+  _toolParents.watch = 'feed';
+  _toolParents.blend = 'feed';
+  _setToolBackCopy('watch', 'feed');
   showView('tools');
   $('tools-directory')?.classList.remove('hidden');
   $('profile-quick-tools')?.classList.add('hidden');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function openQuickTool(which) {
+function openQuickTool(which, { parent = 'feed' } = {}) {
+  _toolParents[which] = parent;
+  _setToolBackCopy(which, parent);
   if (which === 'blend') {
     mountQuickTools('blend-tools-host');
     showView('blends');
@@ -4451,7 +4488,7 @@ async function randomFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView(dashboardView());
+      returnToWatchTool();
       showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
@@ -4535,7 +4572,7 @@ async function tasteFlow() {
     stopFactRotation();
     finishSteps();
     if (errMsg) {
-      showView(dashboardView());
+      returnToWatchTool();
       showActionError(errMsg);
     }
     $('btn-recommend').disabled = false;
@@ -5109,8 +5146,9 @@ $('tab-tools-toggle').addEventListener('click', () => {
 $('tools-directory').addEventListener('click', event => {
   const button = event.target.closest('[data-tools-page]');
   if (!button) return;
-  openQuickTool(button.dataset.toolsPage);
+  openQuickTool(button.dataset.toolsPage, { parent: 'tools' });
 });
+$('btn-tools-back').addEventListener('click', () => returnToToolParent('watch'));
 $('nav-logo').addEventListener('click', () => goNav('feed'));
 $('app-rail').addEventListener('click', event => {
   const trend = event.target.closest('[data-trend-film]');
@@ -5297,7 +5335,7 @@ $('letter-film-results').addEventListener('click', event => {
 });
 $('letter-film-picked').addEventListener('click', event => { if (event.target.closest('[data-letter-film-clear]')) { _letterPickedFilm = null; renderPickedLetterFilm(); } });
 $('btn-blends-refresh').addEventListener('click', () => loadMyBlends(false));
-$('btn-blends-back').addEventListener('click', () => showView(homeView()));
+$('btn-blends-back').addEventListener('click', () => returnToToolParent('blend'));
 
 $('profile-top-films').addEventListener('click', handleFilmDeck);
 $('profile-recent-films').addEventListener('click', handleFilmDeck);
@@ -5429,15 +5467,20 @@ $('btn-home').addEventListener('click', () => {
 });
 $('btn-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(dashboardView());
+  returnToWatchTool();
   setIdleError(null);
   setIdleNotice(null);
 });
 $('btn-random-new-search').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(dashboardView());
+  returnToWatchTool();
   setIdleError(null);
   setIdleNotice(null);
+});
+$('btn-loading-back').addEventListener('click', () => {
+  cancelActiveApiRequest();
+  stopFactRotation();
+  returnToWatchTool();
 });
 $('btn-try-again').addEventListener('click', () => {
   if (_randomAttempt < _randomFilms.length - 1) {
@@ -5454,9 +5497,13 @@ $('btn-switch-to-taste').addEventListener('click', () => {
 });
 $('btn-blend-back').addEventListener('click', () => {
   cancelActiveApiRequest();
-  showView(dashboardView());
+  returnToToolParent('blend');
   setIdleError(null);
   setIdleNotice(null);
+});
+$('btn-blend-loading-back').addEventListener('click', () => {
+  cancelActiveApiRequest();
+  returnToToolParent('blend');
 });
 
 // ── Boot ───────────────────────────────────────────────────────────────────

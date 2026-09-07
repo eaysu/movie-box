@@ -475,7 +475,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "bfb505486f5b59e8926ec476f170529f8041fa21c60d9fdc698335d3628fafd1",
+            "static/js/app.js": "e92284ca00ef9585a8e006918f229cab246433dcab165c35927273a834a0e028",
             "static/app.css": "4a12962444e39b8f42c1338ec737ba69e18f1c3c75dc769212462898027cbdfa",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -510,7 +510,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260907.70"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.77" in html
+    assert "/static/js/app.js?v=20260907.78" in html
     assert app_js.count(f"?{dependency_version}") == 5
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
@@ -544,7 +544,9 @@ def test_mobile_navigation_keeps_recommendations_and_profile_discoverable():
     assert "function openToolsDirectory()" in app_js
     assert "data-tools-page=\"blend\"" in html
     assert "data-tools-page=\"watch\"" in html
-    assert "openQuickTool(button.dataset.toolsPage);" in app_js
+    assert "openQuickTool(button.dataset.toolsPage, { parent: 'tools' });" in app_js
+    assert 'id="btn-tools-back"' in html
+    assert "function returnToToolParent(kind)" in app_js
     assert 'id="blend-tools-host"' in html
     assert "if (_account?.username && username.toLowerCase() === _account.username.toLowerCase())" in app_js
 

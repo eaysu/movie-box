@@ -413,7 +413,7 @@
 
   <main class="relative z-10 max-w-[1240px] mx-auto w-full px-margin-mobile md:px-margin-desktop">
     <div class="flex items-center justify-between py-5">
-      <button id="btn-profile-back" class="hidden items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
+      <button id="btn-profile-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
         <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
         Geri
       </button>
@@ -707,7 +707,12 @@
 
 <!-- ═══════════════════════════  VIEW: ARAÇLAR  ═══════════════════════════ -->
 <div id="view-tools" class="hidden flex-grow pt-20 pb-24">
-  <section id="tools-directory" class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
+  <div class="w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
+    <button id="btn-tools-back" type="button" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
+      <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span><span id="tools-back-label">Akışa dön</span>
+    </button>
+  </div>
+  <section id="tools-directory" class="mt-6 w-full max-w-[920px] mx-auto px-margin-mobile md:px-margin-desktop">
     <span class="font-label-sm text-label-sm uppercase tracking-[.24em] text-primary-container">Sinema araçları</span>
     <h1 class="mt-2 font-headline-lg text-headline-lg text-on-surface">Bu akşam ne yapalım?</h1>
     <p class="mt-2 max-w-[560px] font-body-md text-body-md text-on-surface-variant">Zevkine göre bir film bul ya da takip ettiğin biriyle ortak bir liste çıkar.</p>
@@ -855,6 +860,9 @@
 
 <!-- ═══════════════════════════  VIEW: LOADING  ═══════════════════════════ -->
 <div id="view-loading" class="hidden flex-grow flex flex-col items-center justify-center relative overflow-hidden pt-16">
+  <button id="btn-loading-back" type="button" class="absolute left-5 top-5 z-10 flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
+    <span class="material-symbols-outlined text-[18px]">arrow_back</span>Geri dön
+  </button>
   <div class="glow-pulse"></div>
   <main class="relative z-10 flex flex-col items-center max-w-md w-full px-margin-mobile">
     <!-- Brand -->
@@ -923,7 +931,7 @@
     <div class="flex items-center justify-between mt-stack-md">
       <button id="btn-new-search" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
         <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-        Yeni Arama
+        Ne izlesem? bölümüne dön
       </button>
       <div id="result-username" class="font-label-md text-label-md text-on-surface-variant/50 uppercase tracking-wider"></div>
     </div>
@@ -967,6 +975,9 @@
 
 <!-- ═══════════════════════════  VIEW: BLEND LOADING  ═══════════════════════════ -->
 <div id="view-blend-loading" class="hidden flex-grow flex flex-col items-center justify-center relative overflow-hidden pt-16">
+  <button id="btn-blend-loading-back" type="button" class="absolute left-5 top-5 z-10 flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
+    <span class="material-symbols-outlined text-[18px]">arrow_back</span>Geri dön
+  </button>
   <div class="glow-pulse"></div>
   <main class="relative z-10 flex flex-col items-center max-w-md w-full px-margin-mobile">
 
@@ -1027,7 +1038,7 @@
     <div class="flex items-center justify-between mt-stack-md">
       <button id="btn-blend-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
         <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-        Yeni Arama
+        <span id="blend-result-back-label">Blend'e dön</span>
       </button>
     </div>
 
@@ -1154,7 +1165,7 @@
     <div class="flex items-center justify-between mt-stack-md">
       <button id="btn-random-new-search" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors group">
         <span class="material-symbols-outlined text-[18px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
-        Yeni Arama
+        Ne izlesem? bölümüne dön
       </button>
       <div id="random-result-username" class="font-label-md text-label-md text-on-surface-variant/50 uppercase tracking-wider"></div>
     </div>
@@ -1316,7 +1327,7 @@
   <div class="relative z-10 max-w-[900px] mx-auto w-full px-margin-mobile md:px-margin-desktop pb-stack-lg flex flex-col gap-gutter">
     <div class="flex items-center justify-between mt-stack-md">
       <button id="btn-blends-back" class="flex items-center gap-2 font-label-md text-label-md text-on-surface-variant hover:text-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">arrow_back</span>Ana sayfa
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span><span id="blends-back-label">Akışa dön</span>
       </button>
       <button id="btn-blends-refresh" class="text-on-surface-variant hover:text-primary" title="Yenile"><span class="material-symbols-outlined">refresh</span></button>
     </div>
@@ -1384,6 +1395,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260907.77"></script>
+<script type="module" src="/static/js/app.js?v=20260907.78"></script>
 </body>
 </html>
