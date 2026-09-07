@@ -1628,9 +1628,10 @@ function userHeaderMarkup(profile) {
   const canLetter = !profile.is_me && !locked && Boolean(profile.letter_receiving_enabled);
   const canBlend = !profile.is_me && !locked
     && profile.follow_status === 'accepted' && Boolean(profile.follows_you);
+  const iconAction = 'inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors';
   const actions = (canLetter || canBlend) ? `<div class="mt-4 flex flex-wrap gap-2">
-    ${canLetter ? `<button type="button" data-user-letter="${escapeHTML(profile.username)}" class="rounded-xl border border-secondary-container/45 bg-secondary-container/10 px-3 py-2 font-label-sm text-label-sm text-secondary-container transition-colors hover:bg-secondary-container/20"><span class="material-symbols-outlined mr-1 align-[-3px] text-[16px]">mail</span>Mektup yaz</button>` : ''}
-    ${canBlend ? `<button type="button" data-user-blend="${escapeHTML(profile.username)}" class="rounded-xl border border-primary-container/45 bg-primary-container/10 px-3 py-2 font-label-sm text-label-sm text-primary-container transition-colors hover:bg-primary-container/20"><span class="material-symbols-outlined mr-1 align-[-3px] text-[16px]">hub</span>Blend yap</button>` : ''}
+    ${canLetter ? `<button type="button" data-user-letter="${escapeHTML(profile.username)}" aria-label="Mektup yaz" title="Mektup yaz" class="${iconAction} border-secondary-container/45 bg-secondary-container/10 text-secondary-container hover:bg-secondary-container/20"><span class="material-symbols-outlined text-[19px]">mail</span></button>` : ''}
+    ${canBlend ? `<button type="button" data-user-blend="${escapeHTML(profile.username)}" aria-label="Blend yap" title="Blend yap" class="${iconAction} border-primary-container/45 bg-primary-container/10 text-primary-container hover:bg-primary-container/20"><span class="material-symbols-outlined text-[19px]">join_inner</span></button>` : ''}
   </div>` : '';
   return `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/60 p-5">
     <div class="flex items-start gap-4">
