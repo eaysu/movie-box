@@ -23,6 +23,7 @@ from uuid import UUID
 
 from .enrich import EnrichedFilm
 from .scraper import ScrapedProfile
+from .semantic import taste_document_scores
 from .taste_profile import TasteProfileSnapshot
 
 
@@ -1150,6 +1151,14 @@ class AuthService:
         for row in favorites_rows:
             favorites_by_user.setdefault(int(row["user_id"]), []).append(row)
         taste_by_user = {int(row["user_id"]): row for row in taste_rows}
+        semantic_scores, semantic_coverage = taste_document_scores(
+            viewer_taste,
+            [taste_by_user.get(int(candidate["id"]), {}) for candidate in candidates],
+        )
+        semantic_by_user = {
+            int(candidate["id"]): semantic_scores[index]
+            for index, candidate in enumerate(candidates)
+        }
 
         cards: list[dict] = []
         for candidate in candidates:
@@ -1169,11 +1178,14 @@ class AuthService:
             directors = self._overlap(viewer_taste.get("top_directors"), taste.get("top_directors"))
             genres = self._overlap(viewer_taste.get("top_genres"), taste.get("top_genres"))
             keywords = self._overlap(viewer_taste.get("top_keywords"), taste.get("top_keywords"))
+            semantic_score = semantic_by_user.get(user_id, 0.0)
+            semantic_match = semantic_coverage >= 0.30 and semantic_score >= 0.62
             score = min(100, (
                 len(same_fav4) * 42
                 + (len(viewer_fav_to_top10) + len(viewer_top_to_fav4)) * 22
                 + len(shared_top10) * 7
                 + len(directors) * 6 + len(genres) * 4 + len(keywords) * 2
+                + round(semantic_score * 10 if semantic_coverage >= 0.30 else 0)
             ))
             shared_titles: list[str] = []
             for slug in list(same_fav4) + list(viewer_fav_to_top10):
@@ -1200,11 +1212,14 @@ class AuthService:
                 ],
                 "match_score": score,
                 "has_favorite_match": has_favorite_match,
+                "semantic_match": semantic_match,
                 "shared_titles": shared_titles[:3],
                 "match_note": (
                     "Film zevkiniz benziyor"
                     if has_favorite_match
-                    else ("Benzer yönetmenlere dönüyorsunuz" if directors else "Zevk haritalarınız yakın")
+                    else ("Benzer yönetmenlere dönüyorsunuz" if directors else (
+                        "Benzer film dillerine dönüyorsunuz" if semantic_match else "Zevk haritalarınız yakın"
+                    ))
                 ),
                 "letters_open": bool(candidate.get("letter_receiving_enabled", False)),
                 "private_account": bool(candidate.get("private_account", False)),

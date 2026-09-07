@@ -19,6 +19,8 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from .semantic import weighted_profile_scores
+
 if TYPE_CHECKING:
     from .enrich import EnrichedFilm
 
@@ -140,6 +142,18 @@ def rank_watchlist(
             / negative_weights.sum()
         )
         scores -= 0.6 * cosine_similarity(negative_taste, watchlist_matrix)[0]
+
+    # The lexical score keeps explicit genres, directors and keywords legible.
+    # A local latent-semantic score adds synopsis/theme proximity without an
+    # external embedding API or a new per-film bill.
+    semantic_scores, semantic_coverage = weighted_profile_scores(
+        watched,
+        watchlist,
+        positive_weights=positive_weights,
+        negative_weights=negative_weights,
+    )
+    if semantic_scores is not None and semantic_coverage >= 0.20:
+        scores = 0.72 * scores + 0.28 * semantic_scores
 
     # Add a bounded direct affinity bonus. This keeps the recent 100 films as
     # the profile base while allowing explicit favorites to decide close calls.

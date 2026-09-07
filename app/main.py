@@ -4669,6 +4669,7 @@ def _calculate_blend(
     from collections import Counter
     import numpy as np
     from sklearn.metrics.pairwise import cosine_similarity
+    from .semantic import profile_similarity
 
     def _cos(c1: Counter, c2: Counter) -> float:
         """İki Counter arasında cosine similarity."""
@@ -4870,6 +4871,19 @@ def _calculate_blend(
             + overlap_sim * 0.20
         )
 
+    semantic_sim, semantic_coverage = profile_similarity(
+        watched1,
+        watched2,
+        first_weights=[max(0.0, _rating_weight(film)) for film in watched1],
+        second_weights=[max(0.0, _rating_weight(film)) for film in watched2],
+    )
+    # Semantic proximity can discover shared film language where the exact
+    # keyword vocabularies differ. It stays secondary to shared ratings and
+    # favorites, so two people who rate common films in opposite ways cannot
+    # become a high-match Blend merely through similar synopsis wording.
+    if semantic_sim is not None and semantic_coverage >= 0.20:
+        raw = raw * 0.85 + semantic_sim * 0.15
+
     # The displayed score is intentionally warmer than the raw statistical
     # similarity. A nonlinear calibration protects meaningful differences while
     # avoiding demoralizing zeroes for two valid, simply different profiles.
@@ -4958,6 +4972,7 @@ def _calculate_blend(
             "score": confidence_score,
             "sample_size": min_watched,
             "metadata_coverage": round(metadata_confidence * 100),
+            "semantic_coverage": round(semantic_coverage * 100),
             "rating_pairs": len(pairs),
         },
         "common_count": common_count,
