@@ -355,6 +355,7 @@ function openQuickTool(which, { parent = 'feed' } = {}) {
     mountQuickTools('blend-tools-host');
     showView('blends');
     $('profile-quick-tools')?.classList.remove('hidden');
+    $('quick-tools-head')?.classList.add('hidden');
     $('quick-tools-kicker').textContent = 'İki zevk, tek liste';
     $('quick-tools-title').textContent = 'Blend yap';
     $('quick-tools-icon').textContent = 'join_inner';
@@ -367,6 +368,7 @@ function openQuickTool(which, { parent = 'feed' } = {}) {
   showView('tools');
   $('tools-directory')?.classList.add('hidden');
   $('profile-quick-tools')?.classList.remove('hidden');
+  $('quick-tools-head')?.classList.remove('hidden');
   $('quick-tools-kicker').textContent = 'Bu gece';
   $('quick-tools-title').textContent = 'Ne izlesem?';
   $('quick-tools-icon').textContent = 'local_movies';
@@ -587,7 +589,8 @@ function _showTasteReco(index) {
   $('profile-reco-panel').classList.add('open');
   $('profile-reco-body').innerHTML = `
     ${_discoverNote(o.discover)}
-    <div class="line-rise">${buildHeroCard(o.pool[i])}</div>
+    <div class="line-rise reco-swipe" data-reco-swipe>${buildHeroCard(o.pool[i])}</div>
+    <p class="mt-2 text-center font-label-sm text-label-sm text-on-surface-variant/45 sm:hidden">Kartı sağa sola kaydır</p>
     <div class="mt-4 flex items-center justify-between gap-3">
       <button type="button" data-taste-nav="-1" ${i === 0 ? 'disabled' : ''} class="w-10 h-10 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
       <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${i + 1} / ${o.pool.length}</span>
@@ -595,6 +598,7 @@ function _showTasteReco(index) {
     </div>
     ${i === o.pool.length - 1 ? _toRandomBtn(o.pool.length) : ''}
     ${_recoResetBtn()}`;
+  bindRecoSwipe($('profile-reco-body'));
 }
 
 // Son öneriyi de beğenmediyse çıkmaz sokak olmasın: rastgeleye devam.
@@ -920,6 +924,75 @@ function paintShell(name) {
 }
 
 // Profil düğmesi her ekranda aynı görünsün: ikon değil, kişinin kendi avatarı.
+// ── Öneri kartını kaydırma ──────────────────────────────────────────────
+// Telefonda kartı parmakla çekmek, ok düğmelerine basmaktan daha doğal.
+// Sürüklerken kart parmağı izler ve hafifçe eğilir; eşiği geçtiyse o yöne
+// savrulup sıradaki filme geçilir, geçmediyse yerine oturur.
+const SWIPE_THRESHOLD = 64;
+
+function bindRecoSwipe(root) {
+  const card = root?.querySelector('[data-reco-swipe]');
+  if (!card || card.dataset.swipeBound) return;
+  card.dataset.swipeBound = '1';
+
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let dragging = false;
+
+  const paint = (offset, settling = false) => {
+    card.classList.toggle('reco-swipe--settling', settling);
+    // Eğim kaydırma miktarıyla artar ama 8 dereceyi geçmez.
+    const tilt = Math.max(-8, Math.min(8, offset / 14));
+    card.style.transform = offset
+      ? `translateX(${offset}px) rotate(${tilt}deg)`
+      : '';
+  };
+
+  const release = () => {
+    if (!dragging) return;
+    dragging = false;
+    const step = dx <= -SWIPE_THRESHOLD ? 1 : (dx >= SWIPE_THRESHOLD ? -1 : 0);
+    const target = _loadTasteReco();
+    const at = target ? (target.at || 0) : 0;
+    const last = target ? target.pool.length - 1 : 0;
+    // Uçtaki kart savrulmaz: gidecek yer yoksa yerine döner.
+    const allowed = step === 1 ? at < last : (step === -1 ? at > 0 : false);
+    if (!allowed) { paint(0, true); dx = 0; return; }
+    card.classList.add('reco-swipe--settling', 'reco-swipe--gone');
+    paint(step === 1 ? -window.innerWidth : window.innerWidth, true);
+    const next = at + step;
+    dx = 0;
+    setTimeout(() => _showTasteReco(next), 190);
+  };
+
+  card.addEventListener('touchstart', event => {
+    if (event.touches.length !== 1) return;
+    startX = event.touches[0].clientX;
+    startY = event.touches[0].clientY;
+    dx = 0;
+    dragging = true;
+    card.classList.remove('reco-swipe--settling');
+  }, { passive: true });
+
+  card.addEventListener('touchmove', event => {
+    if (!dragging) return;
+    const moveX = event.touches[0].clientX - startX;
+    const moveY = event.touches[0].clientY - startY;
+    // Dikey niyet yatay niyetten baskınsa sayfa kaydırmasına karışmıyoruz.
+    if (Math.abs(moveY) > Math.abs(moveX) && Math.abs(moveY) > 12) {
+      dragging = false;
+      paint(0, true);
+      return;
+    }
+    dx = moveX;
+    paint(dx);
+  }, { passive: true });
+
+  card.addEventListener('touchend', release, { passive: true });
+  card.addEventListener('touchcancel', () => { dragging = false; paint(0, true); dx = 0; }, { passive: true });
+}
+
 // ── Katlanır bölümler ────────────────────────────────────────────────────
 // Telefonda profil panosu on bir kart uzunluğundaydı. Ağır bölümler dar
 // ekranda kapalı başlar; hangisinin açık kaldığını kullanıcı seçer ve seçim
@@ -1778,7 +1851,7 @@ function followButton(profile) {
   const style = active || pending
     ? 'border border-outline-variant/40 text-on-surface-variant hover:border-error/40 hover:text-error'
     : 'bg-primary-container text-on-primary-container';
-  return `<button type="button" data-follow="${escapeHTML(profile.username)}" data-follow-status="${status}" class="shrink-0 rounded-full px-4 py-2 font-label-sm text-label-sm uppercase tracking-wide transition-colors ${style}">${label}</button>`;
+  return `<button type="button" data-follow="${escapeHTML(profile.username)}" data-follow-status="${status}" class="inline-flex h-9 shrink-0 items-center rounded-full px-4 font-label-sm text-label-sm uppercase tracking-wide transition-colors ${style}">${label}</button>`;
 }
 
 function userHeaderMarkup(profile) {
@@ -1790,11 +1863,15 @@ function userHeaderMarkup(profile) {
   const canLetter = !profile.is_me && !locked && Boolean(profile.letter_receiving_enabled);
   const canBlend = !profile.is_me && !locked
     && profile.follow_status === 'accepted' && Boolean(profile.follows_you);
-  const iconAction = 'inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-colors';
-  const actions = (canLetter || canBlend) ? `<div class="mt-4 flex flex-wrap gap-2">
-    ${canLetter ? `<button type="button" data-user-letter="${escapeHTML(profile.username)}" aria-label="Mektup yaz" title="Mektup yaz" class="${iconAction} border-secondary-container/45 bg-secondary-container/10 text-secondary-container hover:bg-secondary-container/20"><span class="material-symbols-outlined text-[19px]">mail</span></button>` : ''}
-    ${canBlend ? `<button type="button" data-user-blend="${escapeHTML(profile.username)}" aria-label="Blend yap" title="Blend yap" class="${iconAction} border-primary-container/45 bg-primary-container/10 text-primary-container hover:bg-primary-container/20"><span class="material-symbols-outlined text-[19px]">join_inner</span></button>` : ''}
-  </div>` : '';
+  // Mektup ve blend, takip düğmesiyle aynı satırda ve aynı boyda: hepsi 36px
+  // yüksekliğinde yuvarlak düğmeler, mektup takibin hemen solunda.
+  const iconAction = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors';
+  const letterAction = canLetter
+    ? `<button type="button" data-user-letter="${escapeHTML(profile.username)}" aria-label="Mektup yaz" title="Mektup yaz" class="${iconAction} border-secondary-container/45 bg-secondary-container/10 text-secondary-container hover:bg-secondary-container/20"><span class="material-symbols-outlined text-[19px]">mail</span></button>`
+    : '';
+  const blendAction = canBlend
+    ? `<button type="button" data-user-blend="${escapeHTML(profile.username)}" aria-label="Blend yap" title="Blend yap" class="${iconAction} border-primary-container/45 bg-primary-container/10 text-primary-container hover:bg-primary-container/20"><span class="material-symbols-outlined text-[19px]">join_inner</span></button>`
+    : '';
   return `<div class="rounded-2xl border border-outline-variant/25 bg-surface-container/60 p-5">
     <div class="flex items-start gap-4">
       ${avatar
@@ -1806,7 +1883,7 @@ function userHeaderMarkup(profile) {
             <h1 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h1>
             <p class="text-sm text-on-surface-variant/70">@${escapeHTML(profile.username)}</p>
           </div>
-          ${followButton(profile)}
+          <div class="flex shrink-0 items-center gap-2">${blendAction}${letterAction}${followButton(profile)}</div>
         </div>
         ${locked ? '<span class="mt-2 inline-flex items-center gap-1 rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant"><span class="material-symbols-outlined text-[13px]">lock</span>Kilitli hesap</span>' : (profile.follows_you ? '<span class="mt-2 inline-block rounded-full bg-surface-variant/60 px-2 py-0.5 text-[11px] text-on-surface-variant">Seni takip ediyor</span>' : '')}
       </div>
@@ -1816,7 +1893,7 @@ function userHeaderMarkup(profile) {
       <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.follower_count || 0}</strong> takipçi</span>
       <span class="text-on-surface-variant"><strong class="text-on-surface">${profile.following_count || 0}</strong> takip</span>
       ${watched ? `<span class="text-on-surface-variant"><strong class="text-on-surface">${watched}</strong> film izlemiş</span>` : ''}
-    </div>${actions}`}
+    </div>`}
   </div>`;
 }
 
@@ -4310,7 +4387,7 @@ function sinefilCard(profile) {
         <span class="mt-0.5 flex items-center gap-1 truncate text-sm text-on-surface-variant">${name}${profile.private_account ? '<span class="material-symbols-outlined text-[15px]" title="Kilitli hesap">lock</span>' : ''}</span>
       </span>
     </button>`;
-  return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl">
+  return `<article data-sinefil-profile="${username}" role="link" tabindex="0" class="cursor-pointer rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl transition-colors hover:border-tertiary-container/40">
     <div class="flex items-start justify-between gap-3">${head}${followButton(profile)}</div>
     <div class="mt-4 grid grid-cols-4 gap-2">${posters}</div>
     <p class="mt-3 text-left font-label-sm text-label-sm text-tertiary-container">${escapeHTML(profile.match_note || 'Zevk haritalarınız yakın')}</p>

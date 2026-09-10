@@ -378,7 +378,7 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     manifest = (ROOT / "static" / "site.webmanifest").read_text()
 
     assert 'id="dialog-install-app"' in html
-    assert 'href="/static/site.webmanifest?v=20260907.3"' in html
+    assert 'href="/static/site.webmanifest?v=20260910.4"' in html
     assert 'href="/static/movieboxd-mark.png?v=20260907.1"' in html
     assert 'src="/static/movieboxd-mark.png"' in html
     assert "beforeinstallprompt" in app_js
@@ -397,7 +397,8 @@ def test_the_installed_app_opens_on_the_brand_mark_not_the_flat_icon():
     html = (ROOT / "static" / "index.html").read_text()
 
     # Both launcher sizes are cut from the same artwork as the favicon.
-    for name in ("movieboxd-icon-192.png", "movieboxd-icon-512.png"):
+    for name in ("movieboxd-icon-192.png", "movieboxd-icon-512.png",
+                 "movieboxd-icon-maskable.png"):
         icon = (ROOT / "static" / name).read_bytes()
         assert icon, name
         # A resize keeps the mark's white ground: the flat dark icon is 1254px
@@ -407,7 +408,9 @@ def test_the_installed_app_opens_on_the_brand_mark_not_the_flat_icon():
     # The splash paints `background_color` behind the icon; a white-ground mark
     # on the dark surface read as a white card.
     assert '"background_color": "#ffffff"' in manifest
-    assert 'apple-touch-icon" href="/static/movieboxd-icon-512.png' in html
+    # Android 12+ kırpma maskesi için markanın güvenli alana çekilmiş sürümü.
+    assert '"purpose": "maskable"' in manifest
+    assert 'apple-touch-icon" href="/static/movieboxd-icon-maskable.png' in html
 
 
 def test_the_people_you_follow_live_behind_the_filter_button():
@@ -480,6 +483,47 @@ def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
     for view in ("'auth'", "'onboarding'", "'loading'", "'blend-loading'"):
         assert view in block, view
     assert "OWN_HEADER_VIEWS.includes(name)" in block
+
+
+def test_the_letter_button_sits_beside_follow_at_the_same_height():
+    """Reported: the letter icon hung below the stats, out of line with follow."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    header = app_js.split("function userHeaderMarkup", 1)[1].split("\n}", 1)[0]
+    # One row: blend, then letter, then follow — measured at 36px each.
+    assert "${blendAction}${letterAction}${followButton(profile)}" in header
+    assert "h-9 w-9" in header.split("const iconAction", 1)[1].split("\n", 1)[0]
+    follow = app_js.split("function followButton", 1)[1].split("\n}", 1)[0]
+    assert "h-9" in follow
+
+
+def test_a_whole_member_card_opens_the_profile():
+    """Reported: only the avatar was clickable."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    card = app_js.split("function sinefilCard", 1)[1].split("\n}", 1)[0]
+    assert '<article data-sinefil-profile=' in card
+    assert 'role="link"' in card
+    # The follow button inside it still does its own job.
+    handler = app_js.split("$('sinefil-grid').addEventListener('click'", 1)[1].split("});", 1)[0]
+    assert handler.index("data-follow") < handler.index("data-sinefil-profile")
+
+
+def test_the_recommendation_card_can_be_swiped_on_a_phone():
+    """Asked for: drag the card sideways, with a slight tilt."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    block = app_js.split("function bindRecoSwipe", 1)[1].split("\n}\n", 1)[0]
+    for event in ("touchstart", "touchmove", "touchend", "touchcancel"):
+        assert f"'{event}'" in block, event
+    assert "rotate(${tilt}deg)" in block
+    # A vertical drag belongs to the page, not the card.
+    assert "Math.abs(moveY) > Math.abs(moveX)" in block
+    # The end of the pool does not fling into nothing.
+    assert "const allowed" in block
+    assert ".reco-swipe { touch-action: pan-y" in css
+    assert "prefers-reduced-motion" in css
 
 
 def test_the_recommendation_card_keeps_only_the_reason():
@@ -644,8 +688,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "c2b3479812051869ccb32bab64fccbbda68d971ee0fd41985604f3b8d2a7c5e1",
-            "static/app.css": "7ec0d00d27fe853f10169ea8ba36b2f817005c3c6e3e171ece6d59399f4b2b9b",
+            "static/js/app.js": "590f5b75c66c4fb751475ffbc6d7c7f7a1271f4742d4f2d07976ea33a0fd9f26",
+            "static/app.css": "4ff356e0a891e65571d8ee3e08e4d7e3fbc46345bea857e494ad50642a87172e",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -677,9 +721,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260910.76"
+    css_version = "v=20260910.77"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.88" in html
+    assert "/static/js/app.js?v=20260910.89" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js

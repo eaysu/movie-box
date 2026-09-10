@@ -708,3 +708,14 @@
   .page-topbar__actions .avatar-button,
   .page-topbar__actions > button { height: 2.25rem; width: 2.25rem; }
   .page-topbar__actions > button.page-action--wide { width: auto; padding: 0 .85rem; }
+
+  /* ── Öneri kartını kaydırma ───────────────────────────────────────────
+     Telefonda kart parmakla sağa sola çekilebiliyor; sürüklerken hafifçe
+     eğilir, bırakınca ya yerine döner ya da o yöne savrulup yerini bir
+     sonrakine bırakır. */
+  .reco-swipe { touch-action: pan-y; will-change: transform; }
+  .reco-swipe--settling { transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .28s ease; }
+  .reco-swipe--gone { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .reco-swipe--settling { transition: none; }
+  }
