@@ -5368,8 +5368,19 @@ $('nav-account').addEventListener('click', () => {
   showView('profile');
   if (!_persistedProfile) loadProfile();
 });
-function openComposer() {
+// Kalem bir açma-kapama düğmesi: ikinci dokunuş kutuyu geri kapatır. Yazılmış
+// bir metin varsa kapatmak onu silmek olur; o yüzden dolu kutu açık kalır.
+function toggleComposer() {
   const composer = $('feed-composer');
+  const open = !composer.classList.contains('hidden');
+  if (open) {
+    if ($('feed-compose-text').value.trim() || _feedPickedFilm) {
+      $('feed-compose-text').focus();
+      return;
+    }
+    composer.classList.add('hidden');
+    return;
+  }
   composer.classList.remove('hidden');
   composer.scrollIntoView({ block: 'start', behavior: 'smooth' });
   setTimeout(() => $('feed-compose-text').focus(), 120);
@@ -5382,8 +5393,19 @@ function closeComposerOnPhone() {
   $('feed-composer').classList.add('hidden');
 }
 
-$('nav-compose').addEventListener('click', async () => { await openFeed(); openComposer(); });
-$('btn-compose-fab').addEventListener('click', async () => { await openFeed(); openComposer(); });
+// Akışta değilsek önce akışa geçilir ve kutu açılır; akıştaysak kalem
+// doğrudan açar/kapatır. (openFeed kutuyu kapattığı için sıra önemli.)
+async function composeFromPencil() {
+  if ($('view-feed').classList.contains('hidden')) {
+    await openFeed();
+    toggleComposer();
+    return;
+  }
+  toggleComposer();
+}
+
+$('nav-compose').addEventListener('click', composeFromPencil);
+$('btn-compose-fab').addEventListener('click', composeFromPencil);
 
 $('btn-notifications-back').addEventListener('click', () => (showView('feed'), loadFeed()));
 $('notifications-list').addEventListener('click', event => {

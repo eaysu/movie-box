@@ -531,8 +531,15 @@ def test_the_phone_feed_shows_notes_until_the_pencil_is_tapped():
     # Hidden on a phone, always open from sm up.
     assert 'id="feed-composer" class="hidden border-b' in html
     assert "sm:block" in html.split('id="feed-composer"', 1)[1].split(">", 1)[0]
-    assert "function openComposer" in app_js
+    assert "function toggleComposer" in app_js
     assert "function closeComposerOnPhone" in app_js
+    # The pencil is a toggle: a second tap closes an empty box, but never
+    # throws away something half-written.
+    toggle = app_js.split("function toggleComposer", 1)[1].split("\n}", 1)[0]
+    assert "composer.classList.add('hidden')" in toggle
+    assert "$('feed-compose-text').value.trim() || _feedPickedFilm" in toggle
+    # Reopening the feed would close it, so the order matters when already there.
+    assert "if ($('view-feed').classList.contains('hidden'))" in app_js
     # Opening the feed and posting both leave it closed again on a phone.
     assert app_js.count("closeComposerOnPhone();") >= 2
     # One row for the three controls, all 40px tall.
@@ -782,7 +789,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "8ae43d7ef430ce561972adbf9999744ff702877740cbc99d8e2c4500e78a3099",
+            "static/js/app.js": "188ae3f936fa0e7835ce1f2de2fbf1c3bfd4f5af5c10d3d64052a1880d090c4b",
             "static/app.css": "cb5eebe5f2e2b07a726ac6eeefee7c79892720cb5ebb005c0f401194b016ea0a",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -817,7 +824,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260910.80"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.91" in html
+    assert "/static/js/app.js?v=20260910.92" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
