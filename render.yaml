@@ -3,8 +3,14 @@ services:
     name: movie-boxd
     env: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: PYTHONPATH=backend uvicorn app.main:app --host 0.0.0.0 --port $PORT --log-level warning
+    # Komutlar backend/ içinden koşuyor, böylece `app` paketi PYTHONPATH
+    # gerektirmeden içe aktarılıyor. Depo tamamen klonlanıyor; statik dosyalar
+    # depo köküne göre çözüldüğü için frontend/ yine bulunuyor.
+    # Bu alan panelde de ayarlı olmalı (Settings → Root Directory: backend),
+    # aksi hâlde elle oluşturulmuş servis bu dosyayı okumaz.
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --log-level warning
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"

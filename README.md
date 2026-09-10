@@ -328,6 +328,23 @@ double-submit CSRF token'ı istiyor. Auth ve ağır rotaların ayrı IP bütçel
 - Supabase olmadan önbellekler `data/cache.sqlite3` içinde yaşıyor ve kalıcı
   diski olmayan sunucularda uçucudur.
 
+## Dağıtım
+
+Render servisinin **Root Directory** ayarı `backend` olmalı. Komutlar o zaman
+depo köküne değil `backend/`'e göre koşuyor, `app` paketi `PYTHONPATH`
+gerektirmeden içe aktarılıyor ve build/start komutlarının hiçbiri özel bir şey
+yapmıyor:
+
+```
+Build:  pip install -r requirements.txt
+Start:  uvicorn app.main:app --host 0.0.0.0 --port $PORT --log-level warning
+```
+
+Depo tamamen klonlanıyor, `frontend/` de `STATIC_DIR` tarafından depo köküne
+göre çözüldüğü için yerinde bulunuyor. `render.yaml` aynı yapılandırmayı
+taşıyor ama elle oluşturulmuş (blueprint olmayan) bir servis bu dosyayı
+okumaz — panel ayarı yine de yapılmalı.
+
 ## Hesap yayına alma
 
 1. `backend/supabase/schema.sql` dosyasını Supabase SQL Editor'da çalıştır.
