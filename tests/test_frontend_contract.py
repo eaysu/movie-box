@@ -485,6 +485,63 @@ def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
     assert "OWN_HEADER_VIEWS.includes(name)" in block
 
 
+def test_the_phone_feed_shows_notes_until_the_pencil_is_tapped():
+    """Asked for: the home feed is notes; writing opens from the pencil."""
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    # Hidden on a phone, always open from sm up.
+    assert 'id="feed-composer" class="hidden border-b' in html
+    assert "sm:block" in html.split('id="feed-composer"', 1)[1].split(">", 1)[0]
+    assert "function openComposer" in app_js
+    assert "function closeComposerOnPhone" in app_js
+    # Opening the feed and posting both leave it closed again on a phone.
+    assert app_js.count("closeComposerOnPhone();") >= 2
+    # One row for the three controls, all 40px tall.
+    row = html.split('id="feed-compose-film"', 1)[1].split("</div>", 1)[0]
+    assert "h-10" in row
+    for control in ('id="btn-feed-post"', "spoiler-check"):
+        assert control in html
+    # The counter hangs in the text area's bottom-right, above Paylaş.
+    counter = html.split('id="feed-compose-count"', 1)[1].split(">", 1)[0]
+    assert "absolute bottom-1 right-0" in counter
+    # And the spoiler box is round.
+    assert ".spoiler-check {" in css
+    assert "border-radius: 9999px" in css.split(".spoiler-check {", 1)[1].split("}", 1)[0]
+
+
+def test_the_dashboard_sections_hide_their_actions_until_opened():
+    """Asked for: no pencil, clapper or image icon on a closed section."""
+    html = (ROOT / "static" / "index.html").read_text()
+
+    for fold in ("auteur", "basucu", "gunce"):
+        head = html.split(f'data-fold="{fold}"', 1)[1].split('<div class="fold-body">', 1)[0]
+        icons = [line for line in head.splitlines() if "material-symbols-outlined" in line]
+        # Only the chevron survives in a collapsed header.
+        assert len(icons) == 1, (fold, icons)
+        assert "fold-chevron" in icons[0], fold
+    # The edit and PNG buttons moved inside, so they appear with the content.
+    for section, button in (("basucu", "profile-top-films-edit"), ("gunce", "profile-recent-share")):
+        body = html.split(f'data-fold="{section}"', 1)[1].split('<div class="fold-body">', 1)[1]
+        assert f'id="{button}"' in body.split("</section>", 1)[0], section
+
+
+def test_the_blend_page_opens_on_its_name_box():
+    html = (ROOT / "static" / "index.html").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    blends = html.split('id="view-blends"', 1)[1].split('id="view-sinefil"', 1)[0]
+    # Heading, then the tool host — no prose in between.
+    assert blends.index("Blendler</h1>") < blends.index('id="blend-tools-host"')
+    assert "İstekler, tamamlanmış blendler" not in blends
+    # The embedded tool drops its own title and top spacing.
+    assert "$('quick-tools-head')?.classList.add('hidden');" in app_js
+    assert "quick-tools--embedded" in app_js
+    assert ".quick-tools--embedded" in css
+
+
 def test_the_letter_button_sits_beside_follow_at_the_same_height():
     """Reported: the letter icon hung below the stats, out of line with follow."""
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
@@ -688,8 +745,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "590f5b75c66c4fb751475ffbc6d7c7f7a1271f4742d4f2d07976ea33a0fd9f26",
-            "static/app.css": "4ff356e0a891e65571d8ee3e08e4d7e3fbc46345bea857e494ad50642a87172e",
+            "static/js/app.js": "88e83973eff430507d8f35202debb60e3bedf65e1d5cc45e4af38383a196a0ae",
+            "static/app.css": "c30b767c46a6db10de462c9b7704c65e46386772136a23ea5a2d0879ebe4f9e6",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -721,9 +778,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260910.77"
+    css_version = "v=20260910.78"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.89" in html
+    assert "/static/js/app.js?v=20260910.90" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js

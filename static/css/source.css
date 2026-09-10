@@ -719,3 +719,25 @@
   @media (prefers-reduced-motion: reduce) {
     .reco-swipe--settling { transition: none; }
   }
+
+  /* Blend sayfasına gömülü araç: sayfa başlığıyla arasında boşluk kalmasın. */
+  .quick-tools--embedded { margin-top: 0 !important; padding-top: 0 !important; }
+
+  /* Spoiler kutucuğu yuvarlak: satırdaki diğer öğeler gibi hap biçiminde. */
+  .spoiler-check {
+    appearance: none; -webkit-appearance: none;
+    height: 1.15rem; width: 1.15rem; border-radius: 9999px;
+    border: 2px solid rgb(var(--color-secondary-container) / .55);
+    background: transparent; display: inline-grid; place-content: center;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .spoiler-check::before {
+    content: ''; height: .5rem; width: .5rem; border-radius: 9999px;
+    background: rgb(var(--color-on-secondary-container)); transform: scale(0);
+    transition: transform .15s ease;
+  }
+  .spoiler-check:checked {
+    background: rgb(var(--color-secondary-container));
+    border-color: rgb(var(--color-secondary-container));
+  }
+  .spoiler-check:checked::before { transform: scale(1); }

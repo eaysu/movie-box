@@ -334,7 +334,11 @@ function openProfilePanel(which) {
 function mountQuickTools(hostId = 'quick-tools-host') {
   const host = $(hostId);
   const tools = $('profile-quick-tools');
-  if (host && tools && tools.parentElement !== host) host.appendChild(tools);
+  if (!host || !tools) return;
+  if (tools.parentElement !== host) host.appendChild(tools);
+  // Blend sayfasında araç kendi başlığını göstermiyor; üstteki boşluğu da
+  // bırakmalı ki kutucuk "Blendler" başlığının hemen altına gelsin.
+  tools.classList.toggle('quick-tools--embedded', hostId === 'blend-tools-host');
 }
 
 function openToolsDirectory() {
@@ -1696,6 +1700,7 @@ async function setFeedScope(scope, { openFollowFilter = false } = {}) {
 
 async function openFeed() {
   showView('feed');
+  closeComposerOnPhone();
   _feedFilm = { slug: '', title: '' };
   renderFeedFilmChip();
   $('feed-sort-note').classList.toggle('hidden', _feedScope !== 'community');
@@ -1763,6 +1768,7 @@ async function submitPost() {
     $('feed-compose-spoiler').checked = false;
     $('feed-compose-count').textContent = '420';
     clearComposerFilm();
+    closeComposerOnPhone();
     await loadFeed();
   } catch (err) {
     error.textContent = err.message || 'Not paylaşılamadı.';
@@ -5352,8 +5358,22 @@ $('nav-account').addEventListener('click', () => {
   showView('profile');
   if (!_persistedProfile) loadProfile();
 });
-$('nav-compose').addEventListener('click', () => { openFeed(); openFilmPicker(); });
-$('btn-compose-fab').addEventListener('click', () => { openFeed(); openFilmPicker(); });
+function openComposer() {
+  const composer = $('feed-composer');
+  composer.classList.remove('hidden');
+  composer.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  setTimeout(() => $('feed-compose-text').focus(), 120);
+}
+
+// Telefonda ana ekran yalnız paylaşılmış notları gösterir; yazma kutusu kalem
+// düğmesiyle açılır ve paylaştıktan sonra tekrar kapanır.
+function closeComposerOnPhone() {
+  if (window.matchMedia('(min-width: 640px)').matches) return;
+  $('feed-composer').classList.add('hidden');
+}
+
+$('nav-compose').addEventListener('click', async () => { await openFeed(); openComposer(); });
+$('btn-compose-fab').addEventListener('click', async () => { await openFeed(); openComposer(); });
 
 $('btn-notifications-back').addEventListener('click', () => (showView('feed'), loadFeed()));
 $('notifications-list').addEventListener('click', event => {
