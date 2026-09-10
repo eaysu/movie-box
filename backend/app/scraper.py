@@ -931,9 +931,16 @@ def _parse_review_page(page_html: str) -> list[DiaryEntry]:
 
 
 async def scrape_reviewed_diary(
-    username: str, *, max_pages: int = 40,
+    username: str, *, max_pages: int = 40, start_page: int = 1,
+    progress: dict | None = None,
 ) -> list[DiaryEntry] | None:
-    """Üyenin yazılı bütün günce kayıtları — RSS'in son ~50 sınırı olmadan.
+    """Üyenin yazılı günce kayıtları — RSS'in son ~50 sınırı olmadan.
+
+    `start_page` ile `max_pages` bir dilim veriyor: yeni üyenin arşivi tek
+    seferde değil, koş başına birkaç sayfa hâlinde yeniden eskiye doğru
+    taranabilsin. `progress` verilirse nereye kadar okunduğu (`last_page`) ve
+    arşivin bitip bitmediği (`exhausted`) oraya yazılıyor; çağıran bunu saklayıp
+    sonraki koşuda kaldığı yerden devam ediyor.
 
     RSS tek istekle geliyor ama yalnızca son elli kaydı taşıyor, dolayısıyla
     yıllar öncesinin yorumları oradan hiç görünmüyor. `/films/reviews/` sayfası
@@ -950,18 +957,24 @@ async def scrape_reviewed_diary(
     """
     out: list[DiaryEntry] = []
     seen: set[str] = set()
+    last_page = 0
+    exhausted = False
     try:
         async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
-            for page in range(1, max_pages + 1):
+            for page in range(start_page, start_page + max_pages):
                 url = f"{BASE_URL}/{username}/films/reviews/page/{page}/"
                 response = await _budgeted_get(
                     session, url, headers=_NAV_HEADERS, timeout=25,
                 )
                 if response.status_code != 200:
                     # İlk sayfa okunamadıysa üye hakkında hiçbir şey bilmiyoruz.
-                    return None if page == 1 else out
+                    if page == start_page:
+                        return None
+                    break
                 entries = _parse_review_page(response.text)
+                last_page = page
                 if not entries:
+                    exhausted = True
                     break
                 fresh = [entry for entry in entries if entry.key not in seen]
                 seen.update(entry.key for entry in fresh)
@@ -972,10 +985,15 @@ async def scrape_reviewed_diary(
                         )
                 out.extend(fresh)
                 if len(entries) < 12:
+                    exhausted = True
                     break
     except Exception as exc:  # noqa: BLE001 - besleme kritik değil
         log.warning("reviewed diary failed user=%s: %s", username, exc)
+        if progress is not None:
+            progress.update(last_page=last_page, exhausted=exhausted)
         return out or None
+    if progress is not None:
+        progress.update(last_page=last_page, exhausted=exhausted)
     return out
 
 

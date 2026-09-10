@@ -1632,6 +1632,19 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_synced_at TIMESTAMPTZ;
 -- istek sayısı sabit olduğu için üyelik büyüdükçe bütçeyi bu koruyor.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_idle_streak SMALLINT NOT NULL DEFAULT 0;
 
+-- Yeni üyenin arşivi kaydolur kaydolmaz değil, uygulamaya girdikten sonra
+-- arka planda taranıyor: koş başına birkaç sayfa, yeniden eskiye doğru, profil
+-- doldukça görünerek. `diary_backfill_page` nereye kadar okunduğunu tutuyor
+-- (0 = hiç başlanmadı), `diary_backfilled_at` arşivin bittiği an. Onboarding'i
+-- bekletmemek için ayrı: kayıt akışı yüzlerce sayfalık bir taramaya bağlanamaz.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_backfill_page SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_backfilled_at TIMESTAMPTZ;
+
+-- Var olan üyelerin arşivi toplu betikle zaten tarandı; onları kuyruğa sokmanın
+-- anlamı yok. Yalnız bu satır bir kez çalışır, sonrakiler hiçbir şeyi değiştirmez.
+UPDATE public.users SET diary_backfilled_at = NOW()
+ WHERE diary_backfilled_at IS NULL AND diary_synced_at IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_posts_feed
   ON public.posts (created_at DESC, id DESC)
   WHERE deleted_at IS NULL AND reply_to IS NULL;

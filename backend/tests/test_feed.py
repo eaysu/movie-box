@@ -723,3 +723,65 @@ class DiaryScheduleTests(unittest.TestCase):
         self.assertEqual(stamped[0].watched_on, "2026-07-22")
         # Tarihi hiç olmayan kayıt akışa girmiyor: sıra izlenme gününe göre.
         self.assertEqual(_parse_review_page(page("")), [])
+
+
+class DiaryBackfillTests(unittest.TestCase):
+    """Yeni üyenin arşivi: onboarding'te değil, girdikten sonra, kademeli."""
+
+    def setUp(self):
+        self.auth = (ROOT / "app" / "auth.py").read_text()
+        self.main = (ROOT / "app" / "main.py").read_text()
+        self.scraper = (ROOT / "app" / "scraper.py").read_text()
+        self.schema = (ROOT / "supabase" / "schema.sql").read_text()
+        self.config = (ROOT / "app" / "config.py").read_text()
+
+    def test_registration_never_waits_for_the_archive(self):
+        """Kayıt akışı yüzlerce sayfalık bir taramaya bağlanamaz."""
+        for route in ('@app.post("/api/auth/register/verify")',
+                      '@app.post("/api/profile/onboarding-complete")'):
+            block = self.main.split(route, 1)[1].split("@app.", 1)[0]
+            self.assertNotIn("_kick_diary_backfill", block, route)
+        # Tetikleyici uygulamaya giriş: akış açıldığında.
+        feed = self.main.split('@app.get("/api/feed")', 1)[1].split("@app.", 1)[0]
+        self.assertIn("_kick_diary_backfill(get_settings(), service)", feed)
+        # Yanıtı bekletmiyor: görev oluşturuluyor, await edilmiyor.
+        kick = self.main.split("def _kick_diary_backfill", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn("asyncio.create_task(_run())", kick)
+
+    def test_the_archive_is_read_a_few_pages_at_a_time_newest_first(self):
+        """Profil dolarken görünsün: tek seferde değil, dilim dilim."""
+        self.assertIn("start_page: int = 1", self.scraper)
+        self.assertIn("range(start_page, start_page + max_pages)", self.scraper)
+        kick = self.main.split("def _kick_diary_backfill", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn("start_page=done_pages + 1", kick)
+        self.assertIn('getattr(settings, "diary_backfill_pages_per_run", 3)', kick)
+        self.assertIn("diary_backfill_pages_per_run: int = 3", self.config)
+
+    def test_progress_survives_a_restart_and_a_failed_page(self):
+        """Süreç yeniden başlasa da kaldığı yerden devam etmeli."""
+        self.assertIn(
+            "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_backfill_page",
+            self.schema,
+        )
+        mark = self.auth.split("def mark_diary_backfill", 1)[1].split("\n    def ", 1)[0]
+        # Sayfa okunamadıysa ilerleme yazılmıyor; aynı sayfa tekrar denenecek.
+        self.assertIn("if page > 0:", mark)
+        kick = self.main.split("def _kick_diary_backfill", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn('if entries is None and not progress.get("last_page"):', kick)
+        self.assertIn("continue", kick)
+
+    def test_a_finished_archive_leaves_the_queue(self):
+        kick = self.main.split("def _kick_diary_backfill", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn('done=bool(progress.get("exhausted"))', kick)
+        candidates = self.auth.split("def diary_backfill_candidates", 1)[1].split(
+            "\n    def ", 1
+        )[0]
+        self.assertIn('is_(\n                "diary_backfilled_at", "null"\n            )', candidates)
+
+    def test_members_already_swept_by_the_bulk_script_are_not_queued_again(self):
+        """Şema bir kez var olanları bitmiş sayıyor; 130 üye baştan taranmasın."""
+        self.assertIn(
+            "UPDATE public.users SET diary_backfilled_at = NOW()\n"
+            " WHERE diary_backfilled_at IS NULL AND diary_synced_at IS NOT NULL;",
+            self.schema,
+        )

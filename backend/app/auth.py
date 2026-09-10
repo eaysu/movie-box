@@ -1799,6 +1799,37 @@ class AuthService:
                 break
         return never + due
 
+    def diary_backfill_candidates(self, *, limit: int = 2) -> list[dict]:
+        """Arşivi henüz taranmamış üyeler; en erken kaydolan önce.
+
+        Yeni üye kaydolur kaydolmaz değil, uygulamaya girdikten sonra kuyruğa
+        giriyor — onboarding yüzlerce sayfalık bir taramayı beklememeli.
+        """
+        try:
+            return self._service_client().table("users").select(
+                "id,username,diary_backfill_page"
+            ).eq("account_status", "active").is_(
+                "diary_backfilled_at", "null"
+            ).order("id").limit(max(1, limit)).execute().data or []
+        except Exception:
+            return []
+
+    def mark_diary_backfill(self, user_id: int, *, page: int, done: bool) -> None:
+        """Arşiv taramasının nereye kadar geldiğini saklar.
+
+        Sayfa numarası ilerlemiyorsa (sayfa okunamadı) damga da atılmıyor:
+        sonraki koşu aynı yerden yeniden deniyor.
+        """
+        patch: dict[str, Any] = {}
+        if page > 0:
+            patch["diary_backfill_page"] = min(page, 32000)
+        if done:
+            patch["diary_backfilled_at"] = datetime.now(timezone.utc).isoformat()
+        if not patch:
+            return
+        with contextlib.suppress(Exception):
+            self._service_client().table("users").update(patch).eq("id", user_id).execute()
+
     def mark_diary_synced(self, user_id: int, *, wrote: int = 0) -> None:
         """Taramayı damgalar ve boş geçen tarama sayısını günceller.
 

@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # Üye sayısı büyüdükçe bütçeyi asıl koruyan mekanizma bu.
     diary_scan_min_hours: int = 1
     diary_scan_max_hours: int = 24
+    # Yeni üyenin arşivi: uygulamaya girdikten sonra, koş başına birkaç sayfa.
+    # Sayfa başına on iki kayıt, yani bir koşta ~36 kayıt yeniden eskiye doğru.
+    diary_backfill_members_per_run: int = 2
+    diary_backfill_pages_per_run: int = 3
 
     # --- Storage ---
     data_dir: str = "data"

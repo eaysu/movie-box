@@ -3363,6 +3363,84 @@ def _raise_post_http(exc: BlendServiceError) -> None:
 _diary_ingest_task: asyncio.Task | None = None
 
 
+_diary_backfill_task: asyncio.Task | None = None
+
+
+def _kick_diary_backfill(settings, service) -> None:
+    """Yeni üyenin arşivini arka planda, yeniden eskiye doğru tarar.
+
+    Onboarding'e bağlanmıyor: kayıt akışı yüzlerce sayfalık bir taramayı
+    bekleyemez. Üye uygulamaya girdiğinde tetikleniyor ve koş başına birkaç
+    sayfa ilerliyor, böylece profil dolarken görünüyor. Nerede kalındığı
+    `diary_backfill_page` içinde; süreç yeniden başlasa da kaldığı yerden devam
+    ediyor.
+
+    Çağıran beklemiyor — tek bir görev, süreç başına.
+    """
+    global _diary_backfill_task
+    if not getattr(settings, "diary_scan_enabled", True):
+        return
+    if _diary_backfill_task is not None and not _diary_backfill_task.done():
+        return
+
+    async def _run():
+        try:
+            members = await asyncio.to_thread(
+                service.diary_backfill_candidates,
+                limit=int(getattr(settings, "diary_backfill_members_per_run", 2)),
+            )
+            pages = max(1, int(getattr(settings, "diary_backfill_pages_per_run", 3)))
+            for member in members:
+                username = member.get("username") or ""
+                if not username:
+                    continue
+                done_pages = int(member.get("diary_backfill_page") or 0)
+                progress: dict = {}
+                entries = await scrape_reviewed_diary(
+                    username, start_page=done_pages + 1, max_pages=pages,
+                    progress=progress,
+                )
+                if entries is None and not progress.get("last_page"):
+                    # Okunamadı: ilerleme yazmıyoruz, sonraki koş yine dener.
+                    continue
+                rows = [
+                    {
+                        "source_key": entry.key,
+                        "film_slug": entry.slug,
+                        "film_title": entry.title,
+                        "film_year": entry.year,
+                        "tmdb_id": entry.tmdb_id,
+                        "body": entry.review,
+                        "payload": {
+                            "rating": entry.rating,
+                            "rewatch": entry.rewatch,
+                            "watched_on": entry.watched_on,
+                        },
+                        "created_at": f"{entry.watched_on}T12:00:00+00:00",
+                    }
+                    for entry in (entries or []) if entry.slug and entry.review.strip()
+                ]
+                if rows:
+                    await asyncio.to_thread(
+                        service.import_diary_entries, int(member["id"]), rows
+                    )
+                await asyncio.to_thread(
+                    service.mark_diary_backfill, int(member["id"]),
+                    page=int(progress.get("last_page") or 0),
+                    done=bool(progress.get("exhausted")),
+                )
+                log.warning(
+                    "diary backfill user=%s pages=%s..%s rows=%d done=%s",
+                    username, done_pages + 1, progress.get("last_page"),
+                    len(rows), bool(progress.get("exhausted")),
+                )
+                await asyncio.sleep(4)
+        except Exception as exc:  # noqa: BLE001 - besleme çağırana sızmamalı
+            log.warning("diary backfill failed: %s", exc)
+
+    _diary_backfill_task = asyncio.create_task(_run())
+
+
 async def _diary_refresh_loop() -> None:
     """Yeni yazılan günce kayıtlarını saatte bir akışa düşürür.
 
@@ -3374,6 +3452,8 @@ async def _diary_refresh_loop() -> None:
     service = _auth_service()
     while True:
         _kick_diary_ingest(settings, service)
+        # Arşiv taraması ayrı bir görev: kimse uygulamaya girmese de ilerlesin.
+        _kick_diary_backfill(settings, service)
         await asyncio.sleep(60 * 60)
 
 
@@ -3472,6 +3552,9 @@ async def read_feed(
         raise HTTPException(
             status_code=503, detail="Akış şu an yüklenemedi. Tekrar dene.",
         ) from exc
+    # Uygulamaya girmiş bir üye var: arşivi taranmamış birinin sırası
+    # ilerlesin. Arka planda, yanıtı bekletmeden.
+    _kick_diary_backfill(get_settings(), service)
     return {
         "scope": scope,
         "film": film.strip()[:120],

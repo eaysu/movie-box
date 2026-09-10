@@ -180,6 +180,18 @@ etkilemiyor.
 Toplu tarama (`scripts.import_diary`) çalıştığında bu boşluklar kapanıyor.
 Sayıyı büyütmek fazladan istek getirmiyor, `DIARY_SCAN_ENTRIES` yeterli.
 
+**Yeni üyenin arşivi.** Kayıt sırasında değil, üye uygulamaya girdikten sonra
+taranıyor: akış açıldığında arka planda bir iş tetikleniyor ve koş başına
+`DIARY_BACKFILL_PAGES_PER_RUN` (3) sayfa ilerliyor — yaklaşık 36 kayıt, yeniden
+eskiye doğru, profil doldukça görünerek. Onboarding'e bağlanmamasının sebebi:
+yüzlerce sayfalık bir tarama kayıt akışını bekletemez.
+
+Nerede kalındığı `users.diary_backfill_page` içinde, dolayısıyla süreç yeniden
+başlasa da tarama kaldığı yerden devam ediyor; arşiv bittiğinde
+`diary_backfilled_at` doluyor ve üye kuyruktan çıkıyor. Bir sayfa okunamazsa
+ilerleme yazılmıyor, sonraki koş aynı sayfadan yeniden deniyor. Saatlik döngü de
+aynı işi tetikliyor, böylece kimse uygulamaya girmese bile kuyruk ilerliyor.
+
 ```bash
 PYTHONPATH=backend python -m scripts.import_diary                  # ne olacağını göster
 PYTHONPATH=backend python -m scripts.import_diary --apply          # bütün arşiv
