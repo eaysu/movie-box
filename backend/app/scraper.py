@@ -870,6 +870,21 @@ class DiaryEntry:
 _STAR_VALUES = {"★": 1.0, "½": 0.5}
 _VIEWING_ID = re.compile(r"^viewing:(\d+)$")
 _TRAILING_YEAR = re.compile(r"\s*\((\d{4})\)\s*$")
+_LEADING_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+
+
+def _entry_date(stamp) -> str:
+    """`<time datetime>` iki biçimde geliyor; ikisinden de günü alır.
+
+    İzleme günü girilmiş kayıtta değer düz tarih (`2026-09-09`); girilmemişse
+    yorumun yayımlanma anı (`2026-07-22T07:42:36.842Z`). İkincisini olduğu gibi
+    kullanmak `created_at`'i `...ZT12:00:00+00:00` yapıyor ve Postgres satırı
+    "time zone not recognized" ile reddediyordu — kayıt sessizce düşüyordu.
+    """
+    if stamp is None:
+        return ""
+    found = _LEADING_DATE.match(str(stamp.get("datetime") or "").strip())
+    return found.group(1) if found else ""
 
 
 def _stars_to_rating(article) -> Optional[float]:
@@ -896,7 +911,10 @@ def _parse_review_page(page_html: str) -> list[DiaryEntry]:
         if not match or not body:
             continue
         poster = article.select_one("[data-item-slug]")
-        stamp = article.select_one("time.timestamp")
+        watched_on = _entry_date(article.select_one("time.timestamp"))
+        if not watched_on:
+            # Tarihsiz kaydın akışta yeri yok: sıra izlenme gününe göre.
+            continue
         name = (poster.get("data-item-name") if poster else "") or ""
         year = _TRAILING_YEAR.search(name)
         out.append(DiaryEntry(
@@ -904,7 +922,7 @@ def _parse_review_page(page_html: str) -> list[DiaryEntry]:
             slug=(poster.get("data-item-slug") if poster else "") or "",
             title=_TRAILING_YEAR.sub("", name).strip(),
             year=int(year.group(1)) if year else None,
-            watched_on=(stamp.get("datetime") if stamp else "") or "",
+            watched_on=watched_on,
             rating=_stars_to_rating(article),
             rewatch=False,
             review=body.get_text("\n", strip=True),

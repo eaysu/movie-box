@@ -696,3 +696,30 @@ class DiaryScheduleTests(unittest.TestCase):
         self.assertIn("never = []", head)          # ilk sorgunun kendi except'i
         self.assertIn("return never", tail)        # ikinci sorgu düşerse elde kalan
         self.assertNotIn("return []", tail.split("due:", 1)[0])
+
+    def test_a_review_without_a_logged_watch_date_still_gets_a_usable_day(self):
+        """Canlı koşuda yakalandı: Postgres satırları
+        `time zone "zt12:00:00+00:00" not recognized` ile reddediyordu.
+
+        Letterboxd `<time datetime>` alanını iki biçimde veriyor: izleme günü
+        girilmişse düz tarih, girilmemişse yorumun yayımlanma anı. İkincisini
+        olduğu gibi kullanmak `created_at`'i bozuyor ve kayıt sessizce düşüyordu.
+        """
+        from app.scraper import _parse_review_page
+
+        def page(value):
+            return f"""
+            <article class="production-viewing" data-object-id="viewing:42">
+              <div data-item-slug="a-film" data-item-name="A Film (2020)"></div>
+              <time class="timestamp" datetime="{value}">x</time>
+              <div class="js-review-body"><p>bir cümle</p></div>
+            </article>
+            """
+
+        plain = _parse_review_page(page("2026-09-09"))
+        stamped = _parse_review_page(page("2026-07-22T07:42:36.842Z"))
+
+        self.assertEqual(plain[0].watched_on, "2026-09-09")
+        self.assertEqual(stamped[0].watched_on, "2026-07-22")
+        # Tarihi hiç olmayan kayıt akışa girmiyor: sıra izlenme gününe göre.
+        self.assertEqual(_parse_review_page(page("")), [])
