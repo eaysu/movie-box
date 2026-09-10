@@ -243,6 +243,73 @@ class FeedApiTests(unittest.TestCase):
         self.assertNotIn("letter_receiving_enabled", lookup)
 
 
+class DiaryImportTests(unittest.TestCase):
+    """Letterboxd güncesi akışa düşerken üç kural korunmalı."""
+
+    def setUp(self):
+        self.schema = (ROOT / "supabase" / "schema.sql").read_text()
+        self.auth = (ROOT / "app" / "auth.py").read_text()
+        self.main = (ROOT / "app" / "main.py").read_text()
+        self.scraper = (ROOT / "app" / "scraper.py").read_text()
+
+    def test_a_diary_entry_can_only_land_once(self):
+        self.assertIn("ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS source_key TEXT;", self.schema)
+        self.assertIn(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_source_key\n"
+            "  ON public.posts (author_id, source_key) WHERE source_key IS NOT NULL;",
+            self.schema,
+        )
+
+    def test_a_deleted_log_is_never_scraped_back(self):
+        """Silme yumuşak: satır kalır, anahtar dolu kalır, tekrar eklenemez.
+
+        Bu yüzden içe aktarma çakışmada *güncelleme değil, atlama* yapmak
+        zorunda; upsert `deleted_at`'i temizleyip kaydı geri getirirdi.
+        """
+        block = self.auth.split("def import_diary_entries", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn("fresh = [entry for entry in entries if entry.get(\"source_key\") not in seen]", block)
+        self.assertNotIn("upsert", block)
+        self.assertNotIn("on_conflict", block)
+
+    def test_the_feed_date_is_the_day_it_was_watched(self):
+        block = self.main.split("def _kick_diary_ingest", 1)[1].split("\n@app", 1)[0]
+        self.assertIn('"created_at": f"{entry.watched_on}T12:00:00+00:00"', block)
+        # Okunamayan bir günce "kayıt yok" sayılmaz.
+        self.assertIn("if entries is None:", block)
+
+    def test_letterboxds_own_filler_is_not_imported_as_a_note(self):
+        """Yorumsuz kayıtta açıklama "Watched on ..." oluyor; bu kullanıcının
+        cümlesi değil."""
+        self.assertIn("_REVIEW_BOILERPLATE", self.scraper)
+        block = self.scraper.split("def _review_text", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn("_REVIEW_BOILERPLATE.match(piece)", block)
+
+    def test_the_bulk_import_obeys_the_same_three_rules(self):
+        script = (ROOT / "scripts" / "import_diary.py").read_text()
+
+        self.assertIn("service.import_diary_entries", script)
+        self.assertIn('f"{entry.watched_on}T12:00:00+00:00"', script)
+        # Okunamayan günce "kayıt yok" sayılmaz.
+        self.assertIn("if entries is None:", script)
+        # --apply olmadan hiçbir şey yazılmaz.
+        self.assertIn('"--apply", action="store_true"', script)
+
+    def test_the_weekly_release_notice_lands_once_a_week(self):
+        block = self.main.split("async def _notify_bulletin", 1)[1].split("\n@app", 1)[0]
+        self.assertIn('event_key=f"bulletin:{week}"', block)
+        self.assertIn('if not payload.get("highlighted"):', block)
+        # Önbellekten dönen istekte de denenmeli, yoksa özet tazeyken hiç
+        # bildirim düşmüyordu.
+        bulletin = self.main.split('@app.get("/api/bulletin")', 1)[1].split("\n@app", 1)[0]
+        self.assertEqual(bulletin.count("_notify_bulletin(service, account, week"), 2)
+
+    def test_a_log_is_marked_as_one_in_the_feed(self):
+        app_js = (ROOT / "static" / "js" / "app.js").read_text()
+        card = app_js.split("function feedPostCard", 1)[1].split("\nfunction ", 1)[0]
+        self.assertIn("post.kind === 'log'", card)
+        self.assertIn("Güncesine ekledi", card)
+
+
 class ProfilePageTests(unittest.TestCase):
     """The Twitter-shaped part: a member's page, their people, their alerts."""
 

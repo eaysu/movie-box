@@ -732,9 +732,18 @@ class AuthService:
         return bool(visible)
 
     def set_private_account(self, account: Account, private: bool) -> bool:
+        """Tek anahtar: "kilitli hesap".
+
+        İki ayrı kavram vardı — `private_account` (ayrıntıları yalnız kabul
+        edilen takipçiler görür) ve `discoverable` (Sinefil Sineması listesinde
+        çıkar). Kullanıcı hangisinin ne yaptığını bilemiyordu. Artık tek bir
+        anahtar ikisini birlikte çeviriyor: kilitli hesap listede de çıkmaz,
+        yani sosyal alandan tamamen izole kullanılabilir.
+        """
         self._service_client().table("users").update(
             {
                 "private_account": bool(private),
+                "discoverable": not bool(private),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         ).eq("id", account.id).execute()
@@ -1590,8 +1599,145 @@ class AuthService:
     # ── Sinefil Akışı ───────────────────────────────────────────────────
     _POST_COLS = (
         "id,author_id,kind,body,film_slug,tmdb_id,film_title,film_year,payload,"
-        "spoiler,reply_to,like_count,reply_count,created_at"
+        "spoiler,reply_to,like_count,reply_count,created_at,source,source_key"
     )
+
+    def import_diary_entries(self, user_id: int, entries: list[dict]) -> int:
+        """Günce kayıtlarını akışa düşürür. Döner: eklenen satır sayısı.
+
+        Üç kural:
+
+        * **Bir kez düşer.** `source_key` (RSS guid) üzerindeki tekil indeks
+          aynı kaydın ikinci kez eklenmesini engelliyor.
+        * **Silinen geri gelmez.** Silme yumuşak: satır `deleted_at` ile durur,
+          anahtar dolu kalır, dolayısıyla sonraki taramada da eklenemez.
+          Bu yüzden çakışmada *güncelleme değil, atlama* yapıyoruz.
+        * **Tarih kaydın kendi tarihi.** `created_at` izlenme günü oluyor, yoksa
+          eski bir kayıt akışın tepesine düşerdi.
+        """
+        if not entries:
+            return 0
+        service = self._service_client()
+        keys = [entry["source_key"] for entry in entries if entry.get("source_key")]
+        seen: set[str] = set()
+        for start in range(0, len(keys), 100):
+            chunk = keys[start:start + 100]
+            rows = service.table("posts").select("source_key").eq(
+                "author_id", user_id
+            ).in_("source_key", chunk).execute().data or []
+            seen.update(row["source_key"] for row in rows)
+        fresh = [entry for entry in entries if entry.get("source_key") not in seen]
+        if not fresh:
+            return 0
+        written = 0
+        for start in range(0, len(fresh), 50):
+            batch = [
+                {
+                    "author_id": user_id,
+                    "kind": "log",
+                    "source": "letterboxd",
+                    "source_key": entry["source_key"],
+                    "body": (entry.get("body") or "")[:420],
+                    "film_slug": entry["film_slug"],
+                    "tmdb_id": entry.get("tmdb_id"),
+                    "film_title": entry.get("film_title") or "",
+                    "film_year": entry.get("film_year"),
+                    "payload": entry.get("payload") or {},
+                    "created_at": entry["created_at"],
+                }
+                for entry in fresh[start:start + 50]
+            ]
+            try:
+                result = service.table("posts").insert(batch).execute()
+                written += len(result.data or [])
+            except Exception as exc:  # noqa: BLE001
+                # Yarış hâlinde tekil indeks tetiklenebilir; tek tek deneyip
+                # çakışanları atlıyoruz.
+                logger.warning("diary import batch failed, retrying one by one: %s", exc)
+                for row in batch:
+                    with contextlib.suppress(Exception):
+                        service.table("posts").insert(row).execute()
+                        written += 1
+        return written
+
+    def film_overview_for_community(self, film_slug: str) -> dict:
+        """Bir filmin topluluk künyesi: kaç üye izlemiş, ortalama kaç puan.
+
+        Puan ortalaması yalnız gerçekten puanlanmış satırlardan hesaplanıyor
+        (`rating_observed`), yoksa puansız izlemeler ortalamayı aşağı çekerdi.
+        """
+        service = self._service_client()
+        blank = {"watched_count": 0, "average": None, "rated_count": 0}
+        if not film_slug:
+            return blank
+        try:
+            rows = service.table("user_watched_films").select(
+                "user_rating,rating_observed"
+            ).eq("film_slug", film_slug).limit(2000).execute().data or []
+        except Exception:
+            return blank
+        rated = [
+            float(row["user_rating"]) for row in rows
+            if row.get("rating_observed") and row.get("user_rating")
+        ]
+        return {
+            "watched_count": len(rows),
+            "rated_count": len(rated),
+            "average": round(sum(rated) / len(rated), 2) if rated else None,
+        }
+
+    def watched_film_for(self, account: Account, film_slug: str) -> dict:
+        """Bu üyenin o filme dair kendi kaydı: izlemiş mi, kaç puan vermiş."""
+        if not film_slug:
+            return {}
+        row = self._first(
+            self._service_client().table("user_watched_films").select(
+                "user_rating,rating_observed"
+            ).eq("user_id", account.id).eq("film_slug", film_slug).limit(1).execute()
+        )
+        if not row:
+            return {"watched": False}
+        return {
+            "watched": True,
+            "rating": row.get("user_rating") if row.get("rating_observed") else None,
+        }
+
+    def film_catalog_entry(self, film_slug: str) -> dict:
+        if not film_slug:
+            return {}
+        row = self._first(
+            self._service_client().table("film_posters").select(
+                "film_slug,title,release_year,poster_url,director"
+            ).eq("film_slug", film_slug).limit(1).execute()
+        )
+        return row or {}
+
+    def diary_sync_candidates(self, *, stale_hours: int = 6, limit: int = 8) -> list[dict]:
+        """Güncesi en uzun süre okunmamış üyeler. Hiç okunmamışlar önce gelir."""
+        service = self._service_client()
+        fresh_after = (
+            datetime.now(timezone.utc) - timedelta(hours=max(1, stale_hours))
+        ).isoformat()
+        try:
+            never = service.table("users").select("id,username").eq(
+                "account_status", "active"
+            ).is_("diary_synced_at", "null").limit(limit).execute().data or []
+            if len(never) >= limit:
+                return never
+            stale = service.table("users").select("id,username").eq(
+                "account_status", "active"
+            ).lt("diary_synced_at", fresh_after).order(
+                "diary_synced_at"
+            ).limit(limit - len(never)).execute().data or []
+            return never + stale
+        except Exception:
+            return []
+
+    def mark_diary_synced(self, user_id: int) -> None:
+        with contextlib.suppress(Exception):
+            self._service_client().table("users").update(
+                {"diary_synced_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", user_id).execute()
 
     def create_post(self, account: Account, payload: dict) -> dict:
         row = {
@@ -2083,9 +2229,12 @@ class AuthService:
         return int((fresh or {}).get("like_count") or 0)
 
     def notify(
-        self, user_id: int, kind: str, actor_id: int, post_id: str | None = None,
-        *, event_key: str | None = None,
+        self, user_id: int, kind: str, actor_id: int | None = None,
+        post_id: str | None = None, *, event_key: str | None = None,
     ) -> None:
+        """Bir bildirim yazar. `actor_id` yoksa bildirim sistemdendir
+        ("bu hafta perdede" gibi). `event_key` verilirse tekil indeks aynı
+        olayın ikinci kez bildirilmesini engelliyor."""
         try:
             self._service_client().table("notifications").insert({
                 "user_id": user_id, "kind": kind,

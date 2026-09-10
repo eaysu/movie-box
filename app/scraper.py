@@ -849,6 +849,101 @@ async def scrape_diary(
     )
 
 
+@dataclass
+class DiaryEntry:
+    """Bir günce kaydı: hangi film, hangi gün, kaç puan, varsa yorumu.
+
+    `key` RSS guid'i (`letterboxd-review-<id>`) — kaydın kalıcı kimliği. Akışa
+    bir kez düşmesini ve kullanıcı sildiğinde geri gelmemesini bu sağlıyor.
+    """
+    key: str
+    slug: str
+    title: str
+    year: Optional[int]
+    watched_on: str            # YYYY-MM-DD
+    rating: Optional[float] = None
+    rewatch: bool = False
+    review: str = ""
+    tmdb_id: Optional[int] = None
+
+
+_REVIEW_TAGS = re.compile(r"<[^>]+>")
+_REVIEW_SPACES = re.compile(r"\s+")
+# Yorumu olmayan kayıtlarda Letterboxd açıklamaya kendi cümlesini koyuyor
+# ("Watched on Saturday August 8, 2026."). Bu kullanıcının sözü değil.
+_REVIEW_BOILERPLATE = re.compile(
+    r"^(?:re)?watched on \w+ \w+ \d{1,2}, \d{4}\.?$", re.IGNORECASE
+)
+
+
+def _review_text(description: str) -> str:
+    """RSS açıklamasındaki yorum metnini çıkarır (poster paragrafı hariç)."""
+    body = _html.unescape(description or "")
+    # İlk paragraf posterin kendisi; yorum varsa sonraki paragraflarda.
+    parts = re.findall(r"<p>(.*?)</p>", body, re.DOTALL)
+    pieces = []
+    for part in parts:
+        if "<img" in part:
+            continue
+        piece = _REVIEW_SPACES.sub(" ", _REVIEW_TAGS.sub("", part)).strip()
+        if not piece or _REVIEW_BOILERPLATE.match(piece):
+            continue
+        pieces.append(piece)
+    return _REVIEW_SPACES.sub(" ", " ".join(pieces)).strip()
+
+
+async def scrape_diary_entries(username: str) -> list[DiaryEntry] | None:
+    """Son ~50 günce kaydını tarihleriyle çeker.
+
+    Kaynak RSS: tek istek, kayıt başına tarih, puan, tekrar-izleme bilgisi ve
+    varsa yorum metni veriyor. HTML günce sayfalarını taramaya göre hem çok
+    daha ucuz hem de daha az kırılgan.
+
+    `None` okunamadı demektir (403/gizli/ağ); boş liste "kayıt yok" demektir.
+    Akışa düşürme bu ikisini ayırmak zorunda, yoksa tek bir hız sınırı bütün
+    üyelerin güncesini boş sanıp geçer.
+    """
+    url = f"{BASE_URL}/{username}/rss/"
+    try:
+        async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+            response = await _budgeted_get(session, url, headers=_NAV_HEADERS, timeout=20)
+        if response.status_code != 200:
+            return None
+    except Exception as exc:  # noqa: BLE001 - besleme kritik değil
+        log.warning("diary rss failed user=%s: %s", username, exc)
+        return None
+
+    out: list[DiaryEntry] = []
+    for item in re.findall(r"<item>(.*?)</item>", response.text, re.DOTALL):
+        watched = re.search(r"<letterboxd:watchedDate>(\d{4}-\d{2}-\d{2})</letterboxd:watchedDate>", item)
+        # Günce dışı öğeler (liste, blog) tarih taşımaz; onları geçiyoruz.
+        if not watched:
+            continue
+        guid = re.search(r"<guid[^>]*>([^<]+)</guid>", item)
+        title = re.search(r"<letterboxd:filmTitle>(.*?)</letterboxd:filmTitle>", item)
+        if not guid or not title:
+            continue
+        link = re.search(r"<link>(https://letterboxd\.com[^<]+)</link>", item)
+        slug_match = re.search(r"/film/([^/]+)/", link.group(1)) if link else None
+        year = re.search(r"<letterboxd:filmYear>(\d{4})</letterboxd:filmYear>", item)
+        rating = re.search(r"<letterboxd:memberRating>([\d.]+)</letterboxd:memberRating>", item)
+        rewatch = re.search(r"<letterboxd:rewatch>(Yes|No)</letterboxd:rewatch>", item)
+        tmdb = re.search(r"<tmdb:movieId>(\d+)</tmdb:movieId>", item)
+        description = re.search(r"<description>(.*?)</description>", item, re.DOTALL)
+        out.append(DiaryEntry(
+            key=guid.group(1).strip(),
+            slug=slug_match.group(1) if slug_match else "",
+            title=_html.unescape(title.group(1).strip()),
+            year=int(year.group(1)) if year else None,
+            watched_on=watched.group(1),
+            rating=float(rating.group(1)) if rating else None,
+            rewatch=bool(rewatch and rewatch.group(1) == "Yes"),
+            review=_review_text(description.group(1) if description else ""),
+            tmdb_id=int(tmdb.group(1)) if tmdb else None,
+        ))
+    return out
+
+
 async def scrape_following(username: str, *, max_pages: int = 5) -> list[str] | None:
     """Usernames this member follows on Letterboxd, for seeding the app graph.
 

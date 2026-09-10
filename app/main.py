@@ -60,6 +60,7 @@ from .scraper import (
     ScrapedProfile,
     ScrapeError,
     scrape_diary,
+    scrape_diary_entries,
     scrape_films,
     scrape_profile,
     scrape_recent_watched,
@@ -2292,6 +2293,18 @@ def _kick_bulletin_ingest(settings, service) -> None:
     _bulletin_ingest_task = asyncio.create_task(_run())
 
 
+async def _notify_bulletin(service, account, week: str, payload: dict) -> None:
+    """İzleme listesindeki ya da zevkine uyan bir film perdeye geldiyse haftada
+    bir kez haber verir. `event_key` sayesinde aynı hafta ikinci bildirim
+    düşmüyor, dolayısıyla her istekte çağırmak zararsız."""
+    if not payload.get("highlighted"):
+        return
+    await asyncio.to_thread(
+        service.notify, account.id, "bulletin", None, None,
+        event_key=f"bulletin:{week}",
+    )
+
+
 @app.get("/api/bulletin")
 async def bulletin(request: Request) -> dict:
     """The whole current cinema programme, ordered for this member."""
@@ -2316,6 +2329,7 @@ async def bulletin(request: Request) -> dict:
         )
     )
     if cached and cached.get("version") == screenings.PAYLOAD_VERSION and digest_fresh:
+        await _notify_bulletin(service, account, week, cached)
         _kick_bulletin_ingest(settings, service)
         return {"enabled": True, **cached}
 
@@ -2351,6 +2365,7 @@ async def bulletin(request: Request) -> dict:
         await asyncio.to_thread(
             service.save_bulletin_digest, account.id, week, "", payload
         )
+        await _notify_bulletin(service, account, week, payload)
     await _record_activity_event(
         service,
         account,
@@ -3338,6 +3353,63 @@ def _raise_post_http(exc: BlendServiceError) -> None:
     raise HTTPException(status_code=status, detail=detail)
 
 
+_diary_ingest_task: asyncio.Task | None = None
+
+
+def _kick_diary_ingest(service) -> None:
+    """Günceleri arka planda akışa düşürür, süreç başına tek koşu.
+
+    Ayrı bir işçi süreç yok: akışı açan üye sıradaki taramayı tetikliyor.
+    `diary_synced_at` damgası kimin sırası olduğunu tutuyor, böylece aynı üye
+    üst üste taranmıyor ve Letterboxd'a dakikada bir istekten fazlası gitmiyor.
+    """
+    global _diary_ingest_task
+    if _diary_ingest_task is not None and not _diary_ingest_task.done():
+        return
+
+    async def _run():
+        try:
+            members = await asyncio.to_thread(service.diary_sync_candidates)
+            for member in members:
+                username = member.get("username") or ""
+                if not username:
+                    continue
+                entries = await scrape_diary_entries(username)
+                # `None` okunamadı demek: damgayı atmıyoruz ki sıradaki koşuda
+                # yine denenebilsin.
+                if entries is None:
+                    continue
+                rows = [
+                    {
+                        "source_key": entry.key,
+                        "film_slug": entry.slug,
+                        "film_title": entry.title,
+                        "film_year": entry.year,
+                        "tmdb_id": entry.tmdb_id,
+                        "body": entry.review,
+                        "payload": {
+                            "rating": entry.rating,
+                            "rewatch": entry.rewatch,
+                            "watched_on": entry.watched_on,
+                        },
+                        # Akış sırası izlenme gününe göre.
+                        "created_at": f"{entry.watched_on}T12:00:00+00:00",
+                    }
+                    for entry in entries if entry.slug
+                ]
+                written = await asyncio.to_thread(
+                    service.import_diary_entries, int(member["id"]), rows
+                )
+                await asyncio.to_thread(service.mark_diary_synced, int(member["id"]))
+                if written:
+                    log.warning("diary import user=%s rows=%d", username, written)
+                await asyncio.sleep(4)
+        except Exception as exc:  # noqa: BLE001 - besleme çağırana sızmamalı
+            log.warning("diary ingest failed: %s", exc)
+
+    _diary_ingest_task = asyncio.create_task(_run())
+
+
 @app.get("/api/feed")
 async def read_feed(
     request: Request, scope: str = "community", cursor: str = "", film: str = "", author: str = "", sort: str = "",
@@ -3375,6 +3447,53 @@ async def search_feed_films(request: Request, q: str = "") -> dict:
     account = await _require_account(request)
     films = await asyncio.to_thread(_auth_service().search_feed_films, account, q.strip()[:80])
     return {"films": films}
+
+
+@app.get("/api/films/{film_slug}")
+async def film_page(film_slug: str, request: Request) -> dict:
+    """Bir filmin topluluk künyesi: kaç üye izlemiş, ortalama puan, perdede mi.
+
+    Notların kendisi `/api/feed?film=` üzerinden geliyor; burada yalnız o
+    listenin başına konacak künye var.
+    """
+    account = await _require_account(request)
+    service = _auth_service()
+    slug = film_slug.strip().lower()[:120]
+    if not slug:
+        raise HTTPException(status_code=404, detail="Film bulunamadı.")
+    catalog, stats = await asyncio.gather(
+        asyncio.to_thread(service.film_catalog_entry, slug),
+        asyncio.to_thread(service.film_overview_for_community, slug),
+    )
+    # "Bu hafta perdede mi" — bülteni zaten tuttuğumuz gösterimlerden okuyoruz.
+    venues: list[dict] = []
+    if get_settings().bulletin_enabled:
+        try:
+            rows = await asyncio.to_thread(lambda: service.list_screenings(limit=400))
+            venues = [
+                {
+                    "name": row.get("venue_name") or "",
+                    "url": row.get("url") or "",
+                    "film_page": bool(row.get("url"))
+                    and row.get("url") != row.get("venue_source_url"),
+                }
+                for row in rows if (row.get("film_slug") or "") == slug
+            ]
+        except Exception:  # noqa: BLE001 - künye bültensiz de anlamlı
+            venues = []
+    mine = await asyncio.to_thread(service.watched_film_for, account, slug)
+    return {
+        "film": {
+            "slug": slug,
+            "title": catalog.get("title") or "",
+            "year": catalog.get("release_year"),
+            "poster_url": catalog.get("poster_url") or "",
+            "director": catalog.get("director") or "",
+        },
+        "community": stats,
+        "venues": venues,
+        "mine": mine or {},
+    }
 
 
 @app.post("/api/posts")

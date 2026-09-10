@@ -416,7 +416,7 @@
         </button>
         <div id="profile-settings-menu" class="hidden absolute right-0 top-12 z-30 w-64 overflow-hidden rounded-2xl border border-outline-variant/30 bg-surface-container shadow-2xl py-1 text-left">
           <button id="profile-theme-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">contrast</span><span id="profile-theme-label">Görünüm: Koyu</span></button>
-          <button id="profile-private-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">lock</span><span id="profile-private-label">Hesap: Herkese açık</span></button>
+          <button id="profile-private-toggle" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">lock</span><span id="profile-private-label">Kilitli hesap: Kapalı</span></button>
           <button id="profile-letter-toggle" type="button" aria-pressed="false" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-[#ffb56f] hover:bg-surface-variant text-sm"><span id="profile-letter-icon" class="material-symbols-outlined text-[18px]">mail_lock</span><span>Mektuplar: <span id="profile-letter-label">Kapalı</span></span></button>
           <button id="profile-browser-notifications" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">notifications_active</span>Tarayıcı bildirimleri</button>
           <button id="menu-blocked-users" type="button" class="w-full px-4 py-3 flex items-center gap-3 text-left text-on-surface-variant hover:text-primary hover:bg-surface-variant text-sm"><span class="material-symbols-outlined text-[18px]">block</span>Engellediğin kullanıcılar</button>
@@ -501,9 +501,7 @@
               <button id="profile-sinefil-area" type="button" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-tertiary-container px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-on-tertiary-container hover:opacity-90 transition-opacity">
                 <span class="material-symbols-outlined text-[16px]">diversity_3</span>Sinefil Sineması
               </button>
-              <button id="profile-discovery-toggle" type="button" aria-pressed="false" class="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-outline-variant/30 bg-surface-container/70 px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/50 hover:text-tertiary-container transition-colors" title="Sinefil Sineması görünürlüğü">
-                <span id="profile-discovery-icon" class="material-symbols-outlined text-[15px]">visibility_off</span><span id="profile-discovery-label">Gizli</span>
-              </button>
+              
             </div>
 
             <button id="profile-invite-friend" type="button" class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2.5 font-label-md text-label-md uppercase tracking-wide text-primary-container hover:bg-primary-container/20 transition-colors">
@@ -1229,7 +1227,7 @@
   <div id="feed-compose-body" class="hidden"></div>
 
   <div id="feed-trending" class="hidden px-4 pt-4 lg:block xl:hidden"></div>
-  <p id="feed-film-filter" class="hidden mx-4 mt-4 flex items-center rounded-xl border border-primary-container/30 bg-primary-container/10 px-3 py-2 text-sm"></p>
+  <div id="feed-film-filter" class="hidden border-b border-outline-variant/25 px-4 py-4"></div>
   <p id="feed-sort-note" class="mx-4 mt-3 text-xs text-on-surface-variant/60">Topluluk notları etkileşime göre sıralanır; eşit notlarda takip ettiklerin öne çıkar.</p>
 
   <div id="feed-list" class="flex flex-col"></div>
@@ -1353,6 +1351,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260910.92"></script>
+<script type="module" src="/static/js/app.js?v=20260910.94"></script>
 </body>
 </html>

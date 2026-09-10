@@ -1201,7 +1201,6 @@ function applyAccount(account) {
   $('btn-mode-blend').disabled = false;
   $('btn-mode-blend').classList.remove('opacity-40', 'cursor-not-allowed');
   $('btn-mode-blend').title = 'Kayıtlı bir kullanıcıya onay isteği gönder.';
-  renderDiscoveryVisibility(Boolean(account.discoverable));
   renderProfileLetterSettings(Boolean(account.letter_receiving_enabled));
   renderPrivateAccount(Boolean(account.private_account));
   loadProfileSocialStats();
@@ -1226,23 +1225,30 @@ async function loadProfileSocialStats() {
 
 function renderPrivateAccount(privateAccount) {
   const label = $('profile-private-label');
-  if (label) label.textContent = privateAccount ? 'Hesap: Kilitli' : 'Hesap: Herkese açık';
+  if (label) label.textContent = privateAccount ? 'Kilitli hesap: Açık' : 'Kilitli hesap: Kapalı';
 }
 
 async function togglePrivateAccount() {
   const next = !_account?.private_account;
+  // Tek anahtar iki şeyi birlikte çeviriyor: hem ayrıntıların kimlere açık
+  // olduğunu hem de Sinefil Sineması listesinde çıkıp çıkmadığını.
   const message = next
-    ? 'Hesabın kilitlenecek. Sinefil Sineması kartın görünür kalır; notların, ayrıntılı profilin ve takip listelerin yalnız kabul ettiğin takipçilere açılır. Devam edilsin mi?'
-    : 'Hesabın herkese açık olacak. Notların ve profil ayrıntıların tüm kayıtlı sinefillere görünür. Devam edilsin mi?';
+    ? 'Hesabın kilitlenecek: notların, profil ayrıntıların ve takip listelerin yalnız kabul ettiğin takipçilere açılır, Sinefil Sineması listesinde de çıkmazsın. Uygulamayı sosyal alandan izole kullanmak istiyorsan bu yeterli. Devam edilsin mi?'
+    : 'Hesabın herkese açılacak: notların ve profil ayrıntıların tüm kayıtlı sinefillere görünür, Sinefil Sineması listesinde çıkarsın. Devam edilsin mi?';
   if (!window.confirm(message)) return;
   try {
     const data = await apiJSON('/api/profile/privacy-settings', {
       method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ private: next }),
     });
-    if (_account) _account.private_account = Boolean(data.private_account);
+    if (_account) {
+      _account.private_account = Boolean(data.private_account);
+      _account.discoverable = !data.private_account;
+    }
     renderPrivateAccount(Boolean(data.private_account));
-    profileActionNotice(data.private_account ? 'Hesabın kilitlendi.' : 'Hesabın herkese açıldı.');
+    profileActionNotice(data.private_account
+      ? 'Hesabın kilitlendi; Sinefil Sineması listesinde de çıkmayacaksın.'
+      : 'Hesabın herkese açıldı.');
   } catch (error) { profileActionError(error.message || 'Hesap gizliliği değiştirilemedi.'); }
 }
 
@@ -1280,47 +1286,8 @@ function renderProfileLetterSettings(open) {
   toggle.classList.toggle('bg-[#ff8000]/15', Boolean(open));
 }
 
-function renderDiscoveryVisibility(visible) {
-  const button = $('profile-discovery-toggle');
-  if (!button) return;
-  button.setAttribute('aria-pressed', String(Boolean(visible)));
-  $('profile-discovery-icon').textContent = visible ? 'visibility' : 'visibility_off';
-  $('profile-discovery-label').textContent = visible ? 'Görünür' : 'Gizli';
-  button.classList.toggle('border-tertiary-container/50', Boolean(visible));
-  button.classList.toggle('text-tertiary-container', Boolean(visible));
-  button.classList.toggle('border-outline-variant/30', !visible);
-  button.classList.toggle('text-on-surface-variant', !visible);
-}
 
-async function saveDiscoveryVisibility(visible) {
-  const data = await apiJSON('/api/profile/discovery-settings', {
-    method: 'POST',
-    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ visible: Boolean(visible) }),
-  });
-  if (_account) _account.discoverable = Boolean(data.discoverable);
-  if (_persistedProfile?.account) _persistedProfile.account.discoverable = Boolean(data.discoverable);
-  renderDiscoveryVisibility(Boolean(data.discoverable));
-  return Boolean(data.discoverable);
-}
 
-async function toggleDiscoveryVisibility() {
-  const next = !_account?.discoverable;
-  const message = next
-    ? "Sinefil Sineması'nda görünür olacaksın. Diğer kayıtlı sinefiller profil fotoğrafını, Fav 4 filmlerini ve Fav 4 kişilik okumanı görebilecek. Devam edilsin mi?"
-    : "Sinefil Sineması'ndan gizleneceksin. Profilin yeni listelerde görünmeyecek. Devam edilsin mi?";
-  if (!window.confirm(message)) return;
-  const button = $('profile-discovery-toggle');
-  button.disabled = true;
-  try {
-    const visible = await saveDiscoveryVisibility(next);
-    profileActionNotice(visible ? "Sinefil Sineması'nda görünürsün." : "Sinefil Sineması'ndan gizlendin.");
-  } catch (error) {
-    profileActionError(error.message || 'Görünürlük ayarı değiştirilemedi.');
-  } finally {
-    button.disabled = false;
-  }
-}
 
 function accountSummaryFromTaste(taste) {
   const pieces = [taste?.summary, ...(taste?.analysis || [])]
@@ -1509,11 +1476,26 @@ function feedPostCard(post, { compact = false } = {}) {
         <span class="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-on-surface-variant">${escapeHTML(film.director || '')}</span>
       </a>`
     : '';
+  // Günce kaydı Letterboxd'dan düşer: nottan ayrılsın diye küçük bir künye ve
+  // varsa puanı taşır. Kullanıcının kendi yorumu varsa gövde olarak görünür.
+  const meta = post.payload || {};
+  const stars = Number(meta.rating) > 0
+    ? `<span class="inline-flex items-center gap-1 text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${Number(meta.rating).toFixed(1)}</span>`
+    : '';
+  const logBadge = post.kind === 'log'
+    ? `<p class="mt-1.5 flex flex-wrap items-center gap-2 font-label-sm text-label-sm text-on-surface-variant/70">
+        <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">event_note</span>Güncesine ekledi</span>
+        ${stars}
+        ${meta.rewatch ? '<span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">replay</span>Tekrar</span>' : ''}
+      </p>`
+    : '';
   // A spoiler stays covered until the reader asks for it — in a film community
   // that is a bigger trust question than profanity.
   const text = post.spoiler
     ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
-    : `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`;
+    : (body
+      ? `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`
+      : '');
   return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
     <div class="flex min-h-[128px] items-start gap-3">
       <div class="flex min-h-[132px] min-w-0 flex-1 flex-col pt-0.5">
@@ -1524,6 +1506,7 @@ function feedPostCard(post, { compact = false } = {}) {
             <span class="mt-0.5 block truncate text-xs text-on-surface-variant/60">@${username}</span>
           </div>
         </div>
+        ${logBadge}
         ${text}
         <div class="mt-auto flex items-center gap-4 pt-4 text-sm text-on-surface-variant">
           <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
@@ -1649,14 +1632,65 @@ async function renderFollowSuggestions() {
   } catch (_) {}
 }
 
+// Filme daraltılmış akışın başı artık filmin künyesi: poster, kaç üye
+// izlemiş, topluluk ortalaması ve bu hafta perdede olup olmadığı. Notların
+// kendisi hemen altında akıyor.
 function renderFeedFilmChip() {
-  const chip = $('feed-film-filter');
-  chip.classList.toggle('hidden', !_feedFilm.slug);
-  if (_feedFilm.slug) {
-    chip.innerHTML = `<span class="text-on-surface-variant">“${escapeHTML(_feedFilm.title)}” hakkındaki notlar</span>
-      <button type="button" id="feed-film-change" class="ml-auto rounded-full border border-outline-variant/40 px-2 py-0.5 text-xs text-on-surface-variant hover:text-on-surface">Değiştir</button>
-      <button type="button" id="feed-film-clear" class="ml-2 rounded-full border border-outline-variant/40 px-2 py-0.5 text-xs text-on-surface-variant hover:text-on-surface">Temizle</button>`;
-  }
+  const box = $('feed-film-filter');
+  box.classList.toggle('hidden', !_feedFilm.slug);
+  if (!_feedFilm.slug) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="flex items-start gap-3">
+      <div class="h-[96px] w-16 shrink-0 rounded-lg bg-surface-container"></div>
+      <div class="min-w-0 flex-1">
+        <strong class="block truncate font-headline-md text-[18px] text-on-surface">${escapeHTML(_feedFilm.title)}</strong>
+        <span class="mt-1 block text-sm text-on-surface-variant/60">Künye yükleniyor…</span>
+      </div>
+      <button type="button" id="feed-film-clear" class="shrink-0 rounded-full border border-outline-variant/40 px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface">Kapat</button>
+    </div>`;
+  loadFilmOverview(_feedFilm.slug);
+}
+
+async function loadFilmOverview(slug) {
+  let data;
+  try {
+    data = await apiJSON(`/api/films/${encodeURIComponent(slug)}`);
+  } catch (_) { return; }
+  if (_feedFilm.slug !== slug) return;   // arada başka bir filme geçilmiş
+  const film = data.film || {};
+  const community = data.community || {};
+  const poster = safeImageURL(film.poster_url);
+  const href = letterboxdFilmURL(slug);
+  const art = poster
+    ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="h-full w-full object-cover"/>`
+    : '<span class="flex h-full w-full items-center justify-center text-on-surface-variant/30"><span class="material-symbols-outlined">movie</span></span>';
+  const facts = [
+    community.watched_count
+      ? `<span><strong class="text-on-surface">${community.watched_count}</strong> üye izlemiş</span>`
+      : '',
+    community.average
+      ? `<span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px] text-primary-container" style="font-variation-settings:'FILL' 1">star</span><strong class="text-on-surface">${community.average}</strong> topluluk ortalaması</span>`
+      : '',
+    data.mine?.watched ? '<span class="text-primary-container">İzledin</span>' : '',
+  ].filter(Boolean).join('<span class="text-on-surface-variant/30">·</span>');
+  const venues = (data.venues || []).filter(venue => venue.name);
+  const screen = venues.length
+    ? `<p class="mt-2 flex flex-wrap items-center gap-2 font-label-sm text-label-sm text-tertiary-container">
+        <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">theaters</span>Bu hafta perdede</span>
+        ${venues.slice(0, 3).map(venue => venue.url
+          ? `<a href="${escapeHTML(venue.url)}" target="_blank" rel="noopener" class="underline decoration-tertiary-container/40">${escapeHTML(venue.name)}</a>`
+          : `<span>${escapeHTML(venue.name)}</span>`).join('')}
+      </p>`
+    : '';
+  $('feed-film-filter').innerHTML = `<div class="flex items-start gap-3">
+      ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block h-[96px] w-16 shrink-0 overflow-hidden rounded-lg bg-surface-container">${art}</a>` : `<span class="block h-[96px] w-16 shrink-0 overflow-hidden rounded-lg bg-surface-container">${art}</span>`}
+      <div class="min-w-0 flex-1">
+        <strong class="block font-headline-md text-[18px] leading-tight text-on-surface">${escapeHTML(film.title || _feedFilm.title)}${film.year ? ` <span class="text-on-surface-variant/50">${escapeHTML(String(film.year))}</span>` : ''}</strong>
+        ${film.director ? `<span class="mt-0.5 block truncate text-sm text-tertiary-container">${escapeHTML(film.director)}</span>` : ''}
+        ${facts ? `<p class="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-on-surface-variant">${facts}</p>` : ''}
+        ${screen}
+      </div>
+      <button type="button" id="feed-film-clear" class="shrink-0 rounded-full border border-outline-variant/40 px-3 py-1 text-xs text-on-surface-variant hover:text-on-surface">Kapat</button>
+    </div>`;
 }
 
 function openFilmFeed(slug, title) {
@@ -2035,15 +2069,21 @@ function notificationRow(item) {
     blend_request: 'sana Blend isteği gönderdi',
     blend_accepted: 'Blend isteğini kabul etti',
     blend_rejected: 'Blend isteğini reddetti',
+    // Aktörü olmayan tek tür: sistemden gelir.
+    bulletin: 'İzleme listendeki bir film bu hafta perdede',
   }[item.kind] || 'bir şey yaptı';
-  const icon = { like: 'favorite', reply: 'chat_bubble', follow: 'person_add', follow_request: 'person_add', follow_accepted: 'how_to_reg', letter: 'mail', blend_request: 'join_inner', blend_accepted: 'handshake', blend_rejected: 'close' }[item.kind] || 'notifications';
-  const destination = item.kind === 'letter' ? 'inbox' : (item.kind.startsWith('blend_') ? 'blends' : '');
+  const icon = { bulletin: 'theaters', like: 'favorite', reply: 'chat_bubble', follow: 'person_add', follow_request: 'person_add', follow_accepted: 'how_to_reg', letter: 'mail', blend_request: 'join_inner', blend_accepted: 'handshake', blend_rejected: 'close' }[item.kind] || 'notifications';
+  const destination = item.kind === 'letter'
+    ? 'inbox'
+    : (item.kind.startsWith('blend_') ? 'blends' : (item.kind === 'bulletin' ? 'profile' : ''));
   const unread = !item.read_at;
   return `<div class="flex items-start gap-3 rounded-xl border p-3 transition-colors ${unread ? 'border-primary-container/35 bg-primary-container/10' : 'border-outline-variant/25 bg-surface-container/40'}"
       ${post ? `data-notification-thread="${escapeHTML(post.thread_id)}"` : ''} ${destination ? `data-notification-destination="${destination}"` : ''} role="button" tabindex="0">
     <span class="material-symbols-outlined mt-0.5 text-[18px] text-primary-container">${icon}</span>
     <div class="min-w-0 flex-1">
-      <p class="text-sm text-on-surface"><button type="button" data-post-author="${escapeHTML(actor.username || '')}" class="font-bold hover:underline">${who}</button> ${what}</p>
+      <p class="text-sm text-on-surface">${actor.username
+        ? `<button type="button" data-post-author="${escapeHTML(actor.username)}" class="font-bold hover:underline">${who}</button> ${what}`
+        : what}</p>
       ${film ? `<p class="mt-0.5 text-xs text-on-surface-variant/60">${film}</p>` : ''}
       ${excerpt ? `<p class="mt-1 truncate text-sm text-on-surface-variant">“${excerpt}”</p>` : ''}
       ${item.kind === 'follow_request' && actor.username ? `<div class="mt-3 flex gap-2"><button type="button" data-follow-request="${escapeHTML(actor.username)}" data-follow-decision="accepted" class="rounded-lg bg-primary-container px-3 py-2 text-xs font-bold text-on-primary-container">Kabul et</button><button type="button" data-follow-request="${escapeHTML(actor.username)}" data-follow-decision="rejected" class="rounded-lg border border-outline-variant/30 px-3 py-2 text-xs text-on-surface-variant">Reddet</button></div>` : ''}
@@ -5156,7 +5196,6 @@ $('profile-sinefil-area').addEventListener('click', () => {
   showView('sinefil');
   loadSinefilArea();
 });
-$('profile-discovery-toggle').addEventListener('click', toggleDiscoveryVisibility);
 $('profile-private-toggle').addEventListener('click', togglePrivateAccount);
 $('profile-browser-notifications').addEventListener('click', enableBrowserNotifications);
 $('menu-blocked-users').addEventListener('click', openBlockedUsers);
@@ -5323,7 +5362,6 @@ $('feed-trending').addEventListener('click', event => {
 });
 $('feed-film-filter').addEventListener('click', event => {
   if (event.target.closest('#feed-film-clear')) openFilmFeed('', '');
-  if (event.target.closest('#feed-film-change')) openFilmPicker('filter');
 });
 $('btn-feed-film-filter').addEventListener('click', () => {
   const menu = $('feed-filter-menu');

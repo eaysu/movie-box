@@ -1594,6 +1594,29 @@ ALTER TABLE public.posts ADD CONSTRAINT posts_body_check CHECK (char_length(body
 ALTER TABLE public.user_reports
   ADD COLUMN IF NOT EXISTS post_id UUID REFERENCES public.posts(id) ON DELETE SET NULL;
 
+-- Günce kayıtları. Letterboxd'dan gelen bir izleme kaydı akışta nottan farklı
+-- görünür ve `source_key` ile bir kez düşer: RSS guid'i benzersiz olduğu için
+-- aynı kayıt ikinci kez eklenemez. Kullanıcı silerse satır durur (yumuşak
+-- silme) ve anahtar dolu kaldığı için bir daha asla geri gelmez — istenen
+-- davranış tam olarak bu.
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'app';
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS source_key TEXT;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'posts_source_check'
+  ) THEN
+    ALTER TABLE public.posts
+      ADD CONSTRAINT posts_source_check CHECK (source IN ('app', 'letterboxd'));
+  END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_source_key
+  ON public.posts (author_id, source_key) WHERE source_key IS NOT NULL;
+
+-- Günce taramasının kişi başına son çalıştığı an; akışı açan üye sıradaki
+-- taramayı tetikliyor, ayrı bir işçi süreç yok.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_synced_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_posts_feed
   ON public.posts (created_at DESC, id DESC)
   WHERE deleted_at IS NULL AND reply_to IS NULL;
@@ -1644,7 +1667,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_reports_one_post_per_reporter
 CREATE TABLE IF NOT EXISTS public.notifications (
   id         BIGSERIAL PRIMARY KEY,
   user_id    BIGINT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  kind       TEXT NOT NULL CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted', 'letter', 'blend_request', 'blend_accepted', 'blend_rejected')),
+  kind       TEXT NOT NULL CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted', 'letter', 'blend_request', 'blend_accepted', 'blend_rejected', 'bulletin')),
   actor_id   BIGINT REFERENCES public.users(id) ON DELETE CASCADE,
   post_id    UUID REFERENCES public.posts(id) ON DELETE CASCADE,
   event_key  TEXT,
@@ -1653,6 +1676,12 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS event_key TEXT;
+-- 'bulletin': izleme listesindeki bir film perdeye geldiğinde haftada bir kez.
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
+ALTER TABLE public.notifications ADD CONSTRAINT notifications_kind_check
+  CHECK (kind IN ('reply', 'like', 'follow', 'follow_request', 'follow_accepted',
+                  'letter', 'blend_request', 'blend_accepted', 'blend_rejected',
+                  'bulletin'));
 ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_kind_check;
 DO $$ BEGIN
   ALTER TABLE public.notifications ADD CONSTRAINT notifications_kind_check
