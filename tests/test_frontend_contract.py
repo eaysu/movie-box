@@ -378,8 +378,8 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     manifest = (ROOT / "static" / "site.webmanifest").read_text()
 
     assert 'id="dialog-install-app"' in html
-    assert 'href="/static/site.webmanifest?v=20260910.4"' in html
-    assert 'href="/static/movieboxd-mark.png?v=20260907.1"' in html
+    assert 'href="/static/site.webmanifest?v=20260910.5"' in html
+    assert 'href="/static/movieboxd-mark.png?v=20260910.5"' in html
     assert 'src="/static/movieboxd-mark.png"' in html
     assert "beforeinstallprompt" in app_js
     assert "requestMovieboxdInstall" in app_js
@@ -388,8 +388,8 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     assert '"512x512"' in manifest
 
 
-def test_the_installed_app_opens_on_the_brand_mark_not_the_flat_icon():
-    """Reported: the splash screen showed the plain icon, not the brand mark."""
+def test_the_installed_app_opens_on_the_chosen_icon():
+    """The launcher, splash and favicon are all cut from movieboxd-icon.png."""
     import hashlib
 
     mark = (ROOT / "static" / "movieboxd-mark.png").read_bytes()
@@ -405,9 +405,9 @@ def test_the_installed_app_opens_on_the_brand_mark_not_the_flat_icon():
         # of near-black, so a corner pixel tells them apart.
         assert icon[:8] == mark[:8], name
         assert f'"/static/{name}?v=' in manifest, name
-    # The splash paints `background_color` behind the icon; a white-ground mark
-    # on the dark surface read as a white card.
-    assert '"background_color": "#ffffff"' in manifest
+    # The splash paints `background_color` behind the icon, so it matches the
+    # icon's own dark ground.
+    assert '"background_color": "#171e27"' in manifest
     # Android 12+ kırpma maskesi için markanın güvenli alana çekilmiş sürümü.
     assert '"purpose": "maskable"' in manifest
     assert 'apple-touch-icon" href="/static/movieboxd-icon-maskable.png' in html
@@ -483,6 +483,43 @@ def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
     for view in ("'auth'", "'onboarding'", "'loading'", "'blend-loading'"):
         assert view in block, view
     assert "OWN_HEADER_VIEWS.includes(name)" in block
+
+
+def test_the_deck_arrows_flank_the_poster_on_a_phone():
+    """Asked for: the arrows belong either side of the film poster."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    # One pair sits in the poster row, the other stays in the row below; CSS
+    # decides which is visible, so both use the same data attribute.
+    assert 'class="deck-poster-row' in app_js
+    assert 'class="deck-arrow"' in app_js
+    assert "deck-row-arrow" in app_js
+    assert ".deck-poster-row > .deck-arrow { display: flex; }" in css
+    assert ".deck-row-arrow { visibility: hidden; }" in css
+
+
+def test_the_desktop_dashboard_has_no_collapsibles():
+    """Asked for: on the web every card is open, with no dropdown at all."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    # A phone-only preference never reaches the desktop layout.
+    folds = app_js.split("function applyFolds", 1)[1].split("\n}", 1)[0]
+    assert "const folded = !phone ? false :" in folds
+    wide = css.split("@media (min-width: 1024px) {", 1)
+    assert any(".fold-toggle, [data-fold] .fold-chevron { display: none !important; }" in part
+               for part in css.split("@media"))
+    assert "[data-fold].is-folded .fold-body { display: revert; }" in css
+
+
+def test_the_phone_background_is_the_apps_own_tone():
+    css = (ROOT / "static" / "css" / "source.css").read_text()
+
+    block = css.split("@media (max-width: 767px) {", 1)
+    assert "background-color: rgb(23 30 39)" in css
+    # The opt-in light profile theme still wins on a phone.
+    assert "body:not(.theme-light) { --color-surface-container-lowest: 23 30 39; }" in css
 
 
 def test_the_phone_feed_shows_notes_until_the_pencil_is_tapped():
@@ -745,8 +782,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "88e83973eff430507d8f35202debb60e3bedf65e1d5cc45e4af38383a196a0ae",
-            "static/app.css": "c30b767c46a6db10de462c9b7704c65e46386772136a23ea5a2d0879ebe4f9e6",
+            "static/js/app.js": "8ae43d7ef430ce561972adbf9999744ff702877740cbc99d8e2c4500e78a3099",
+            "static/app.css": "cb5eebe5f2e2b07a726ac6eeefee7c79892720cb5ebb005c0f401194b016ea0a",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -778,9 +815,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260910.78"
+    css_version = "v=20260910.80"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.90" in html
+    assert "/static/js/app.js?v=20260910.91" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js

@@ -772,7 +772,7 @@ async function refreshFeedBadge() {
       && Notification.permission === 'granted') {
       new Notification('Movieboxd', {
         body: `${count - _lastUnreadNotificationCount} yeni bildirimin var.`,
-        icon: '/static/movieboxd-icon-192.png?v=20260907.3',
+        icon: '/static/movieboxd-icon-192.png?v=20260910.5',
       });
     }
     _lastUnreadNotificationCount = count;
@@ -1014,9 +1014,9 @@ function applyFolds() {
   const prefs = _foldPrefs();
   document.querySelectorAll('[data-fold]').forEach(section => {
     const key = section.dataset.fold;
-    const folded = key in prefs
+    const folded = !phone ? false : (key in prefs
       ? Boolean(prefs[key])
-      : phone && FOLDED_ON_PHONE.includes(key);
+      : FOLDED_ON_PHONE.includes(key));
     section.classList.toggle('is-folded', folded);
     const toggle = section.querySelector('.fold-head, .fold-toggle');
     if (toggle) toggle.setAttribute('aria-expanded', String(!folded));
@@ -2411,7 +2411,7 @@ let _topFilmsSel = new Set();
 let _topFilmsPool = new Map();
 let _topFilmsSearchTimer = null;
 
-function _filmHero(f) {
+function _filmHero(f, sideArrows = '') {
   const poster = safeImageURL(f.poster_url);
   const title = escapeHTML(f.title || '');
   const year = f.year ? escapeHTML(String(f.year)) : '';
@@ -2421,9 +2421,12 @@ function _filmHero(f) {
   const art = poster
     ? `<img src="${poster}" alt="" onerror="posterErr(this)" class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl object-cover bg-surface-container"/>`
     : `<div class="w-full max-w-[168px] mx-auto aspect-[2/3] rounded-xl bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined text-on-surface-variant/25 text-[40px]">movie</span></div>`;
+  const cover = href
+    ? `<a href="${href}" target="_blank" rel="noopener" class="block min-w-0 flex-1" title="${title} — Letterboxd">${art}</a>`
+    : `<div class="min-w-0 flex-1">${art}</div>`;
   return `
     <div class="flex h-full min-h-0 flex-col overflow-hidden">
-      ${href ? `<a href="${href}" target="_blank" rel="noopener" class="block shrink-0" title="${title} — Letterboxd">${art}</a>` : art}
+      <div class="deck-poster-row flex shrink-0 items-center gap-1">${sideArrows ? sideArrows.replace('%SLOT%', cover) : cover}</div>
       <div class="mt-4 shrink-0 text-center">
         <h3 class="font-headline-md text-[18px] md:text-[20px] text-on-surface leading-tight">${title}${year ? ` <span class="font-body-md text-body-md text-on-surface-variant/50">${year}</span>` : ''}</h3>
         ${director ? `<p class="mt-1 font-label-sm text-label-sm text-tertiary-container">${director}</p>` : ''}
@@ -2461,13 +2464,20 @@ function _paintFilmDeck(boxId, direction = 0) {
   if (!deck) return;
   const { films, index } = deck;
   const motion = direction < 0 ? 'carousel-from-left' : direction > 0 ? 'carousel-from-right' : '';
+  // Telefonda oklar posterin iki yanında durur; geniş ekranda alttaki satırda
+  // kalır. İki takım da aynı `data-deck-nav` düğmesi, biri CSS ile gizli.
+  const sideArrows = films.length > 1
+    ? `<button type="button" data-deck-nav="-1" class="deck-arrow" aria-label="Önceki film"><span class="material-symbols-outlined text-[22px]">chevron_left</span></button>
+       %SLOT%
+       <button type="button" data-deck-nav="1" class="deck-arrow" aria-label="Sonraki film"><span class="material-symbols-outlined text-[22px]">chevron_right</span></button>`
+    : '';
   $(boxId).innerHTML = `
     <div data-carousel-frame class="profile-carousel-frame ${motion}">
-      <div class="profile-carousel-body" data-deck-body>${_filmHero(films[index])}</div>
+      <div class="profile-carousel-body" data-deck-body>${_filmHero(films[index], sideArrows)}</div>
       <div data-deck-controls class="profile-carousel-controls flex items-center justify-between gap-3">
-        <button type="button" data-deck-nav="-1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki film"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
+        <button type="button" data-deck-nav="-1" class="deck-row-arrow w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Önceki film"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
         <span class="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant/60">${index + 1} / ${films.length}</span>
-        <button type="button" data-deck-nav="1" class="w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki film"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
+        <button type="button" data-deck-nav="1" class="deck-row-arrow w-10 h-10 shrink-0 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" aria-label="Sonraki film"><span class="material-symbols-outlined text-[20px]">chevron_right</span></button>
       </div>
     </div>`;
   const f = films[index];

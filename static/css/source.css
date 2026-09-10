@@ -741,3 +741,41 @@
     border-color: rgb(var(--color-secondary-container));
   }
   .spoiler-check:checked::before { transform: scale(1); }
+
+  /* ── Deste okları ──────────────────────────────────────────────────────
+     Telefonda oklar posterin iki yanında, poster hizasında; geniş ekranda
+     kartın altındaki satırda kalır. */
+  .deck-arrow { display: none; }
+  .deck-poster-row > .deck-arrow {
+    height: 2.5rem; width: 2.5rem; flex: none;
+    align-items: center; justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--color-outline-variant) / .3);
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .deck-poster-row > .deck-arrow:hover {
+    color: rgb(var(--color-on-surface));
+    border-color: rgb(var(--color-outline-variant) / .6);
+  }
+  @media (max-width: 767px) {
+    .deck-poster-row > .deck-arrow { display: flex; }
+    .deck-row-arrow { visibility: hidden; }
+  }
+
+  /* Geniş ekranda pano bölümleri hep açık: katlama telefona ait. */
+  @media (min-width: 1024px) {
+    [data-fold].is-folded .fold-body { display: revert; }
+    .fold-toggle, [data-fold] .fold-chevron { display: none !important; }
+    .fold-head { cursor: default; }
+    .profile-dashboard-card.is-folded { height: 42rem; min-height: 42rem; }
+  }
+
+  /* Telefonda sayfa zemini uygulamanın kendi koyu tonu: rgb(23 30 39).
+     Açık görünüm seçilmişse ona karışmıyor. */
+  @media (max-width: 767px) {
+    body:not(.theme-light) { --color-surface-container-lowest: 23 30 39; }
+    html:has(body:not(.theme-light)), body:not(.theme-light) {
+      background-color: rgb(23 30 39);
+    }
+  }
