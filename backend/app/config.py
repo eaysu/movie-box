@@ -76,6 +76,19 @@ class Settings(BaseSettings):
     watchlist_film_limit: int = 150 # candidate havuzu — en son eklenen N film (varsayılan sıra: en yeni önce)
     scrape_max_retries: int = 3     # 403/429'da sayfa başına tekrar deneme
 
+    # --- Günce taraması ---
+    # Saatlik koşu, üye başına tek istek. Maliyeti belirleyen şey kaydın sayısı
+    # değil, koştaki üye sayısı: bir sayfadan üç kayıt okumakla on iki kayıt
+    # okumak aynı isteği harcıyor.
+    diary_scan_enabled: bool = True
+    diary_scan_members_per_run: int = 20   # saatlik bütçe — üye sayısından bağımsız
+    diary_scan_entries: int = 3            # üye başına en yeni kaç yorumlu kayıt
+    # Yazan üye sık, yazmayan üye seyrek taranıyor. Ardışık boş taramada eşik
+    # ikiye katlanıp tavana kadar çıkıyor; ilk yeni kayıtta tabana dönüyor.
+    # Üye sayısı büyüdükçe bütçeyi asıl koruyan mekanizma bu.
+    diary_scan_min_hours: int = 1
+    diary_scan_max_hours: int = 24
+
     # --- Storage ---
     data_dir: str = "data"
 

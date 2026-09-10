@@ -288,11 +288,16 @@ class DiaryImportTests(unittest.TestCase):
         self.assertIn("if entries is None:", block)
 
     def test_letterboxds_own_filler_is_not_imported_as_a_note(self):
-        """Yorumsuz kayıtta açıklama "Watched on ..." oluyor; bu kullanıcının
-        cümlesi değil."""
-        self.assertIn("_REVIEW_BOILERPLATE", self.scraper)
-        block = self.scraper.split("def _review_text", 1)[1].split("\nasync def ", 1)[0]
-        self.assertIn("_REVIEW_BOILERPLATE.match(piece)", block)
+        """Kullanıcının cümlesi olmayan kayıt akışa girmiyor.
+
+        RSS'in "Watched on …" doldurmasını temizleyen ayrıştırıcı kalktı; kaynak
+        artık yalnızca yorumluları listeleyen sayfa. Orada yorumsuz kaydın
+        `.js-review-body` düğümü hiç yok, dolayısıyla kayıt zaten atlanıyor.
+        """
+        block = self.scraper.split("def _parse_review_page", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn('body = article.select_one(".js-review-body")', block)
+        self.assertIn("if not match or not body:", block)
+        self.assertIn("continue", block)
 
     def test_the_bulk_import_takes_every_reviewed_entry(self):
         """Üyenin bütün yazılı arşivi; sıralama filtrelemeden sonra.
@@ -542,17 +547,24 @@ class DiaryArchiveTests(unittest.TestCase):
 
     def setUp(self):
         self.auth = (ROOT / "app" / "auth.py").read_text()
+        self.main = (ROOT / "app" / "main.py").read_text()
         self.scraper = (ROOT / "app" / "scraper.py").read_text()
         self.schema = (ROOT / "supabase" / "schema.sql").read_text()
+        self.config = (ROOT / "app" / "config.py").read_text()
 
-    def test_the_archive_comes_from_review_pages_not_the_fifty_entry_feed(self):
-        """RSS son ~50 kaydı taşıyor; yıllar öncesinin yorumları orada yok."""
+    def test_both_the_backfill_and_the_hourly_scan_read_the_review_pages(self):
+        """RSS'in son ~50 kaydı *izleme* kaydı, yorum değil.
+
+        Art arda elli film yorumsuz loglanırsa yeni yazılan yorum RSS'ten
+        görünmez oluyordu. İki iş de yalnızca yorumluları listeleyen sayfayı
+        okuyor: toplu aktarım sonuna kadar, saatlik tarama ilk sayfayı.
+        """
         self.assertIn("async def scrape_reviewed_diary(", self.scraper)
         self.assertIn("/films/reviews/page/", self.scraper)
-        # Toplu aktarım arşivi okuyor, günlük tarama ucuz RSS'te kalıyor.
-        importer = (ROOT / "scripts" / "import_diary.py").read_text()
-        self.assertIn("scrape_reviewed_diary", importer)
-        self.assertIn("scrape_diary_entries", (ROOT / "app" / "main.py").read_text())
+        self.assertIn("scrape_reviewed_diary", (ROOT / "scripts" / "import_diary.py").read_text())
+        self.assertIn("scrape_reviewed_diary(username, max_pages=1)", self.main)
+        # RSS ayrıştırıcısı kaldırıldı; ölü kod olarak kalmasın.
+        self.assertNotIn("async def scrape_diary_entries", self.scraper)
 
     def test_html_and_rss_produce_the_same_key_for_one_entry(self):
         """`viewing:<id>` ile `letterboxd-review-<id>` aynı sayıyı taşıyor.
@@ -610,3 +622,77 @@ class DiaryArchiveTests(unittest.TestCase):
         self.assertIn('query.or_(f"source.eq.app,created_at.gte.{window_start}")', window)
         # Filtre veritabanında; Python'da elemek tarama döngüsünü boşa çevirirdi.
         self.assertNotIn("for row in rows if row", window.split("windowed", 1)[1][:400])
+
+
+class DiaryScheduleTests(unittest.TestCase):
+    """Saatlik tarama: koş başına iş sabit, sıra yazana ayrılıyor."""
+
+    def setUp(self):
+        self.auth = (ROOT / "app" / "auth.py").read_text()
+        self.main = (ROOT / "app" / "main.py").read_text()
+        self.config = (ROOT / "app" / "config.py").read_text()
+        self.schema = (ROOT / "supabase" / "schema.sql").read_text()
+
+    def test_the_scan_actually_runs_instead_of_waiting_to_be_called(self):
+        """`_kick_diary_ingest` tanımlıydı ama hiçbir yerden çağrılmıyordu.
+
+        Söz verdiği otomatik tarama bu yüzden hiç çalışmadı; artık kendi saatlik
+        döngüsü var ve uygulama açılışında başlıyor.
+        """
+        self.assertIn("async def _diary_refresh_loop()", self.main)
+        loop = self.main.split("async def _diary_refresh_loop()", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("_kick_diary_ingest(settings, service)", loop)
+        self.assertIn("await asyncio.sleep(60 * 60)", loop)
+        lifespan = self.main.split("async def _lifespan(", 1)[1].split("\n@", 1)[0]
+        self.assertIn("_diary_refresh_loop()", lifespan)
+        # Hesaplar kapalıysa taranacak üye listesi de yok.
+        self.assertIn('getattr(settings, "has_auth", False)', lifespan)
+        # Kapatılabilir olmalı: iptal edilmeyen döngü kapanışı askıda bırakır.
+        self.assertIn("scheduler.cancel()", lifespan)
+
+    def test_one_request_per_member_and_a_capped_number_of_members(self):
+        """Kaydı üçe indirmek isteği ucuzlatmıyor; maliyet üye sayısında."""
+        block = self.main.split("def _kick_diary_ingest", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn("scrape_reviewed_diary(username, max_pages=1)", block)
+        self.assertIn('getattr(settings, "diary_scan_members_per_run", 20)', block)
+        self.assertIn('getattr(settings, "diary_scan_entries", 3)', block)
+        self.assertIn("[:keep]", block)
+        self.assertIn("diary_scan_members_per_run: int = 20", self.config)
+        self.assertIn("diary_scan_entries: int = 3", self.config)
+
+    def test_a_member_who_never_writes_is_scanned_less_and_less_often(self):
+        """Sabit bütçenin üyelik büyüdükçe yetmesini sağlayan mekanizma."""
+        self.assertIn(
+            "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_idle_streak",
+            self.schema,
+        )
+        block = self.auth.split("def diary_sync_candidates", 1)[1].split(
+            "\n    def ", 1
+        )[0]
+        # Eşik ikiye katlanıyor ama tavanı var, yoksa üye sonsuza dek düşer.
+        self.assertIn("2 ** min(streak, 10)", block)
+        self.assertIn("max(1, max_hours)", block)
+        # Havuz bütçeden geniş: geri çekilmişler elenince bütçe yine dolsun.
+        self.assertIn("max(limit * 4, 40)", block)
+
+    def test_a_scan_that_finds_something_puts_the_member_back_in_the_fast_lane(self):
+        block = self.auth.split("def mark_diary_synced", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn('patch["diary_idle_streak"] = 0', block)
+        self.assertIn("+ 1, 10", block)
+        # Yazan üyenin sayacı sıfırlanmadan önce fazladan okuma yapılmıyor.
+        self.assertIn("if not wrote:", block)
+        # Okunamayan günce damgalanmıyor: geri çekilme yanlışlıkla tetiklenmesin.
+        ingest = self.main.split("def _kick_diary_ingest", 1)[1].split("\nasync def ", 1)[0]
+        self.assertLess(ingest.index("if entries is None:"), ingest.index("mark_diary_synced"))
+
+    def test_a_broken_second_query_does_not_drop_the_never_scanned(self):
+        """Ölçüldü: iki üye hiç taranmamışken kuyruk boş dönüyordu.
+
+        İki sorgu tek `try` içindeydi; ikincisi hata verince birincinin sonucu
+        da atılıyordu. Hiç taranmamış üye sıranın en başındaki iş.
+        """
+        block = self.auth.split("def diary_sync_candidates", 1)[1].split("\n    def ", 1)[0]
+        head, tail = block.split("pool = service.table", 1)
+        self.assertIn("never = []", head)          # ilk sorgunun kendi except'i
+        self.assertIn("return never", tail)        # ikinci sorgu düşerse elde kalan
+        self.assertNotIn("return []", tail.split("due:", 1)[0])

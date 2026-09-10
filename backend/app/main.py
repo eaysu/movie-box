@@ -60,7 +60,7 @@ from .scraper import (
     ScrapedProfile,
     ScrapeError,
     scrape_diary,
-    scrape_diary_entries,
+    scrape_reviewed_diary,
     scrape_films,
     scrape_profile,
     scrape_recent_watched,
@@ -80,14 +80,17 @@ from . import profile_sync
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app):
-    scheduler = None
+    schedulers: list[asyncio.Task] = []
     settings = get_settings()
     if getattr(settings, "bulletin_enabled", False) and getattr(settings, "has_tmdb", False):
-        scheduler = asyncio.create_task(_bulletin_refresh_loop())
+        schedulers.append(asyncio.create_task(_bulletin_refresh_loop()))
+    # Günce taraması hesaplardan bağımsız çalışamaz: üye listesi Supabase'de.
+    if getattr(settings, "diary_scan_enabled", True) and getattr(settings, "has_auth", False):
+        schedulers.append(asyncio.create_task(_diary_refresh_loop()))
     try:
         yield
     finally:
-        if scheduler is not None:
+        for scheduler in schedulers:
             scheduler.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await scheduler
@@ -3360,29 +3363,61 @@ def _raise_post_http(exc: BlendServiceError) -> None:
 _diary_ingest_task: asyncio.Task | None = None
 
 
-def _kick_diary_ingest(service) -> None:
-    """Günceleri arka planda akışa düşürür, süreç başına tek koşu.
+async def _diary_refresh_loop() -> None:
+    """Yeni yazılan günce kayıtlarını saatte bir akışa düşürür.
 
-    Ayrı bir işçi süreç yok: akışı açan üye sıradaki taramayı tetikliyor.
-    `diary_synced_at` damgası kimin sırası olduğunu tutuyor, böylece aynı üye
-    üst üste taranmıyor ve Letterboxd'a dakikada bir istekten fazlası gitmiyor.
+    Ayrı bir işçi süreç yok; UptimeRobot servisi ayakta tuttuğu için bu hafif
+    tik de dönmeye devam ediyor. Koş başına iş miktarı `diary_scan_*` ayarlarıyla
+    sınırlı, dolayısıyla üye sayısı büyüdüğünde Letterboxd'a giden yük artmıyor.
+    """
+    settings = get_settings()
+    service = _auth_service()
+    while True:
+        _kick_diary_ingest(settings, service)
+        await asyncio.sleep(60 * 60)
+
+
+def _kick_diary_ingest(settings, service) -> None:
+    """Sırası gelen üyelerin yeni yorumlarını akışa düşürür.
+
+    Üye başına tek istek: `/films/reviews/` ilk sayfası en yeni on iki yorumlu
+    kaydı veriyor, ondan en yeni `diary_scan_entries` tanesi alınıyor. Kaydı
+    üçe indirmek isteği ucuzlatmıyor — asıl maliyet koştaki üye sayısı, onu da
+    `diary_scan_members_per_run` sınırlıyor.
+
+    RSS yerine bu sayfa kullanılıyor çünkü RSS son ~50 *izleme* kaydını
+    taşıyor: art arda elli film yorumsuz loglanırsa yeni yazılan yorum oradan
+    görünmez oluyor. Sayfa yalnızca yorumluları listeliyor.
     """
     global _diary_ingest_task
+    if not getattr(settings, "diary_scan_enabled", True):
+        return
     if _diary_ingest_task is not None and not _diary_ingest_task.done():
         return
 
     async def _run():
         try:
-            members = await asyncio.to_thread(service.diary_sync_candidates)
+            members = await asyncio.to_thread(
+                service.diary_sync_candidates,
+                limit=int(getattr(settings, "diary_scan_members_per_run", 20)),
+                min_hours=int(getattr(settings, "diary_scan_min_hours", 1)),
+                max_hours=int(getattr(settings, "diary_scan_max_hours", 24)),
+            )
+            keep = max(1, int(getattr(settings, "diary_scan_entries", 3)))
             for member in members:
                 username = member.get("username") or ""
                 if not username:
                     continue
-                entries = await scrape_diary_entries(username)
+                entries = await scrape_reviewed_diary(username, max_pages=1)
                 # `None` okunamadı demek: damgayı atmıyoruz ki sıradaki koşuda
-                # yine denenebilsin.
+                # yine denenebilsin ve geri çekilme sayacı bozulmasın.
                 if entries is None:
                     continue
+                newest = sorted(
+                    (entry for entry in entries if entry.slug and entry.review.strip()),
+                    key=lambda entry: entry.watched_on,
+                    reverse=True,
+                )[:keep]
                 rows = [
                     {
                         "source_key": entry.key,
@@ -3399,12 +3434,14 @@ def _kick_diary_ingest(service) -> None:
                         # Akış sırası izlenme gününe göre.
                         "created_at": f"{entry.watched_on}T12:00:00+00:00",
                     }
-                    for entry in entries if entry.slug
+                    for entry in newest
                 ]
                 written = await asyncio.to_thread(
                     service.import_diary_entries, int(member["id"]), rows
                 )
-                await asyncio.to_thread(service.mark_diary_synced, int(member["id"]))
+                await asyncio.to_thread(
+                    service.mark_diary_synced, int(member["id"]), wrote=written
+                )
                 if written:
                     log.warning("diary import user=%s rows=%d", username, written)
                 await asyncio.sleep(4)

@@ -1623,9 +1623,14 @@ ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_body_check;
 ALTER TABLE public.posts ADD CONSTRAINT posts_body_check
   CHECK (char_length(body) <= CASE WHEN source = 'letterboxd' THEN 10000 ELSE 420 END);
 
--- Günce taramasının kişi başına son çalıştığı an; akışı açan üye sıradaki
--- taramayı tetikliyor, ayrı bir işçi süreç yok.
+-- Günce taramasının kişi başına son çalıştığı an. Saatlik zamanlayıcı sırayı
+-- buradan kuruyor: en uzun süredir taranmayan üye önce.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_synced_at TIMESTAMPTZ;
+
+-- Ardışık kaç taramanın boş geçtiği. Eşiği ikiye katlayarak yazmayan üyeyi
+-- seyrekleştiriyor (tavan bir gün), ilk yeni kayıtta sıfırlanıyor. Koş başına
+-- istek sayısı sabit olduğu için üyelik büyüdükçe bütçeyi bu koruyor.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS diary_idle_streak SMALLINT NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_posts_feed
   ON public.posts (created_at DESC, id DESC)

@@ -1745,32 +1745,81 @@ class AuthService:
         )
         return row or {}
 
-    def diary_sync_candidates(self, *, stale_hours: int = 6, limit: int = 8) -> list[dict]:
-        """Güncesi en uzun süre okunmamış üyeler. Hiç okunmamışlar önce gelir."""
+    def diary_sync_candidates(
+        self, *, limit: int = 20, min_hours: int = 1, max_hours: int = 24,
+    ) -> list[dict]:
+        """Sırası gelen üyeler. Hiç taranmamışlar önce.
+
+        Eşik üyeye göre değişiyor: `diary_idle_streak` ardışık kaç taramanın
+        boş geçtiğini sayıyor ve eşiği ikiye katlıyor (tavan `max_hours`).
+        Yazan üye her saat, yıllardır yazmayan üye günde bir taranıyor.
+
+        Üyelik büyüdükçe önemli olan da bu: koş başına istek sayısı `limit` ile
+        sabit, geri çekilme ise o sabit bütçeyi gerçekten yazan üyelere ayırıyor.
+        Bütçe yetmediğinde tek sonuç kaydın biraz geç düşmesi — akış penceresi
+        yedi gün olduğu için görünürlüğü etkilemiyor.
+        """
         service = self._service_client()
-        fresh_after = (
-            datetime.now(timezone.utc) - timedelta(hours=max(1, stale_hours))
-        ).isoformat()
+        now = datetime.now(timezone.utc)
         try:
             never = service.table("users").select("id,username").eq(
                 "account_status", "active"
             ).is_("diary_synced_at", "null").limit(limit).execute().data or []
-            if len(never) >= limit:
-                return never
-            stale = service.table("users").select("id,username").eq(
-                "account_status", "active"
-            ).lt("diary_synced_at", fresh_after).order(
-                "diary_synced_at"
-            ).limit(limit - len(never)).execute().data or []
-            return never + stale
         except Exception:
-            return []
+            never = []
+        if len(never) >= limit:
+            return never[:limit]
+        try:
+            # Havuzu bütçenin birkaç katı tutuyoruz: geri çekilmiş üyeler
+            # elendikten sonra da bütçeyi dolduracak kadar aday kalsın.
+            pool = service.table("users").select(
+                "id,username,diary_synced_at,diary_idle_streak"
+            ).eq("account_status", "active").not_.is_(
+                "diary_synced_at", "null"
+            ).order("diary_synced_at").limit(max(limit * 4, 40)).execute().data or []
+        except Exception:
+            # İkinci sorgunun hatası birincinin sonucunu götürmesin: hiç
+            # taranmamış üye, sıranın en başındaki iş.
+            return never
 
-    def mark_diary_synced(self, user_id: int) -> None:
+        due: list[dict] = []
+        for row in pool:
+            streak = int(row.get("diary_idle_streak") or 0)
+            threshold = min(max(1, min_hours) * (2 ** min(streak, 10)), max(1, max_hours))
+            try:
+                last = datetime.fromisoformat(str(row["diary_synced_at"]))
+            except (TypeError, ValueError):
+                due.append(row)
+                continue
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if now - last >= timedelta(hours=threshold):
+                due.append(row)
+            if len(due) >= limit - len(never):
+                break
+        return never + due
+
+    def mark_diary_synced(self, user_id: int, *, wrote: int = 0) -> None:
+        """Taramayı damgalar ve boş geçen tarama sayısını günceller.
+
+        Yeni kayıt geldiyse sayaç sıfırlanıyor — üye yazmaya başladıysa sık
+        taranmaya geri dönüyor.
+        """
+        patch: dict[str, Any] = {"diary_synced_at": datetime.now(timezone.utc).isoformat()}
+        if wrote:
+            patch["diary_idle_streak"] = 0
         with contextlib.suppress(Exception):
-            self._service_client().table("users").update(
-                {"diary_synced_at": datetime.now(timezone.utc).isoformat()}
-            ).eq("id", user_id).execute()
+            service = self._service_client()
+            if not wrote:
+                current = self._first(
+                    service.table("users").select("diary_idle_streak").eq(
+                        "id", user_id
+                    ).limit(1).execute()
+                )
+                patch["diary_idle_streak"] = min(
+                    int((current or {}).get("diary_idle_streak") or 0) + 1, 10
+                )
+            service.table("users").update(patch).eq("id", user_id).execute()
 
     def create_post(self, account: Account, payload: dict) -> dict:
         row = {

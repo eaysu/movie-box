@@ -150,18 +150,35 @@ değişiklik geri dönen hiçbir ziyaretçiye ulaşmaz.
 
 ## Günce aktarımı
 
-İki kaynak, iki iş. **Toplu tarama** üyenin yazılı bütün arşivini
-`/username/films/reviews/` sayfalarından okuyor — sayfa başına on iki kayıt,
-gerektiği kadar sayfa. **Günlük tarama** ise RSS'te (`/username/rss/`) kalıyor:
-tek istek, son ~50 kayıt, yeni yazılanı yakalamaya yeter. Akışı açan üye
-sıradaki günlük taramayı tetikliyor, ayrı bir işçi süreç yok.
-
-RSS'in `letterboxd-review-<id>` guid'i ile HTML'deki `viewing:<id>` aynı sayıyı
-taşıyor, dolayısıyla iki kaynak aynı kaydı iki kez düşürmüyor.
+Kaynak `/username/films/reviews/` sayfaları: yalnızca yorumlu kayıtları
+listeliyor, sayfa başına on iki tane. RSS kullanılmıyor çünkü son ~50 *izleme*
+kaydını taşıyor — art arda elli film yorumsuz loglanırsa yeni yazılan yorum
+oradan görünmez oluyor.
 
 Uzun yorumlar liste sayfasında `…` ile kırpılıyor (ölçülen bir örnek: 603
 karakter görünüyor, tamamı 1254), o yüzden yalnızca kırpılanlar için
 `/s/full-text/viewing:<id>/` ucu ayrıca çağrılıyor.
+
+**Saatlik tarama.** Uygulama açılışında bir zamanlayıcı başlıyor
+(`_diary_refresh_loop`), saatte bir sırası gelen üyeleri tarıyor: üye başına tek
+istek, ilk sayfadaki en yeni `DIARY_SCAN_ENTRIES` (3) yorumlu kayıt. Ayrı bir
+işçi süreç yok; UptimeRobot servisi ayakta tuttuğu için tik de dönüyor.
+
+**Ölçek.** Koş başına maliyeti belirleyen şey kaydın sayısı değil üye sayısı:
+bir sayfadan üç kayıt okumakla on iki kayıt okumak aynı isteği harcıyor. O
+yüzden sınır üyede: `DIARY_SCAN_MEMBERS_PER_RUN` (20) koş başına istek sayısını
+üyelik büyüse de sabit tutuyor. Sabit bütçeyi gerçekten yazan üyelere ayıran
+şey geri çekilme: `users.diary_idle_streak` ardışık kaç taramanın boş geçtiğini
+sayıyor ve eşiği ikiye katlıyor (`DIARY_SCAN_MIN_HOURS` 1 saatten
+`DIARY_SCAN_MAX_HOURS` 24 saate kadar), ilk yeni kayıtta tabana dönüyor. Yazan
+üye her saat, yıllardır yazmayan üye günde bir taranıyor. Bütçe yetmediğinde tek
+sonuç kaydın biraz geç düşmesi; akış penceresi yedi gün olduğu için görünürlüğü
+etkilemiyor.
+
+Üye başına yalnız üç kayıt okumanın bir bedeli var: bir üye aynı saat içinde
+üçten fazla yorum yazarsa fazlası o taramada atlanıyor ve bir daha bakılmıyor.
+Toplu tarama (`scripts.import_diary`) çalıştığında bu boşluklar kapanıyor.
+Sayıyı büyütmek fazladan istek getirmiyor, `DIARY_SCAN_ENTRIES` yeterli.
 
 ```bash
 PYTHONPATH=backend python -m scripts.import_diary                  # ne olacağını göster
