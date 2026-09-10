@@ -329,11 +329,20 @@ class DiaryImportTests(unittest.TestCase):
         bulletin = self.main.split('@app.get("/api/bulletin")', 1)[1].split("\n@app", 1)[0]
         self.assertEqual(bulletin.count("_notify_bulletin(service, account, week"), 2)
 
-    def test_a_log_is_marked_as_one_in_the_feed(self):
+    def test_a_log_reads_as_a_note_not_as_metadata(self):
+        """Künye ve puan Letterboxd verisini tekrar etmekten başka iş
+        yapmıyordu; kartta okunacak şey yorumun kendisi."""
         app_js = (ROOT / "static" / "js" / "app.js").read_text()
         card = app_js.split("function feedPostCard", 1)[1].split("\nfunction ", 1)[0]
-        self.assertIn("post.kind === 'log'", card)
-        self.assertIn("Güncesine ekledi", card)
+
+        self.assertNotIn("Güncesine ekledi", card)
+        self.assertNotIn("logBadge", card)
+        # Beğeni/cevap satırı sabit yükseklikte ve kartın altına yapışık.
+        self.assertIn("feed-actions mt-auto flex h-9 shrink-0", card)
+        css = (ROOT / "static" / "css" / "source.css").read_text()
+        actions = css.split(".feed-actions {", 1)[1].split("}", 1)[0]
+        self.assertIn("height: 2.25rem", actions)
+        self.assertIn("margin-top: auto", actions)
 
     def test_a_long_review_is_folded_behind_a_read_more(self):
         """Uzun bir yorum kartı kilitliyordu; açılınca metin yerinde büyüyor."""

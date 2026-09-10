@@ -1488,7 +1488,7 @@ function feedPostCard(post, { compact = false } = {}) {
   const body = escapeHTML(post.body || '');
   const poster = film ? safeImageURL(film.poster_url) : '';
   const filmRail = film
-    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" title="${escapeHTML(film.title || 'Film')} — Letterboxd" class="group order-3 ml-auto w-[68px] shrink-0 text-left sm:w-[78px]">
+    ? `<a href="${letterboxdFilmURL(film.slug) || '#'}" target="_blank" rel="noopener" title="${escapeHTML(film.title || 'Film')} — Letterboxd" class="group order-3 ml-auto w-[68px] shrink-0 self-start text-left sm:w-[78px]">
         <span class="block overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container shadow-[0_16px_34px_-22px_rgba(0,0,0,.95)] transition-transform duration-300 group-hover:-translate-y-1 group-hover:border-primary-container/50">
           ${poster
             ? `<img src="${poster}" alt="${escapeHTML(film.title || '')}" onerror="posterErr(this)" loading="lazy" class="aspect-[2/3] w-full object-cover bg-surface-container"/>`
@@ -1499,26 +1499,16 @@ function feedPostCard(post, { compact = false } = {}) {
         <span class="mt-0.5 block line-clamp-2 text-[10px] leading-snug text-on-surface-variant">${escapeHTML(film.director || '')}</span>
       </a>`
     : '';
-  // Günce kaydı Letterboxd'dan düşer: nottan ayrılsın diye küçük bir künye ve
-  // varsa puanı taşır. Kullanıcının kendi yorumu varsa gövde olarak görünür.
-  const meta = post.payload || {};
-  const stars = Number(meta.rating) > 0
-    ? `<span class="inline-flex items-center gap-1 text-primary-container"><span class="material-symbols-outlined text-[15px]" style="font-variation-settings:'FILL' 1">star</span>${Number(meta.rating).toFixed(1)}</span>`
-    : '';
-  const logBadge = post.kind === 'log'
-    ? `<p class="mt-1.5 flex flex-wrap items-center gap-2 font-label-sm text-label-sm text-on-surface-variant/70">
-        <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">event_note</span>Güncesine ekledi</span>
-        ${stars}
-        ${meta.rewatch ? '<span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[15px]">replay</span>Tekrar</span>' : ''}
-      </p>`
-    : '';
+  // Günce kaydı da nottan farksız görünür: kartta okunacak şey yorumun
+  // kendisi. Künye ve puan, Letterboxd'un verisini tekrar etmekten başka bir
+  // şey yapmıyordu.
   // A spoiler stays covered until the reader asks for it — in a film community
   // that is a bigger trust question than profanity.
   const text = post.spoiler
     ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
     : feedBodyMarkup(post.body || '');
   return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
-    <div class="flex min-h-[128px] items-start gap-3">
+    <div class="flex min-h-[128px] items-stretch gap-3">
       <div class="flex min-h-[132px] min-w-0 flex-1 flex-col pt-0.5">
         <div class="flex min-w-0 items-center gap-2.5">
           <button type="button" data-post-author="${username}" class="shrink-0" aria-label="@${username} profili">${peerAvatar(author)}</button>
@@ -1527,9 +1517,8 @@ function feedPostCard(post, { compact = false } = {}) {
             <span class="mt-0.5 block truncate text-xs text-on-surface-variant/60">@${username}</span>
           </div>
         </div>
-        ${logBadge}
         ${text}
-        <div class="mt-auto flex items-center gap-4 pt-4 text-sm text-on-surface-variant">
+        <div class="feed-actions mt-auto flex h-9 shrink-0 items-center gap-4 text-sm text-on-surface-variant">
           <button type="button" data-post-like class="flex items-center gap-1.5 hover:text-primary-container transition-colors ${post.liked ? 'text-primary-container' : ''}">
             <span class="material-symbols-outlined text-[18px]" style="${post.liked ? "font-variation-settings:'FILL' 1" : ''}">favorite</span>
             <span data-like-count>${post.like_count || 0}</span>
@@ -1542,7 +1531,7 @@ function feedPostCard(post, { compact = false } = {}) {
           ${post.mine ? '' : '<button type="button" data-post-report class="ml-auto flex items-center gap-1 text-on-surface-variant/55 hover:text-error transition-colors" title="Notu bildir"><span class="material-symbols-outlined text-[18px]">flag</span></button>'}
         </div>
       </div>
-      <span class="order-2 shrink-0 pt-1 font-label-sm text-label-sm text-on-surface-variant/55">${escapeHTML(feedRelativeTime(post.created_at))}</span>
+      <span class="order-2 shrink-0 self-start pt-1 font-label-sm text-label-sm text-on-surface-variant/55">${escapeHTML(feedRelativeTime(post.created_at))}</span>
       ${filmRail}
     </div>
   </article>`;

@@ -723,7 +723,7 @@ def test_feed_has_own_notes_and_a_following_person_filter_without_mobile_trends(
     assert "hidden" in trend
     assert "lg:block" in trend
     card = app_js.split("function feedPostCard", 1)[1].split("\nfunction ", 1)[0]
-    assert "mt-auto flex items-center" in card
+    assert "feed-actions mt-auto flex h-9 shrink-0 items-center" in card
 
 
 def test_a_correspondence_continues_from_the_inbox():
@@ -792,8 +792,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "3007102c4a5b8dcbe51e913336ad3f2fdafff788192e0c2e59922bda01da7415",
-            "static/app.css": "cb5eebe5f2e2b07a726ac6eeefee7c79892720cb5ebb005c0f401194b016ea0a",
+            "static/js/app.js": "e539ac00729b480319afbccfd1169b0309918044f3b433c7ec174314967f52c9",
+            "static/app.css": "c5cda4b0e3b72254ec3d76d820deb38b2d5d484dadbb1627805dd960969000ff",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -825,9 +825,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260910.80"
+    css_version = "v=20260910.81"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.95" in html
+    assert "/static/js/app.js?v=20260910.97" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js

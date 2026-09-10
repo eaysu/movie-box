@@ -779,3 +779,8 @@
       background-color: rgb(23 30 39);
     }
   }
+
+  /* Beğeni ve cevap satırı kartın sol altına sabit: yüksekliği içeriğe göre
+     değişmiyor, uzun yorum açılsa bile aynı yerde ve aynı boyda duruyor. */
+  .feed-actions { height: 2.25rem; min-height: 2.25rem; margin-top: auto; }
+  .feed-actions > button { align-self: center; }
