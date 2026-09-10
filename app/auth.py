@@ -1614,7 +1614,12 @@ class AuthService:
           Bu yüzden çakışmada *güncelleme değil, atlama* yapıyoruz.
         * **Tarih kaydın kendi tarihi.** `created_at` izlenme günü oluyor, yoksa
           eski bir kayıt akışın tepesine düşerdi.
+        * **Yalnız yorumlu kayıt.** Cümlesi olmayan izleme kaydı akışa girmiyor.
         """
+        # Yalnız yorum yazılmış kayıtlar akışa giriyor. Puanı olup cümlesi
+        # olmayan bir izleme kaydı akışta okunacak bir şey taşımıyor; 130 üyeyle
+        # bunlar akışı doldurup gerçek yazıyı görünmez kılıyordu.
+        entries = [entry for entry in entries if (entry.get("body") or "").strip()]
         if not entries:
             return 0
         service = self._service_client()

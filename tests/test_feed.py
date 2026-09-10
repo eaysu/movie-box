@@ -271,6 +271,15 @@ class DiaryImportTests(unittest.TestCase):
         self.assertNotIn("upsert", block)
         self.assertNotIn("on_conflict", block)
 
+    def test_only_a_reviewed_entry_reaches_the_feed(self):
+        """Puanı olup cümlesi olmayan izleme kaydı akışta okunacak bir şey
+        taşımıyordu ve gerçek yazıyı görünmez kılıyordu."""
+        block = self.auth.split("def import_diary_entries", 1)[1].split("\n    def ", 1)[0]
+        self.assertIn(
+            'entries = [entry for entry in entries if (entry.get("body") or "").strip()]',
+            block,
+        )
+
     def test_the_feed_date_is_the_day_it_was_watched(self):
         block = self.main.split("def _kick_diary_ingest", 1)[1].split("\n@app", 1)[0]
         self.assertIn('"created_at": f"{entry.watched_on}T12:00:00+00:00"', block)
@@ -308,6 +317,21 @@ class DiaryImportTests(unittest.TestCase):
         card = app_js.split("function feedPostCard", 1)[1].split("\nfunction ", 1)[0]
         self.assertIn("post.kind === 'log'", card)
         self.assertIn("Güncesine ekledi", card)
+
+    def test_a_long_review_is_folded_behind_a_read_more(self):
+        """Uzun bir yorum kartı kilitliyordu; açılınca metin yerinde büyüyor."""
+        app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+        block = app_js.split("function feedBodyMarkup", 1)[1].split("\nfunction ", 1)[0]
+        self.assertIn("FEED_BODY_CLAMP", block)
+        self.assertIn("devamını oku", block)
+        # Kesme kelimenin ortasına düşmemeli.
+        self.assertIn("text.lastIndexOf(' ', FEED_BODY_CLAMP)", block)
+        # Açmak kartı thread'e götürmemeli: düğme kendi dalında dönüyor.
+        handler = app_js.split("function handleFeedCardClick", 1)[1].split("\n}", 1)[0]
+        self.assertLess(
+            handler.index("data-body-more"), handler.index("data-reveal-spoiler")
+        )
 
 
 class ProfilePageTests(unittest.TestCase):

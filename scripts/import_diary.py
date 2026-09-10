@@ -12,6 +12,8 @@ başlarken akışı bir kerede doldurmak için.
 * **Silinen geri gelmez.** Silme yumuşak olduğu için satır ve anahtarı duruyor;
   tekrar çalıştırmak onu diriltmiyor.
 * **Sıra izlenme günü.** Akışta kayıt, izlendiği günün tarihiyle yer alıyor.
+* **Yalnız yorumlu kayıt.** Cümlesi olmayan izleme kaydı akışa girmiyor; puan
+  tek başına okunacak bir şey taşımıyor.
 
     python -m scripts.import_diary                 # ne olacağını göster
     python -m scripts.import_diary --apply

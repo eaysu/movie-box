@@ -1457,6 +1457,29 @@ function feedRelativeTime(value) {
   return days < 7 ? `${days} g` : new Date(then).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' });
 }
 
+// Uzun bir yorum kartı kilitliyor: 220 karakterden sonrası "devamını oku"nun
+// arkasında duruyor. Açmak metni yerinde büyütüyor, altındaki notlar da doğal
+// olarak aşağı kayıyor.
+const FEED_BODY_CLAMP = 220;
+
+function feedBodyMarkup(raw) {
+  const text = String(raw || '');
+  if (!text.trim()) return '';
+  const cls = 'mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface';
+  if (text.length <= FEED_BODY_CLAMP) {
+    return `<p class="${cls}">${escapeHTML(text)}</p>`;
+  }
+  // Kesme noktası kelimenin ortasına düşmesin.
+  let cut = text.lastIndexOf(' ', FEED_BODY_CLAMP);
+  if (cut < FEED_BODY_CLAMP * 0.6) cut = FEED_BODY_CLAMP;
+  return `<p class="${cls}" data-post-body>
+    <span data-body-short>${escapeHTML(text.slice(0, cut).trimEnd())}…
+      <button type="button" data-body-more class="ml-1 align-baseline text-primary-container hover:underline">devamını oku</button>
+    </span>
+    <span data-body-full class="hidden">${escapeHTML(text)}</span>
+  </p>`;
+}
+
 function feedPostCard(post, { compact = false } = {}) {
   const author = post.author || {};
   const film = post.film;
@@ -1493,9 +1516,7 @@ function feedPostCard(post, { compact = false } = {}) {
   // that is a bigger trust question than profanity.
   const text = post.spoiler
     ? `<p class="mt-2 text-[15px] leading-relaxed"><button type="button" data-reveal-spoiler class="w-full rounded-lg bg-surface-variant/70 px-3 py-2 text-left text-sm text-on-surface-variant">Spoiler — göstermek için dokun</button><span class="hidden">${body}</span></p>`
-    : (body
-      ? `<p class="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-on-surface">${body}</p>`
-      : '');
+    : feedBodyMarkup(post.body || '');
   return `<article class="border-b border-outline-variant/20 px-4 py-4 transition-colors hover:bg-surface-container/30" data-post-id="${escapeHTML(post.id)}">
     <div class="flex min-h-[128px] items-start gap-3">
       <div class="flex min-h-[132px] min-w-0 flex-1 flex-col pt-0.5">
@@ -5314,6 +5335,14 @@ function handleFeedCardClick(event) {
   if (follow) { toggleFollow(follow); return; }
   const card = event.target.closest('[data-post-id]');
   if (!card) return;
+  if (event.target.closest('[data-body-more]')) {
+    const holder = event.target.closest('[data-post-body]');
+    if (holder) {
+      holder.querySelector('[data-body-short]')?.classList.add('hidden');
+      holder.querySelector('[data-body-full]')?.classList.remove('hidden');
+    }
+    return;
+  }
   if (event.target.closest('[data-reveal-spoiler]')) {
     const hidden = card.querySelector('[data-reveal-spoiler] + span');
     if (hidden) {
