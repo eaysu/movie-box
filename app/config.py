@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     auth_identity_secret: str = ""
     auth_cookie_secure: bool = True
-    auth_session_max_age: int = 60 * 60 * 24 * 7
+    # "Beni hatırla" işaretliyse oturum tarayıcı sınırına kadar yaşar
+    # (Chrome çerezleri 400 günde keser); işaretlenmezse bir gün.
+    auth_session_max_age: int = 60 * 60 * 24 * 400
+    auth_session_short_max_age: int = 60 * 60 * 24
     web_push_vapid_public_key: str = ""
     web_push_vapid_private_key: str = ""
     web_push_vapid_subject: str = "mailto:hello@movieboxd.onrender.com"

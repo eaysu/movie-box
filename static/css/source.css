@@ -603,7 +603,10 @@
   body.has-shell #view-tools,
   body.has-shell #view-inbox,
   body.has-shell #view-blends,
-  body.has-shell #view-sinefil { padding-top: .75rem; }
+  body.has-shell #view-sinefil,
+  body.has-shell #view-results,
+  body.has-shell #view-random-result,
+  body.has-shell #view-blend-result { padding-top: .75rem; }
 
   /* Sütun yüksekliği tam ekran + alt çubuk olunca sayfa içerik kısa olsa bile
      kaydırılabiliyordu; çubuğun payını düşüyoruz. */
@@ -683,3 +686,25 @@
       padding-bottom: 0 !important;
     }
   }
+
+  /* ── Sayfa üst çubuğu ─────────────────────────────────────────────────
+     Her ekranın tepesinde aynı yüksekliğe oturan tek bir satır: solda geri
+     bağlantısı, sağda profil fotoğrafı ve varsa sayfa eylemleri. Eskiden her
+     ekran kendi yüksekliğini ve hizasını kuruyordu. */
+  .page-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; min-height: 3.5rem;
+  }
+  .page-topbar__actions { display: flex; align-items: center; gap: .5rem; }
+  .page-back {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .9375rem; line-height: 1;
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease;
+  }
+  .page-back:hover { color: rgb(var(--color-on-surface)); }
+  .page-back .material-symbols-outlined { font-size: 20px; }
+  /* Üst çubuktaki yuvarlak düğmeler tek boy. */
+  .page-topbar__actions .avatar-button,
+  .page-topbar__actions > button { height: 2.25rem; width: 2.25rem; }
+  .page-topbar__actions > button.page-action--wide { width: auto; padding: 0 .85rem; }

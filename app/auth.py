@@ -1214,11 +1214,14 @@ class AuthService:
                 "has_favorite_match": has_favorite_match,
                 "semantic_match": semantic_match,
                 "shared_titles": shared_titles[:3],
+                # Kartın altındaki tek satır: neden bu kişi çıktı. Ortak favori
+                # yoksa yönetmen, o da yoksa "birbirinize önerecek çok film".
                 "match_note": (
                     "Film zevkiniz benziyor"
                     if has_favorite_match
-                    else ("Benzer yönetmenlere dönüyorsunuz" if directors else (
-                        "Benzer film dillerine dönüyorsunuz" if semantic_match else "Zevk haritalarınız yakın"
+                    else ("Benzer yönetmenleri beğeniyorsunuz" if directors else (
+                        "Benzer film dillerine dönüyorsunuz" if semantic_match
+                        else "Birbirinize önerecek çok filminiz var"
                     ))
                 ),
                 "letters_open": bool(candidate.get("letter_receiving_enabled", False)),

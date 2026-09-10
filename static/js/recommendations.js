@@ -9,13 +9,10 @@ function posterLink(inner, film) {
     : inner;
 }
 
-// "Konu" — the film's plot summary.
-function overviewBlock(film) {
-  if (!film.overview) return '';
-  return `<div>
-      <p class="font-label-sm text-label-sm uppercase tracking-[.18em] text-on-surface-variant/55 mb-1.5">Konu</p>
-      <p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">${escapeHTML(film.overview)}</p>
-    </div>`;
+// Konu özeti kartta yer almıyor: okunması gereken tek paragraf "sana neden
+// önerdik" — filmin kendi tanıtımı Letterboxd bağlantısının ardında.
+function overviewBlock() {
+  return '';
 }
 
 // "Sana neden önerdik?" — the LLM's reasoning for this pick.
@@ -82,9 +79,8 @@ function buildAltCard(film, idx) {
     : `<div class="w-full h-full flex items-center justify-center bg-surface-container">
           <span class="material-symbols-outlined text-[40px] text-on-surface-variant/20">movie</span>
        </div>`;
-  const shortOverview = film.overview
-    ? `<p class="font-label-sm text-label-sm text-on-surface-variant/60 line-clamp-3 leading-relaxed">${escapeHTML(film.overview)}</p>`
-    : '';
+  // Yan kartlarda da konu özeti yok; sebep paragrafı kalıyor.
+  const shortOverview = '';
   const shortReason = film.reason
     ? `<div class="mt-1 rounded-lg border border-primary-container/20 bg-primary-container/[0.06] p-2.5">
          <p class="font-label-sm text-[9px] uppercase tracking-[.14em] text-primary-container mb-1">Sana neden önerdik?</p>

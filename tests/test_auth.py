@@ -776,3 +776,53 @@ def test_bulk_letterbox_open_is_a_script_not_a_schema_line():
 
     assert "UPDATE public.users SET letter_receiving_enabled" not in schema
     assert (Path(__file__).parents[1] / "scripts" / "open_letterboxes.py").exists()
+
+
+def test_remember_me_keeps_the_session_until_logout_and_one_day_without_it():
+    """Reported: sessions expired on their own after a week either way.
+
+    Checked, the session should outlive the browser being closed and only end
+    at an explicit logout; unchecked, it should be gone the next day.
+    """
+    from app.config import Settings
+
+    settings = Settings()
+    assert settings.auth_session_max_age == 60 * 60 * 24 * 400  # tarayıcı üst sınırı
+    assert settings.auth_session_short_max_age == 60 * 60 * 24
+
+    main_py = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+    setter = main_py.split("def _set_session_cookies", 1)[1].split("\ndef ", 1)[0]
+    assert "remember: bool = True" in setter
+    assert "settings.auth_session_short_max_age" in setter
+    # The choice rides in its own cookie because the refresh token is httponly:
+    # a token rotation has to rebuild the same lifetime.
+    assert "REMEMBER_COOKIE" in setter
+    refresh = main_py.split('@app.post("/api/auth/refresh")', 1)[1].split("@app.", 1)[0]
+    assert "remember=_remembered(request)" in refresh
+    # Logging out clears the marker along with the tokens.
+    clear = main_py.split("def _clear_session_cookies", 1)[1].split("\ndef ", 1)[0]
+    assert "REMEMBER_COOKIE" in clear
+
+    app_js = (Path(__file__).parents[1] / "static" / "js" / "app.js").read_text()
+    html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    assert 'id="login-remember"' in html
+    assert "remember: $('login-remember').checked" in app_js
+
+
+def test_every_screen_shares_one_top_bar():
+    """Reported: the back link and avatar sat at a different height per page."""
+    html = (Path(__file__).parents[1] / "static" / "index.html").read_text()
+    css = (Path(__file__).parents[1] / "static" / "css" / "source.css").read_text()
+
+    bar = css.split(".page-topbar {", 1)[1].split("}", 1)[0]
+    assert "min-height: 3.5rem" in bar
+    assert "align-items: center" in bar
+    # One shape, used by every screen that has a back link.
+    for back in ("btn-profile-back", "btn-tools-back", "btn-inbox-back",
+                 "btn-blends-back", "btn-sinefil-back", "btn-thread-back",
+                 "btn-user-back", "btn-follows-back", "btn-notifications-back",
+                 "btn-new-search", "btn-random-new-search", "btn-blend-back"):
+        row = html.split(f'id="{back}"', 1)[0]
+        assert row.rsplit("<div", 1)[1].startswith(' class="page-topbar'), back
+    # And "Ana sayfa" is gone: home is the feed now.
+    assert "Ana sayfa" not in html

@@ -245,7 +245,7 @@ def test_public_registration_count_is_rendered_without_exposing_user_records():
     assert "count.toLocaleString('tr-TR')" in app_js
 
 
-def test_sinefil_area_uses_compact_cards_and_profile_modal():
+def test_sinefil_area_opens_a_profile_page_from_the_card():
     html = (ROOT / "static" / "index.html").read_text()
     app_js = (ROOT / "static" / "js" / "app.js").read_text()
     auth_py = (ROOT / "app" / "auth.py").read_text()
@@ -254,7 +254,6 @@ def test_sinefil_area_uses_compact_cards_and_profile_modal():
     assert 'id="profile-sinefil-area"' in html
     assert 'id="profile-discovery-toggle"' in html
     assert 'id="view-sinefil"' in html
-    assert 'id="dialog-sinefil-profile"' in html
     assert "Sinefil Sineması" in html
     assert "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS discoverable BOOLEAN NOT NULL DEFAULT TRUE;" in schema
     assert "idx_users_sinefil_directory" in schema
@@ -263,8 +262,15 @@ def test_sinefil_area_uses_compact_cards_and_profile_modal():
     assert 'id="sinefil-pagination"' in html
     assert 'data-sinefil-page' in app_js
     assert 'data-sinefil-profile=' in app_js
-    assert "/personality`" in app_js
-    assert "Film zevkiniz benziyor" in app_js
+    # Avatarına dokunmak profili bir sayfa olarak açar; kart görünümü kalktı.
+    assert "openUserPage(profile.dataset.sinefilProfile" in app_js
+    assert 'id="dialog-sinefil-profile"' not in html
+    assert "openSinefilProfile" not in app_js
+    # Kartın altındaki tek satır sunucudan gelir, arayüzde sabit değil.
+    card = app_js.split("function sinefilCard", 1)[1].split("\n}", 1)[0]
+    assert "profile.match_note" in card
+    assert "Profili görüntüle" not in card
+    assert "Film zevkiniz benziyor" in auth_py
     assert "def list_sinefil_cards" in auth_py
     assert "def sinefil_personality" in auth_py
 
@@ -428,7 +434,7 @@ def test_a_shell_page_starts_at_its_top_and_does_not_scroll_for_nothing():
 
     # The fixed header is hidden inside the shell, so its reserved space goes.
     assert "body.has-shell #view-profile" in css
-    assert "body.has-shell #view-sinefil { padding-top: .75rem; }" in css
+    assert "body.has-shell #view-blend-result { padding-top: .75rem; }" in css
     # A full-height column plus the tab bar was always 4.5rem too tall.
     assert ".shell-column { min-height: calc(100dvh - 4.5rem); }" in css
     assert "min-h-screen border-outline-variant/20" not in html
@@ -467,12 +473,26 @@ def test_the_profile_button_is_the_members_own_avatar_on_every_screen():
     # One painter fills every avatar button, header and column headers alike.
     assert "function paintAvatarButtons" in app_js
     assert html.count("avatar-button") >= 2
-    assert html.count("data-open-profile") == 8  # her ekranın kendi üst satırı
+    # Her ekranın kendi üst satırı bir tane taşır; sonuç ekranları da dahil.
+    assert html.count("data-open-profile") == 11
     # Hidden only where there is no account yet.
     block = app_js.split("const showHeaderProfile", 1)[1].split(";", 1)[0]
     for view in ("'auth'", "'onboarding'", "'loading'", "'blend-loading'"):
         assert view in block, view
     assert "OWN_HEADER_VIEWS.includes(name)" in block
+
+
+def test_the_recommendation_card_keeps_only_the_reason():
+    """Reported: the taste paragraph and the plot summary were noise."""
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+    reco_js = (ROOT / "static" / "js" / "recommendations.js").read_text()
+
+    # Poster, title, director, genres and "sana neden önerdik" — nothing else.
+    assert "function overviewBlock() {\n  return '';\n}" in reco_js
+    assert "const shortOverview = '';" in reco_js
+    assert "whyBlock" in reco_js
+    # And the summary paragraph above the card is gone.
+    assert "escapeHTML(o.summary)" not in app_js
 
 
 def test_a_refresh_reopens_the_page_you_were_on():
@@ -624,8 +644,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "4b784f0f2795ac1b38eadeaac9af004dcf8e35a1f3b4989f7354c9a43c0f7865",
-            "static/app.css": "a6f0c573f6e175d7efb0bf4ec6e62ae80f0b2f8d46e65d18e40bbbd3206eac10",
+            "static/js/app.js": "c2b3479812051869ccb32bab64fccbbda68d971ee0fd41985604f3b8d2a7c5e1",
+            "static/app.css": "7ec0d00d27fe853f10169ea8ba36b2f817005c3c6e3e171ece6d59399f4b2b9b",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
     for path, digest in expected.items():
@@ -657,11 +677,11 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (ROOT / "static" / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260907.74"
+    css_version = "v=20260910.76"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260907.86" in html
+    assert "/static/js/app.js?v=20260910.88" in html
     assert app_js.count(f"?{dependency_version}") == 4
-    assert "./recommendations.js?v=20260907.1" in app_js
+    assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
     assert "./auth.js?v=20260902.16" in app_js
     assert f"./dom.js?{dependency_version}" in auth_js

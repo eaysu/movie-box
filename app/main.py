@@ -190,6 +190,9 @@ _readiness_cache = {"checked_at": 0.0, "ready": False}
 ACCESS_COOKIE = "mb_access"
 REFRESH_COOKIE = "mb_refresh"
 CSRF_COOKIE = "mb_csrf"
+# Yenileme çerezi httponly olduğu için tercihi ayrı tutuyoruz: token her
+# yenilendiğinde ömrünü yeniden aynı seçime göre kurmak gerekiyor.
+REMEMBER_COOKIE = "mb_remember"
 
 SHARE_IMAGE_ALLOWED_HOSTS = frozenset({
     "image.tmdb.org",
@@ -354,9 +357,19 @@ async def _record_activity_event(
         )
 
 
-def _set_session_cookies(response: Response, session) -> str:
+def _set_session_cookies(response: Response, session, *, remember: bool = True) -> str:
+    """Oturum çerezlerini yazar.
+
+    "Beni hatırla" işaretliyse oturum kullanıcı çıkış yapana kadar durur;
+    işaretlenmezse bir gün sonra kendiliğinden düşer. Seçim ayrı bir çerezde
+    saklanır, çünkü yenileme uçları oturumu tazelerken aynı ömrü kurmalı.
+    """
     settings = get_settings()
-    access_age = max(60, min(int(session.expires_in), settings.auth_session_max_age))
+    session_age = (
+        settings.auth_session_max_age if remember
+        else settings.auth_session_short_max_age
+    )
+    access_age = max(60, min(int(session.expires_in), session_age))
     shared = {
         "secure": settings.auth_cookie_secure,
         "samesite": "lax",
@@ -372,7 +385,7 @@ def _set_session_cookies(response: Response, session) -> str:
     response.set_cookie(
         REFRESH_COOKIE,
         session.refresh_token,
-        max_age=settings.auth_session_max_age,
+        max_age=session_age,
         httponly=True,
         **shared,
     )
@@ -380,16 +393,28 @@ def _set_session_cookies(response: Response, session) -> str:
     response.set_cookie(
         CSRF_COOKIE,
         csrf_token,
-        max_age=settings.auth_session_max_age,
+        max_age=session_age,
         httponly=False,
+        **shared,
+    )
+    response.set_cookie(
+        REMEMBER_COOKIE,
+        "1" if remember else "0",
+        max_age=session_age,
+        httponly=True,
         **shared,
     )
     return csrf_token
 
 
+def _remembered(request: Request) -> bool:
+    """Yenilerken ilk girişteki seçimi izler; çerez yoksa kısa oturum."""
+    return request.cookies.get(REMEMBER_COOKIE, "") == "1"
+
+
 def _clear_session_cookies(response: Response) -> None:
     settings = get_settings()
-    for key in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
+    for key in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, REMEMBER_COOKIE):
         response.delete_cookie(
             key,
             path="/",
@@ -1048,6 +1073,7 @@ class OwnershipVerifyRequest(_UsernameRequest):
 class LoginRequest(_UsernameRequest):
     username: str
     password: str
+    remember: bool = True
 
 
 class PasswordResetStartRequest(_UsernameRequest):
@@ -1421,7 +1447,7 @@ async def login(req: LoginRequest, request: Request, response: Response) -> dict
         )
     except AuthError as exc:
         _raise_auth_http(exc)
-    _set_session_cookies(response, session)
+    _set_session_cookies(response, session, remember=req.remember)
     return {"ok": True, "account": session.account.__dict__}
 
 
@@ -1505,7 +1531,7 @@ async def refresh_session(request: Request, response: Response) -> dict:
     except AuthError as exc:
         _clear_session_cookies(response)
         _raise_auth_http(exc)
-    _set_session_cookies(response, session)
+    _set_session_cookies(response, session, remember=_remembered(request))
     return {"ok": True, "account": session.account.__dict__}
 
 

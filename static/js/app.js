@@ -18,7 +18,7 @@ import {
 } from './auth.js?v=20260902.16';
 import { directorAvatar, directorFilmGrid, directorFilmTile } from './profile.js?v=20260902.15';
 import { animateScore, getScoreInfo } from './blend.js?v=20260902.15';
-import { createRecommendationCards } from './recommendations.js?v=20260907.1';
+import { createRecommendationCards } from './recommendations.js?v=20260910.1';
 
 let _shareCardsModule;
 function loadShareCardsModule() {
@@ -587,7 +587,6 @@ function _showTasteReco(index) {
   $('profile-reco-panel').classList.add('open');
   $('profile-reco-body').innerHTML = `
     ${_discoverNote(o.discover)}
-    ${o.summary ? `<p class="font-body-md text-body-md text-on-surface-variant mb-4">${escapeHTML(o.summary)}</p>` : ''}
     <div class="line-rise">${buildHeroCard(o.pool[i])}</div>
     <div class="mt-4 flex items-center justify-between gap-3">
       <button type="button" data-taste-nav="-1" ${i === 0 ? 'disabled' : ''} class="w-10 h-10 rounded-full border border-outline-variant/30 text-on-surface-variant hover:text-on-surface disabled:opacity-25 flex items-center justify-center transition-colors"><span class="material-symbols-outlined text-[20px]">chevron_left</span></button>
@@ -881,6 +880,9 @@ async function restoreRoute() {
 const SHELL_VIEWS = [
   'feed', 'thread', 'user', 'follows', 'notifications',
   'profile', 'tools', 'inbox', 'blends', 'sinefil',
+  // Sonuç ekranları da kabuğun içinde: tepesinde MOVIEBOXD bandı ve "Akış"
+  // düğmesi yerine kendi geri bağlantısı ve profil avatarı var.
+  'results', 'random-result', 'blend-result',
 ];
 // The feed family carries its own column header, so the global logo bar would
 // be a second, redundant band above it — Twitter has one.
@@ -897,6 +899,7 @@ const NAV_OF_VIEW = {
   feed: 'feed', thread: 'feed', user: 'feed', follows: 'feed',
   notifications: 'notifications', inbox: 'inbox', blends: 'blends',
   sinefil: 'sinefil', profile: 'profile', tools: '',
+  results: '', 'random-result': '', 'blend-result': '',
 };
 
 function paintShell(name) {
@@ -4293,56 +4296,27 @@ function sinefilCard(profile) {
     const poster = safeImageURL(film.poster_url);
     const title = escapeHTML(film.title || 'Film');
     return poster
-      ? `<img src="${poster}" alt="${title}" class="h-20 w-full rounded-lg object-cover bg-surface-variant" loading="lazy"/>`
-      : `<div class="flex h-20 items-center justify-center rounded-lg bg-surface-variant p-2 text-center font-label-sm text-[9px] text-on-surface-variant">${title}</div>`;
+      ? `<img src="${poster}" alt="${title}" class="aspect-[2/3] w-full rounded-lg object-cover bg-surface-variant" loading="lazy"/>`
+      : `<div class="flex aspect-[2/3] items-center justify-center rounded-lg bg-surface-variant p-2 text-center font-label-sm text-[9px] text-on-surface-variant">${title}</div>`;
   }).join('') || '<div class="col-span-4 py-5 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</div>';
-  const shared = (profile.shared_titles || []).map(title => `<span class="rounded-full bg-tertiary-container/15 px-2 py-1 text-[10px] text-tertiary-container">${escapeHTML(title)}</span>`).join('');
-  const match = profile.has_favorite_match
-    ? `<div class="mobile-flat mobile-flat--tight mt-4 rounded-xl border border-tertiary-container/30 bg-tertiary-container/10 p-3"><p class="font-label-sm text-label-sm uppercase tracking-wide text-tertiary-container">Film zevkiniz benziyor</p>${shared ? `<div class="mt-2 flex flex-wrap gap-1.5">${shared}</div>` : ''}</div>`
-    : `<p class="mt-4 font-label-sm text-label-sm text-on-surface-variant">${escapeHTML(profile.match_note || 'Zevk haritalarınız yakın')}</p>`;
+  // Profil fotoğrafı ve ad, profilin kendisine götürür: ayrı bir "görüntüle"
+  // düğmesine gerek yok.
+  const head = `<button type="button" data-sinefil-profile="${username}" class="flex min-w-0 items-center gap-3 text-left">
+      ${avatar
+        ? `<img src="${avatar}" alt="${name}" class="h-12 w-12 shrink-0 rounded-full object-cover ring-1 ring-tertiary-container/35"/>`
+        : `<span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-md text-tertiary-container">${initial}</span>`}
+      <span class="min-w-0">
+        <strong class="block truncate font-headline-md text-[18px] text-on-surface">@${username}</strong>
+        <span class="mt-0.5 flex items-center gap-1 truncate text-sm text-on-surface-variant">${name}${profile.private_account ? '<span class="material-symbols-outlined text-[15px]" title="Kilitli hesap">lock</span>' : ''}</span>
+      </span>
+    </button>`;
   return `<article class="rounded-2xl border border-outline-variant/25 bg-surface-container p-4 shadow-xl">
-    <div class="flex items-center gap-3">
-      ${avatar ? `<img src="${avatar}" alt="${name}" class="h-12 w-12 rounded-full object-cover ring-1 ring-tertiary-container/35"/>` : `<div class="flex h-12 w-12 items-center justify-center rounded-full bg-tertiary-container/15 font-headline-md text-tertiary-container">${initial}</div>`}
-      <div class="min-w-0"><h2 class="truncate font-headline-md text-headline-md text-on-surface">${name}</h2><p class="mt-0.5 flex items-center gap-1 text-sm text-on-surface-variant">@${username}${profile.private_account ? '<span class="material-symbols-outlined text-[15px]" title="Kilitli hesap">lock</span>' : ''}</p></div>
-    </div>
-    ${match}
+    <div class="flex items-start justify-between gap-3">${head}${followButton(profile)}</div>
     <div class="mt-4 grid grid-cols-4 gap-2">${posters}</div>
-    <div class="mt-4 flex gap-2"><button type="button" data-sinefil-profile="${username}" class="min-w-0 flex-1 rounded-xl border border-outline-variant/30 bg-surface px-3 py-2.5 font-label-sm text-label-sm text-on-surface-variant hover:border-tertiary-container/40 hover:text-tertiary-container">Profili görüntüle</button>${followButton(profile)}</div>
+    <p class="mt-3 text-left font-label-sm text-label-sm text-tertiary-container">${escapeHTML(profile.match_note || 'Zevk haritalarınız yakın')}</p>
   </article>`;
 }
 
-async function openSinefilProfile(username) {
-  const profile = _sinefilProfiles.find(item => item.username === username);
-  if (!profile) return;
-  _activeSinefilProfile = profile;
-  $('sinefil-profile-title').textContent = profile.display_name || username;
-  $('sinefil-profile-username').textContent = `@${username}`;
-  const fallback = $('sinefil-profile-avatar-fallback');
-  fallback.textContent = (profile.display_name || username || '?')[0].toUpperCase();
-  const avatar = $('sinefil-profile-avatar');
-  const avatarUrl = safeImageURL(profile.avatar_url);
-  avatar.classList.toggle('hidden', !avatarUrl); fallback.classList.toggle('hidden', Boolean(avatarUrl));
-  if (avatarUrl) { avatar.src = avatarUrl; avatar.alt = profile.display_name || username; }
-  const posters = (profile.favorites || []).slice(0, 4).map(film => { const url = safeImageURL(film.poster_url); return url ? `<img src="${url}" alt="${escapeHTML(film.title || 'Film')}" class="aspect-[2/3] w-full rounded-lg object-cover"/>` : `<div class="flex aspect-[2/3] items-center justify-center rounded-lg bg-surface-variant p-2 text-center text-[10px] text-on-surface-variant">${escapeHTML(film.title || 'Film')}</div>`; }).join('');
-  $('sinefil-profile-posters').innerHTML = posters || '<p class="col-span-4 text-center text-sm text-on-surface-variant">Fav 4 henüz hazır değil.</p>';
-  $('sinefil-profile-personality').textContent = 'Okuma yükleniyor…';
-  $('sinefil-profile-blend').onclick = () => requestSinefilBlend(username, $('sinefil-profile-blend'));
-  $('sinefil-profile-open').onclick = () => {
-    $('dialog-sinefil-profile').close();
-    openUserPage(username, { from: 'sinefil' });
-  };
-  const letterButton = $('sinefil-profile-letter');
-  letterButton.classList.toggle('hidden', !profile.letters_open);
-  letterButton.onclick = () => openLetterCompose(username);
-  const blendButton = $('sinefil-profile-blend');
-  const canStartBlend = profile.follow_status === 'accepted';
-  blendButton.disabled = !canStartBlend;
-  blendButton.title = canStartBlend ? '' : 'Blend için önce karşılıklı takip gerekiyor.';
-  blendButton.classList.toggle('opacity-45', !canStartBlend);
-  $('dialog-sinefil-profile').showModal();
-  try { const data = await apiJSON(`/api/sinefil-alani/${encodeURIComponent(username)}/personality`); $('sinefil-profile-personality').textContent = data.personality || 'Bu profil için kişilik okuması henüz hazır değil.'; }
-  catch (error) { $('sinefil-profile-personality').textContent = error.message || 'Kişilik okuması yüklenemedi.'; }
-}
 
 // Page numbers are windowed so the row always fits: five on a phone, ten on a
 // wider screen. The window slides with the current page (page 4 of many shows
@@ -4844,6 +4818,8 @@ async function loginAccount(event) {
       body: JSON.stringify({
         username: $('login-username').value.trim(),
         password: $('login-password').value,
+        // İşaretliyse oturum çıkış yapılana kadar sürer, değilse bir gün.
+        remember: $('login-remember').checked,
       }),
     });
     $('login-password').value = '';
@@ -4914,7 +4890,7 @@ async function verifyRegistration() {
         const data = await apiJSON('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password: _pendingRegPassword }),
+          body: JSON.stringify({ username, password: _pendingRegPassword, remember: true }),
         });
         _pendingRegPassword = null;
         setAuthMessage(null);
@@ -5057,7 +5033,7 @@ $('header-privacy').addEventListener('click', () => openInfoDialog('dialog-priva
 document.querySelectorAll('[data-close-dialog]').forEach(button => {
   button.addEventListener('click', () => $(button.dataset.closeDialog)?.close());
 });
-[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-sinefil-profile'), $('dialog-letter-compose'), $('dialog-letter-followers'), $('dialog-install-app'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
+[$('dialog-how-it-works'), $('dialog-privacy'), $('dialog-share'), $('dialog-top-films'), $('dialog-png-share'), $('dialog-letter-help'), $('dialog-letter-compose'), $('dialog-letter-followers'), $('dialog-install-app'), $('dialog-blocked-users'), $('dialog-profile-follows')].forEach(dialog => {
   dialog.addEventListener('click', event => {
     if (event.target === dialog) dialog.close();
   });
@@ -5092,7 +5068,6 @@ $('profile-private-toggle').addEventListener('click', togglePrivateAccount);
 $('profile-browser-notifications').addEventListener('click', enableBrowserNotifications);
 $('menu-blocked-users').addEventListener('click', openBlockedUsers);
 $('btn-sinefil-back').addEventListener('click', () => showView(homeView()));
-$('btn-sinefil-refresh').addEventListener('click', loadSinefilArea);
 $('sinefil-search').addEventListener('input', () => {
   clearTimeout(_sinefilSearchTimer);
   _sinefilSearchTimer = setTimeout(() => loadSinefilArea(1), 280);
@@ -5107,7 +5082,8 @@ $('sinefil-grid').addEventListener('click', event => {
   if (follow) { toggleFollow(follow); return; }
   const profile = event.target.closest('[data-sinefil-profile]');
   if (profile) {
-    openSinefilProfile(profile.dataset.sinefilProfile);
+    // Profil bir kart değil, bir sayfa: notlar, takipçiler ve Fav 4 orada.
+    openUserPage(profile.dataset.sinefilProfile, { from: 'sinefil' });
     return;
   }
   const blend = event.target.closest('[data-sinefil-blend]');
@@ -5441,7 +5417,6 @@ document.addEventListener('click', event => {
 });
 $('btn-profile-sync').addEventListener('click', () => syncProfile(false, true));
 $('btn-profile-back').addEventListener('click', () => showView(homeView()));
-$('btn-inbox-refresh').addEventListener('click', () => loadLetters());
 $('btn-inbox-back').addEventListener('click', () => showView(homeView()));
 window.addEventListener('resize', () => {
   if (!$('view-inbox').classList.contains('hidden')) renderLetterWorkspace();
