@@ -827,7 +827,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     files that no longer existed.
     """
     expected = {
-        "js/app.js": "b2a3887359a9160bcf317182223572de5471acdd26fc83344538077b51596b81",
+        "js/app.js": "a9e195eee9c6515c9dd4fe520ed9e6e274f3454737850825f290706fb4ece71e",
         "app.css": "b6c935fce2a68447a11ef47cb64bc7462e119baa2ee65ee57cb77065ff8b2a9a",
         "js/share-cards.js": "4c5da95de0e9a8b6a5c1915ba5aecd2cbd9b5449a5179f31671bcc9ca6ac1cb3",
         "site.webmanifest": "7a7de349179ed9f226d38632dfde5a8478edd10305972ea52641b0dc6aa7f405",
@@ -867,7 +867,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260910.82"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.101" in html
+    assert "/static/js/app.js?v=20260910.102" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
@@ -963,3 +963,22 @@ def test_sync_progress_polling_does_not_reload_the_full_profile_snapshot():
     assert "if (!active) await loadProfile();" in sweep_poll
     assert "apiJSON('/api/profile/sync-status')" in onboarding_poll
     assert onboarding_poll.count("apiJSON('/api/profile/me')") == 2
+
+
+def test_a_new_member_is_invited_to_install_the_app_too():
+    """Kaydolan üye kurulum çağrısını ilk oturumunda görmeli.
+
+    `enterApp` onboarding gerekiyorsa erken dönüyor, dolayısıyla kurulum
+    diyaloğunu çağıran satıra hiç ulaşılmıyordu: yeni üye çağrıyı ancak bir
+    sonraki girişinde görüyordu. Onboarding bittiğinde de çağrılıyor artık.
+    """
+    app_js = (FRONTEND / "js" / "app.js").read_text()
+
+    finish = app_js.split("function finishOnboarding()", 1)[1].split("\nasync function ", 1)[0]
+    assert "setTimeout(showInstallAppDialog, 1500)" in finish
+    # Onboarding kilitli tam ekran: modal onun üstüne binmemeli.
+    guard = app_js.split("function showInstallAppDialog()", 1)[1].split("\n}", 1)[0]
+    assert "_shownView === 'onboarding'" in guard
+    # Zaten kurulu bir uygulamada veya Chrome çağrıyı göndermediyse açılmıyor.
+    assert "isInstalledApp()" in guard
+    assert "!_deferredInstallPrompt" in guard

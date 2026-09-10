@@ -3753,6 +3753,11 @@ function finishOnboarding() {
   showView('profile');
   if (_persistedProfile) renderPersistedProfile(_persistedProfile);
   else loadProfile();
+  // Yeni kaydolan da uygulamayı kurma çağrısını görsün. `enterApp` onboarding
+  // yoluna sapıp geri döndüğü için buraya kadar hiç çağrılmıyordu, yani yeni
+  // üye çağrıyı ancak bir sonraki girişinde görüyordu. Kısa gecikme profilin
+  // ilk kez boyanmasına izin veriyor; modal onun üstüne aniden binmiyor.
+  setTimeout(showInstallAppDialog, 1500);
 }
 
 async function completeOnboarding() {
