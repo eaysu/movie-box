@@ -15,11 +15,15 @@ başlarken akışı bir kerede doldurmak için.
 * **Yalnız yorumlu kayıt.** Cümlesi olmayan izleme kaydı akışa girmiyor; puan
   tek başına okunacak bir şey taşımıyor.
 
+Kaynak RSS değil `/films/reviews/` sayfaları: RSS yalnızca son ~50 kaydı
+taşıyor, dolayısıyla yıllar öncesinin yorumları oradan hiç görünmüyor. Uzun
+yorumlar liste sayfasında kırpıldığı için tam metin ucu ayrıca çağrılıyor.
+
     python -m scripts.import_diary                 # ne olacağını göster
     python -m scripts.import_diary --apply
     python -m scripts.import_diary --user enesaysu --apply
     python -m scripts.import_diary --apply --pause 5
-    python -m scripts.import_diary --apply --limit 5
+    python -m scripts.import_diary --apply --limit 5   # üye başına 5'le sınırla
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ import sys
 
 from app.auth import AuthService
 from app.config import get_settings
-from app.scraper import scrape_diary_entries
+from app.scraper import scrape_reviewed_diary
 
 
 def _service() -> AuthService:
@@ -52,14 +56,16 @@ def _members(service, usernames: list[str]) -> list[dict]:
 
 
 def _rows_from(entries, limit: int) -> list[dict]:
-    """Yorumlu kayıtları en yenisinden alır ve `limit` taneye indirir.
+    """Yorumlu kayıtları en yenisinden sıralar; `limit` verilmişse kısaltır.
 
-    Sıralama ve kesme burada yapılıyor, filtrelemeden *sonra*: en yeni üç kayıt
-    yorumsuz çıkarsa hiçbir şey aktarılmaz gibi bir sonuç doğmasın.
+    Sıralama ve kesme filtrelemeden *sonra*: en yeni kayıtlar yorumsuz çıkarsa
+    hiçbir şey aktarılmaz gibi bir sonuç doğmasın. `limit=0` varsayılan ve
+    "hepsi" demek — üyenin bütün yazılı arşivi kendi notlarına giriyor, akışı
+    haftalık pencere zaten daraltıyor.
     """
     reviewed = [entry for entry in entries if entry.slug and (entry.review or "").strip()]
     reviewed.sort(key=lambda entry: entry.watched_on, reverse=True)
-    entries = reviewed[:max(1, limit)]
+    entries = reviewed[:limit] if limit > 0 else reviewed
     return [
         {
             "source_key": entry.key,
@@ -84,7 +90,7 @@ async def run(service, members: list[dict], *, apply: bool, pause: float, limit:
     for index, member in enumerate(members, start=1):
         username = member["username"]
         prefix = f"  [{index}/{len(members)}] @{username}"
-        entries = await scrape_diary_entries(username)
+        entries = await scrape_reviewed_diary(username)
         # `None` okunamadı demek — damgayı atmıyoruz, sıradaki koşu yine dener.
         if entries is None:
             failed += 1
@@ -134,8 +140,8 @@ def main() -> int:
         help="Üyeler arası bekleme (saniye, varsayılan 3)",
     )
     parser.add_argument(
-        "--limit", type=int, default=3,
-        help="Üye başına en yeni kaç yorumlu kayıt (varsayılan 3)",
+        "--limit", type=int, default=0,
+        help="Üye başına en yeni kaç yorumlu kayıt (0 = hepsi, varsayılan)",
     )
     args = parser.parse_args()
 

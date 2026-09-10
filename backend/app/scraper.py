@@ -944,6 +944,116 @@ async def scrape_diary_entries(username: str) -> list[DiaryEntry] | None:
     return out
 
 
+_STAR_VALUES = {"★": 1.0, "½": 0.5}
+_VIEWING_ID = re.compile(r"^viewing:(\d+)$")
+_TRAILING_YEAR = re.compile(r"\s*\((\d{4})\)\s*$")
+
+
+def _stars_to_rating(article) -> Optional[float]:
+    """`★★★½` → 3.5. Puanı olmayan kayıtta yıldız düğümü hiç yok."""
+    title = article.select_one("svg.glyph.-rating title")
+    if not title:
+        return None
+    total = sum(_STAR_VALUES.get(char, 0.0) for char in title.get_text(strip=True))
+    return total or None
+
+
+def _parse_review_page(page_html: str) -> list[DiaryEntry]:
+    """Bir `/films/reviews/` sayfasındaki kayıtları çıkarır.
+
+    Kaydın kimliği `data-object-id="viewing:<id>"`; RSS'in
+    `letterboxd-review-<id>` guid'iyle aynı sayı. İkisi aynı anahtarı ürettiği
+    için toplu tarama ile günlük RSS taraması aynı kaydı iki kez düşürmüyor.
+    """
+    soup = BeautifulSoup(page_html, "lxml")
+    out: list[DiaryEntry] = []
+    for article in soup.select("article.production-viewing"):
+        match = _VIEWING_ID.match(article.get("data-object-id") or "")
+        body = article.select_one(".js-review-body")
+        if not match or not body:
+            continue
+        poster = article.select_one("[data-item-slug]")
+        stamp = article.select_one("time.timestamp")
+        name = (poster.get("data-item-name") if poster else "") or ""
+        year = _TRAILING_YEAR.search(name)
+        out.append(DiaryEntry(
+            key=f"letterboxd-review-{match.group(1)}",
+            slug=(poster.get("data-item-slug") if poster else "") or "",
+            title=_TRAILING_YEAR.sub("", name).strip(),
+            year=int(year.group(1)) if year else None,
+            watched_on=(stamp.get("datetime") if stamp else "") or "",
+            rating=_stars_to_rating(article),
+            rewatch=False,
+            review=body.get_text("\n", strip=True),
+        ))
+    return out
+
+
+async def scrape_reviewed_diary(
+    username: str, *, max_pages: int = 40,
+) -> list[DiaryEntry] | None:
+    """Üyenin yazılı bütün günce kayıtları — RSS'in son ~50 sınırı olmadan.
+
+    RSS tek istekle geliyor ama yalnızca son elli kaydı taşıyor, dolayısıyla
+    yıllar öncesinin yorumları oradan hiç görünmüyor. `/films/reviews/` sayfası
+    sayfa başına on iki kayıtla bütün arşivi veriyor.
+
+    Uzun yorumlar liste sayfasında kırpılıyor ve sonuna `…` konuyor; ölçtüm,
+    603 karakterlik bir gövdenin tamamı 1254 karakterdi. O yüzden yalnızca
+    kırpılanlar için tam metin ucu ayrıca çağrılıyor — kırpılmamış kaydın
+    fazladan isteğe ihtiyacı yok.
+
+    `None` okunamadı demektir (403/gizli/ağ); boş liste "yazılı kayıt yok"
+    demektir. Toplu aktarım bu ikisini ayırmak zorunda, yoksa tek bir hız
+    sınırı bütün üyeleri "yorumu yok" diye işaretler.
+    """
+    out: list[DiaryEntry] = []
+    seen: set[str] = set()
+    try:
+        async with AsyncSession(impersonate=_DEFAULT_IMPERSONATE) as session:
+            for page in range(1, max_pages + 1):
+                url = f"{BASE_URL}/{username}/films/reviews/page/{page}/"
+                response = await _budgeted_get(
+                    session, url, headers=_NAV_HEADERS, timeout=25,
+                )
+                if response.status_code != 200:
+                    # İlk sayfa okunamadıysa üye hakkında hiçbir şey bilmiyoruz.
+                    return None if page == 1 else out
+                entries = _parse_review_page(response.text)
+                if not entries:
+                    break
+                fresh = [entry for entry in entries if entry.key not in seen]
+                seen.update(entry.key for entry in fresh)
+                for entry in fresh:
+                    if entry.review.endswith("…"):
+                        entry.review = await _full_review_text(
+                            session, entry.key, entry.review,
+                        )
+                out.extend(fresh)
+                if len(entries) < 12:
+                    break
+    except Exception as exc:  # noqa: BLE001 - besleme kritik değil
+        log.warning("reviewed diary failed user=%s: %s", username, exc)
+        return out or None
+    return out
+
+
+async def _full_review_text(session, key: str, fallback: str) -> str:
+    """Kırpılmış yorumun tamamını getirir; başarısız olursa kırpılmışı bırakır."""
+    viewing_id = key.rsplit("-", 1)[-1]
+    try:
+        response = await _budgeted_get(
+            session, f"{BASE_URL}/s/full-text/viewing:{viewing_id}/",
+            headers=_NAV_HEADERS, timeout=20,
+        )
+        if response.status_code != 200:
+            return fallback
+        text = BeautifulSoup(response.text, "lxml").get_text("\n", strip=True)
+        return text.strip() or fallback
+    except Exception:  # noqa: BLE001 - kırpılmış metin hiç yoktan iyidir
+        return fallback
+
+
 async def scrape_following(username: str, *, max_pages: int = 5) -> list[str] | None:
     """Usernames this member follows on Letterboxd, for seeding the app graph.
 

@@ -294,10 +294,12 @@ class DiaryImportTests(unittest.TestCase):
         block = self.scraper.split("def _review_text", 1)[1].split("\nasync def ", 1)[0]
         self.assertIn("_REVIEW_BOILERPLATE.match(piece)", block)
 
-    def test_the_bulk_import_takes_the_newest_reviewed_entries(self):
-        """Üye başına en yeni birkaç yorumlu kayıt; filtreleme kesmeden önce.
+    def test_the_bulk_import_takes_every_reviewed_entry(self):
+        """Üyenin bütün yazılı arşivi; sıralama filtrelemeden sonra.
 
-        Ters sırada olsa en yeni üç kayıt yorumsuz çıktığında hiçbir şey
+        Kesme varsayılan olarak kapalı: akışı daraltan şey artık üye başına bir
+        kota değil, haftalık pencere. `--limit` yalnız deneme için duruyor ve
+        ters sırada olsaydı en yeni kayıtlar yorumsuz çıktığında hiçbir şey
         aktarılmazdı.
         """
         script = (ROOT / "scripts" / "import_diary.py").read_text()
@@ -305,11 +307,11 @@ class DiaryImportTests(unittest.TestCase):
         block = script.split("def _rows_from", 1)[1].split("\nasync def ", 1)[0]
         self.assertIn('(entry.review or "").strip()', block)
         self.assertIn("reverse=True", block)
-        self.assertIn("reviewed[:max(1, limit)]", block)
-        self.assertLess(block.index("reviewed ="), block.index("reviewed[:max"))
+        self.assertIn("reviewed[:limit] if limit > 0 else reviewed", block)
+        self.assertLess(block.index("reviewed ="), block.index("reviewed[:limit]"))
         # Yorumlu kaydı olmayan üye zorlanmıyor.
         self.assertIn("yorumlu kayıt yok, atlandı", script)
-        self.assertIn('"--limit", type=int, default=3', script)
+        self.assertIn('"--limit", type=int, default=0', script)
 
     def test_the_bulk_import_obeys_the_same_three_rules(self):
         script = (ROOT / "scripts" / "import_diary.py").read_text()
@@ -533,3 +535,78 @@ class FeedProductRuleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiaryArchiveTests(unittest.TestCase):
+    """Bütün yazılı arşiv içeri giriyor; akış onu bir haftayla daraltıyor."""
+
+    def setUp(self):
+        self.auth = (ROOT / "app" / "auth.py").read_text()
+        self.scraper = (ROOT / "app" / "scraper.py").read_text()
+        self.schema = (ROOT / "supabase" / "schema.sql").read_text()
+
+    def test_the_archive_comes_from_review_pages_not_the_fifty_entry_feed(self):
+        """RSS son ~50 kaydı taşıyor; yıllar öncesinin yorumları orada yok."""
+        self.assertIn("async def scrape_reviewed_diary(", self.scraper)
+        self.assertIn("/films/reviews/page/", self.scraper)
+        # Toplu aktarım arşivi okuyor, günlük tarama ucuz RSS'te kalıyor.
+        importer = (ROOT / "scripts" / "import_diary.py").read_text()
+        self.assertIn("scrape_reviewed_diary", importer)
+        self.assertIn("scrape_diary_entries", (ROOT / "app" / "main.py").read_text())
+
+    def test_html_and_rss_produce_the_same_key_for_one_entry(self):
+        """`viewing:<id>` ile `letterboxd-review-<id>` aynı sayıyı taşıyor.
+
+        Anahtarlar ayrışsaydı toplu tarama ile günlük RSS taraması aynı yorumu
+        iki ayrı not olarak düşürürdü.
+        """
+        from app.scraper import _parse_review_page
+
+        fixture = (ROOT / "tests" / "fixtures" / "reviews_page.html").read_text()
+        rows = _parse_review_page(fixture)
+
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row.key.startswith("letterboxd-review-") for row in rows))
+        self.assertEqual(rows[0].key, "letterboxd-review-1463572057")
+        self.assertEqual(rows[0].slug, "the-second-act")
+        self.assertEqual(rows[0].title, "The Second Act")
+        self.assertEqual(rows[0].year, 2024)
+        self.assertEqual(rows[0].watched_on, "2026-08-23")
+        self.assertEqual(rows[0].rating, 3.5)          # ★★★½
+        self.assertTrue(rows[0].review)
+
+    def test_a_truncated_review_is_fetched_in_full(self):
+        """Liste sayfası uzun yorumu `…` ile kesiyor: ölçüldü, 603/1254."""
+        self.assertIn('entry.review.endswith("…")', self.scraper)
+        self.assertIn("/s/full-text/viewing:", self.scraper)
+        # Tam metin alınamazsa kırpılmış hâli kalıyor, kayıt düşmüyor.
+        self.assertIn("return fallback", self.scraper)
+
+    def test_an_imported_review_is_not_squeezed_into_the_note_limit(self):
+        """420 uygulamada yazılan notun sınırı, Letterboxd yorumunun değil."""
+        self.assertIn("DIARY_BODY_MAX = 10_000", self.auth)
+        self.assertIn('"body": _clip_review(', self.auth)
+        self.assertNotIn('"body": (entry.get("body") or "")[:420]', self.auth)
+        self.assertIn(
+            "CHECK (char_length(body) <= CASE WHEN source = 'letterboxd' "
+            "THEN 10000 ELSE 420 END)",
+            self.schema,
+        )
+        # Kısıt `source` sütununa bakıyor, dolayısıyla sütun eklendikten sonra
+        # tanımlanmalı; şema tepeden aşağı çalışıyor.
+        self.assertLess(
+            self.schema.index("ADD COLUMN IF NOT EXISTS source TEXT"),
+            self.schema.index("CASE WHEN source = 'letterboxd'"),
+        )
+
+    def test_only_the_discovery_feeds_are_limited_to_the_last_week(self):
+        """Keşif akışı bu hafta; kendi notların ve film sayfası eksiksiz."""
+        self.assertIn("FEED_DIARY_WINDOW_DAYS = 7", self.auth)
+        window = self.auth.split("def list_feed(", 1)[1].split("def search_feed_films", 1)[0]
+        self.assertIn(
+            'windowed = scope in ("community", "following") and not film_slug', window
+        )
+        # Uygulamada yazılan not penceresiz: `source.eq.app` her zaman geçiyor.
+        self.assertIn('query.or_(f"source.eq.app,created_at.gte.{window_start}")', window)
+        # Filtre veritabanında; Python'da elemek tarama döngüsünü boşa çevirirdi.
+        self.assertNotIn("for row in rows if row", window.split("windowed", 1)[1][:400])

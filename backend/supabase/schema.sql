@@ -1586,6 +1586,7 @@ CREATE TABLE IF NOT EXISTS public.posts (
 
 -- Existing installations started with a 280-character check. Rebuild the
 -- named check so applying this idempotent schema upgrades them to 420 too.
+-- (Sınır aşağıda, `source` sütunu eklendikten sonra kaynağa göre ayrılıyor.)
 ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_body_check;
 ALTER TABLE public.posts ADD CONSTRAINT posts_body_check CHECK (char_length(body) <= 420);
 
@@ -1612,6 +1613,15 @@ BEGIN
 END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_source_key
   ON public.posts (author_id, source_key) WHERE source_key IS NOT NULL;
+
+-- Gövde sınırı kaynağa göre: uygulamada yazılan not kısa kalıyor (420, ürün
+-- kararı ve API katmanı da bunu uyguluyor), Letterboxd'dan içe aktarılan yorum
+-- olduğu gibi giriyor. Tek bir 420 sınırı birkaç bin karakterlik yorumları
+-- sessizce kırpıyordu. `source` sütunu bu satırın üstünde eklendiği için kısıt
+-- burada tanımlanmak zorunda.
+ALTER TABLE public.posts DROP CONSTRAINT IF EXISTS posts_body_check;
+ALTER TABLE public.posts ADD CONSTRAINT posts_body_check
+  CHECK (char_length(body) <= CASE WHEN source = 'letterboxd' THEN 10000 ELSE 420 END);
 
 -- Günce taramasının kişi başına son çalıştığı an; akışı açan üye sıradaki
 -- taramayı tetikliyor, ayrı bir işçi süreç yok.

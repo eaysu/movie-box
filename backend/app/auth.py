@@ -29,6 +29,26 @@ from .taste_profile import TasteProfileSnapshot
 
 logger = logging.getLogger(__name__)
 
+# Uygulamada yazılan not 420 karakter — kısa kalması ürün kararı, sınırı API
+# katmanı uyguluyor. Letterboxd'dan gelen yorum ise olduğu gibi geliyor; bazıları
+# birkaç bin karakterlik deneme yazısı. Akış kartı zaten 220 karakterde kırpıp
+# "devamını oku" gösterdiği için uzun gövde arayüzü bozmuyor.
+DIARY_BODY_MAX = 10_000
+
+# Akışta günce kaydının görünür kaldığı süre. Bütün arşiv içeri alınıyor ama
+# topluluk ve takip akışları "bu hafta" penceresi; yoksa yıllar öncesinin
+# kayıtları akışı doldurur. Üyenin kendi notları ve profil sayfası penceresiz.
+FEED_DIARY_WINDOW_DAYS = 7
+
+
+def _clip_review(body: str) -> str:
+    """Çok uzun yorumu sınırda keser; kesildiğini görünür kılar."""
+    body = body.strip()
+    if len(body) <= DIARY_BODY_MAX:
+        return body
+    return body[:DIARY_BODY_MAX - 1].rstrip() + "…"
+
+
 try:  # Optional locally; Render installs the pinned package for real delivery.
     from pywebpush import WebPushException, webpush
 except ImportError:  # pragma: no cover - keeps local schema/unit tooling light
@@ -1613,7 +1633,7 @@ class AuthService:
     def import_diary_entries(self, user_id: int, entries: list[dict]) -> int:
         """Günce kayıtlarını akışa düşürür. Döner: eklenen satır sayısı.
 
-        Üç kural:
+        Dört kural:
 
         * **Bir kez düşer.** `source_key` (RSS guid) üzerindeki tekil indeks
           aynı kaydın ikinci kez eklenmesini engelliyor.
@@ -1650,7 +1670,7 @@ class AuthService:
                     "kind": "log",
                     "source": "letterboxd",
                     "source_key": entry["source_key"],
-                    "body": (entry.get("body") or "")[:420],
+                    "body": _clip_review((entry.get("body") or "")),
                     "film_slug": entry["film_slug"],
                     "tmdb_id": entry.get("tmdb_id"),
                     "film_title": entry.get("film_title") or "",
@@ -1958,6 +1978,13 @@ class AuthService:
             else:
                 # Never let a UI filter bypass the selected feed scope.
                 following = []
+        # Pencere yalnızca keşif akışlarında: topluluk ve takip ettiklerin.
+        # "Notların" sekmesi, bir üyenin profili ve film sayfası kendi arşivini
+        # eksiksiz göstermek zorunda — kullanıcı kendi yazdığını orada arıyor.
+        windowed = scope in ("community", "following") and not film_slug
+        window_start = (
+            datetime.now(timezone.utc) - timedelta(days=FEED_DIARY_WINDOW_DAYS)
+        ).isoformat()
         scanned_cursor = cursor
         visible: list[dict] = []
         exhausted = False
@@ -1980,6 +2007,18 @@ class AuthService:
                 query = query.eq("film_slug", film_slug)
             elif following is not None:
                 query = query.in_("author_id", following)
+            if windowed:
+                # Günce kaydı bu hafta izlenmişse akışta; uygulamada yazılan not
+                # her zaman. Pencere `created_at` üzerinden çünkü içe aktarımda
+                # o alan izlenme günü oluyor — kaydın kendi tarihi, çekildiği an
+                # değil. Filtre veritabanında: sayfa dolusu eski kaydı çekip
+                # Python'da elemek, tarama döngüsünü boşa çevirirdi.
+                #
+                # İmleç de `or_` kullanıyor. İkisinin AND'lendiğini canlı
+                # veritabanında ölçtüm (postgrest 2.30): pencere 109, imleç 289,
+                # kesişim 102, birlikte 102. Biri diğerini ezseydi akış sessizce
+                # yanlış sayfalanırdı.
+                query = query.or_(f"source.eq.app,created_at.gte.{window_start}")
             try:
                 rows = self._retry_storage_read(query.execute).data or []
             except BlendServiceError:

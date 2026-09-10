@@ -150,13 +150,22 @@ değişiklik geri dönen hiçbir ziyaretçiye ulaşmaz.
 
 ## Günce aktarımı
 
-Üyelerin Letterboxd RSS akışı (`/username/rss/`) dated izleme kayıtlarının ucuz
-kaynağı. Akışı açan üye sıradaki taramayı tetikliyor, yani zamanla bütün üyeler
-taranıyor. Toplu doldurmak için:
+İki kaynak, iki iş. **Toplu tarama** üyenin yazılı bütün arşivini
+`/username/films/reviews/` sayfalarından okuyor — sayfa başına on iki kayıt,
+gerektiği kadar sayfa. **Günlük tarama** ise RSS'te (`/username/rss/`) kalıyor:
+tek istek, son ~50 kayıt, yeni yazılanı yakalamaya yeter. Akışı açan üye
+sıradaki günlük taramayı tetikliyor, ayrı bir işçi süreç yok.
+
+RSS'in `letterboxd-review-<id>` guid'i ile HTML'deki `viewing:<id>` aynı sayıyı
+taşıyor, dolayısıyla iki kaynak aynı kaydı iki kez düşürmüyor.
+
+Uzun yorumlar liste sayfasında `…` ile kırpılıyor (ölçülen bir örnek: 603
+karakter görünüyor, tamamı 1254), o yüzden yalnızca kırpılanlar için
+`/s/full-text/viewing:<id>/` ucu ayrıca çağrılıyor.
 
 ```bash
 PYTHONPATH=backend python -m scripts.import_diary                  # ne olacağını göster
-PYTHONPATH=backend python -m scripts.import_diary --apply
+PYTHONPATH=backend python -m scripts.import_diary --apply          # bütün arşiv
 PYTHONPATH=backend python -m scripts.import_diary --apply --limit 5 --pause 5
 ```
 
@@ -172,6 +181,26 @@ Dört kural içe aktarmanın kendisinde:
 
 Takip grafiği de aynı şekilde bir kez tohumlanır:
 `PYTHONPATH=backend python -m scripts.seed_follows --apply`.
+
+### Akıştaki haftalık pencere
+
+Arşivin tamamı içeri giriyor ama keşif akışlarında yalnızca son yedi günün
+kayıtları görünüyor (`FEED_DIARY_WINDOW_DAYS`). Pencere `created_at` üzerinden,
+o alan içe aktarımda **izlenme günü** oluyor — kaydın kendi tarihi, çekildiği an
+değil.
+
+| Yüzey | Pencere |
+|---|---|
+| Topluluk, Takip ettiklerin | Son 7 gün |
+| Notların, üye profili, film sayfası | Tamamı |
+
+Pencere yalnızca `source = 'letterboxd'` satırlarına işliyor; uygulamada
+yazılan not eskise de akışta kalıyor. Bir haftadan sonra kaybolan bir not,
+üyenin uygulamaya yazdığı yazıyı silmek gibi okunurdu.
+
+Aynı ayrım gövde sınırında da var: uygulamada yazılan not 420 karakter (ürün
+kararı, API katmanı uyguluyor), içe aktarılan yorum 10.000'e kadar. Tek bir 420
+sınırı birkaç bin karakterlik yorumları sessizce kırpıyordu.
 
 ## Sinema gündemi
 
