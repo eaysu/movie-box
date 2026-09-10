@@ -166,7 +166,13 @@ class BulletinTests(unittest.TestCase):
 
         self.assertEqual(payload["films"][0]["note"], "İzleme listende")
 
-    def test_a_seen_film_is_kept_but_never_promoted(self):
+    def test_a_seen_film_outranks_a_taste_guess_without_pretending_to_be_new(self):
+        """Sıra üyeyle olan bağın gücüne göre.
+
+        İzlemiş olmak kesin bir bağ; "yönetmenini seviyor" bir tahmin. Düşük
+        puan verilmiş bir film bile zevk eşleşmesinin önünde geliyor, ama notu
+        dürüst kalıyor: yeni gibi gösterilmiyor.
+        """
         watched = [{
             "tmdb_id": 3, "film_slug": "yeni-vizyon", "title": "Yeni Vizyon",
             "user_rating": 2.0, "rating_observed": True,
@@ -176,7 +182,28 @@ class BulletinTests(unittest.TestCase):
         seen = next(film for film in payload["films"] if film["title"] == "Yeni Vizyon")
 
         self.assertEqual(seen["note"], "İzlemiştin")
-        self.assertEqual(seen["priority"], 3)
+        self.assertEqual(seen["priority"], 2)      # PRIORITY_WATCHED
+        self.assertTrue(seen["highlight"])
+
+    def test_the_agenda_ranks_by_how_strong_the_member_s_tie_to_the_film_is(self):
+        """İzleme listem → sevdiğim → izlediğim → zevkime uyan → alakasız."""
+        from app.screenings import (
+            PRIORITY_BACK, PRIORITY_REST, PRIORITY_TASTE, PRIORITY_WATCHED,
+            PRIORITY_WATCHLIST,
+        )
+
+        self.assertEqual(
+            [PRIORITY_WATCHLIST, PRIORITY_BACK, PRIORITY_WATCHED, PRIORITY_TASTE,
+             PRIORITY_REST],
+            [0, 1, 2, 3, 4],
+        )
+        # Alakasız film öne çıkarılmıyor; eşiği kart taşıyor, arayüz sabit
+        # bir sayı tutmuyor.
+        payload = build_bulletin(self._screenings(), [], [], {})
+        self.assertTrue(all("highlight" in film for film in payload["films"]))
+        app_js = (Path(__file__).parents[2] / "frontend" / "js" / "app.js").read_text()
+        self.assertIn("films.filter(film => film.highlight)", app_js)
+        self.assertNotIn("film.priority < 3", app_js)
 
     def test_taste_notes_use_turkish_genre_names(self):
         payload = build_bulletin(self._screenings(), [], [], {"top_genres": ["Drama"]})

@@ -40,6 +40,9 @@ function isInstalledApp() {
 function showInstallAppDialog() {
   const dialog = $('dialog-install-app');
   if (!_account || !_deferredInstallPrompt || isInstalledApp() || dialog.open) return;
+  // Onboarding kilitli bir tam ekran akış: Chrome `beforeinstallprompt`'u geç
+  // gönderirse bu modal onun üstüne açılıyordu. Kurulum çağrısı bekleyebilir.
+  if (_shownView === 'onboarding') return;
   dialog.showModal();
 }
 
@@ -2143,7 +2146,7 @@ function bulletinFilmCard(film) {
     : (venues[0]?.url
       ? `<a href="${escapeHTML(venues[0].url)}" target="_blank" rel="noopener" class="mt-2 block w-full rounded-lg border border-tertiary-container/30 px-2 py-1.5 text-center text-[11px] uppercase tracking-wide text-tertiary-container hover:bg-tertiary-container/10 transition-colors">${venues[0].film_page ? 'Filmin sayfası' : 'Sinema programı'}</a>`
       : '');
-  const highlight = film.priority < 3 ? 'ring-1 ring-tertiary-container/40' : '';
+  const highlight = film.highlight ? 'ring-1 ring-tertiary-container/40' : '';
   return `<article class="shrink-0 w-[150px] sm:w-[168px] rounded-2xl ${highlight} p-2">
     ${cover}
     <strong class="mt-2 block font-headline-md text-[14px] leading-tight text-on-surface line-clamp-2">${title}</strong>
@@ -2200,8 +2203,9 @@ function paintBulletin() {
 
   // Priority films lead; the rest stay one tap away instead of making the
   // strip endless on first paint.
-  const highlighted = films.filter(film => film.priority < 3);
-  const rest = films.filter(film => film.priority >= 3);
+  // Eşik sunucudan geliyor: kademe sayısı değişince burası yanlış kalmasın.
+  const highlighted = films.filter(film => film.highlight);
+  const rest = films.filter(film => !film.highlight);
   const lead = highlighted.length ? highlighted : rest.slice(0, 12);
   const remainder = highlighted.length ? rest : rest.slice(12);
   const shown = _bulletinExpanded ? films : lead;

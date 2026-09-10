@@ -611,9 +611,23 @@ class DiaryArchiveTests(unittest.TestCase):
             self.schema.index("CASE WHEN source = 'letterboxd'"),
         )
 
-    def test_only_the_discovery_feeds_are_limited_to_the_last_week(self):
-        """Keşif akışı bu hafta; kendi notların ve film sayfası eksiksiz."""
+    def test_the_two_discovery_feeds_get_different_horizons(self):
+        """Topluluk bir hafta, takip ettiklerin bir ay.
+
+        İki akış farklı iş yapıyor: topluluk 130 kişilik havuzdan "bu hafta ne
+        konuşuluyor"u gösteriyor, takip ettiklerin seçilmiş birkaç kişiyi —
+        orada bir hafta çoğu zaman boş bir sayfa demek.
+        """
         self.assertIn("FEED_DIARY_WINDOW_DAYS = 7", self.auth)
+        self.assertIn("FEED_FOLLOWING_WINDOW_DAYS = 30", self.auth)
+        window = self.auth.split("def list_feed(", 1)[1].split("def search_feed_films", 1)[0]
+        self.assertIn(
+            'FEED_FOLLOWING_WINDOW_DAYS if scope == "following" else FEED_DIARY_WINDOW_DAYS',
+            window,
+        )
+
+    def test_only_the_discovery_feeds_are_limited_to_a_window(self):
+        """Kendi notların ve film sayfası eksiksiz."""
         window = self.auth.split("def list_feed(", 1)[1].split("def search_feed_films", 1)[0]
         self.assertIn(
             'windowed = scope in ("community", "following") and not film_slug', window

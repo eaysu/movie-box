@@ -220,8 +220,13 @@ değil.
 
 | Yüzey | Pencere |
 |---|---|
-| Topluluk, Takip ettiklerin | Son 7 gün |
+| Topluluk | Son 7 gün |
+| Takip ettiklerin | Son 30 gün |
 | Notların, üye profili, film sayfası | Tamamı |
+
+İki keşif akışının penceresi farklı çünkü iki farklı iş yapıyorlar: topluluk
+bütün üyelerden "bu hafta ne konuşuluyor"u gösteriyor, takip ettiklerin ise
+seçilmiş birkaç kişiyi — orada bir hafta çoğu zaman boş bir sayfa demek.
 
 Pencere yalnızca `source = 'letterboxd'` satırlarına işliyor; uygulamada
 yazılan not eskise de akışta kalıyor. Bir haftadan sonra kaybolan bir not,
@@ -233,9 +238,22 @@ sınırı birkaç bin karakterlik yorumları sessizce kırpıyordu.
 
 ## Sinema gündemi
 
-`GET /api/bulletin` üç bölümlü haftalık bir kart döndürür: üyenin izleme
-listesinde olup perdede olan filmler, 4+ verdiği ve perdeye dönenler, zevkine
-uyan yeni çıkanlar. Filmsiz bölüm kapanır.
+`GET /api/bulletin` haftalık bir kart döndürür. Perdedeki her film listede yer
+alır — kart bir program, kısa liste değil — ama sıralama üyeyle olan bağın
+gücüne göre:
+
+| Sıra | Bağ | Kartın notu |
+|---|---|---|
+| 0 | İzleme listesinde | "İzleme listende" |
+| 1 | İzlemiş ve 4+ vermiş | "Bu filme 4.5 vermiştin" |
+| 2 | İzlemiş | "İzlemiştin" |
+| 3 | Zevkine uyuyor (yönetmen/tür) | "… filmi" / "… tarafında" |
+| 4 | Alakasız | — |
+
+İzlemiş olmak, "yönetmenini seviyor"dan daha kesin bir bağ; o yüzden düşük puan
+verilmiş bir film bile zevk tahmininin önünde geliyor, ama notu dürüst kalıyor.
+İlk dört kademe "öne çıkan" sayılıyor ve bunu kartın kendisi `highlight` alanıyla
+taşıyor — arayüz sabit bir eşik tutmuyor.
 
 Program satırları `screenings` tablosunda, iki katman yazıyor. Vizyon katmanı
 `BULLETIN_REGION` için TMDb `now_playing` (sözleşmeli, bozulamaz). Repertuvar

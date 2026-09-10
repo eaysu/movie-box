@@ -455,7 +455,7 @@ _GENRE_TR = {
 
 
 # 4: kart artık linkin filme mi sinemaya mı gittiğini taşıyor.
-PAYLOAD_VERSION = 4
+PAYLOAD_VERSION = 5
 
 
 def _film_card(row: dict, extra: dict | None = None) -> dict:
@@ -491,12 +491,14 @@ _GENRE_TR = {
     "Western": "Western",
 }
 
-# Lower sorts first: what the member already chose, then what they loved, then
-# what fits their taste, then the rest of the programme.
+# Küçük olan önce: üyenin kendi seçtiği, sonra sevdiği, sonra izlediği, sonra
+# zevkine uyanı, en sonda programın geri kalanı. Sıra üyeyle olan bağın gücüne
+# göre — izlemiş olmak, "yönetmenini seviyor"dan daha kesin bir bağ.
 PRIORITY_WATCHLIST = 0
 PRIORITY_BACK = 1
-PRIORITY_TASTE = 2
-PRIORITY_REST = 3
+PRIORITY_WATCHED = 2
+PRIORITY_TASTE = 3
+PRIORITY_REST = 4
 
 
 def build_bulletin(screenings: list[dict], watched: list[dict], watchlist, taste) -> dict:
@@ -570,9 +572,10 @@ def build_bulletin(screenings: list[dict], watched: list[dict], watchlist, taste
             priority = PRIORITY_BACK
             note = f"Bu filme {float(rating):.1f} vermiştin"
         elif seen:
-            # Already watched without a high rating: keep it in the listing but
-            # never promote it, and say so rather than pretending it is new.
-            priority, note = PRIORITY_REST, "İzlemiştin"
+            # İzlenmiş ama yüksek puan almamış film artık öne çıkıyor: üyeyle
+            # kurulmuş kesin bir bağ var, "yönetmenini seviyor" tahmininden
+            # güçlü. Not yine dürüst kalıyor, yeni gibi gösterilmiyor.
+            priority, note = PRIORITY_WATCHED, "İzlemiştin"
         elif director and director in directors:
             priority, note = PRIORITY_TASTE, f"{row.get('director')} filmi"
         elif row_genres & genres:
@@ -598,6 +601,10 @@ def build_bulletin(screenings: list[dict], watched: list[dict], watchlist, taste
         merged.values(),
         key=lambda film: (film["priority"], (film.get("title") or "").casefold()),
     )
+    # Eşiği kartın kendisi taşıyor. Arayüz `priority < 3` diye sabit bir sayı
+    # tutuyordu; kademe eklenince o sayı sessizce yanlış kartı öne çıkarırdı.
+    for film in films:
+        film["highlight"] = film["priority"] < PRIORITY_REST
     return {
         "version": PAYLOAD_VERSION,
         "week_start": week_start().isoformat(),

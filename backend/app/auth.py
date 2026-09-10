@@ -36,9 +36,14 @@ logger = logging.getLogger(__name__)
 DIARY_BODY_MAX = 10_000
 
 # Akışta günce kaydının görünür kaldığı süre. Bütün arşiv içeri alınıyor ama
-# topluluk ve takip akışları "bu hafta" penceresi; yoksa yıllar öncesinin
-# kayıtları akışı doldurur. Üyenin kendi notları ve profil sayfası penceresiz.
+# keşif akışlarının penceresi var; yoksa yıllar öncesinin kayıtları akışı
+# doldurur. Üyenin kendi notları ve profil sayfası penceresiz.
+#
+# İki pencere farklı çünkü iki akış farklı iş yapıyor: topluluk 130 kişilik bir
+# havuzdan "bu hafta ne konuşuluyor"u gösteriyor, takip ettiklerin ise seçilmiş
+# birkaç kişiyi — orada bir hafta çoğu zaman boş bir sayfa demek.
 FEED_DIARY_WINDOW_DAYS = 7
+FEED_FOLLOWING_WINDOW_DAYS = 30
 
 
 def _clip_review(body: str) -> str:
@@ -2062,8 +2067,11 @@ class AuthService:
         # "Notların" sekmesi, bir üyenin profili ve film sayfası kendi arşivini
         # eksiksiz göstermek zorunda — kullanıcı kendi yazdığını orada arıyor.
         windowed = scope in ("community", "following") and not film_slug
+        window_days = (
+            FEED_FOLLOWING_WINDOW_DAYS if scope == "following" else FEED_DIARY_WINDOW_DAYS
+        )
         window_start = (
-            datetime.now(timezone.utc) - timedelta(days=FEED_DIARY_WINDOW_DAYS)
+            datetime.now(timezone.utc) - timedelta(days=window_days)
         ).isoformat()
         scanned_cursor = cursor
         visible: list[dict] = []
