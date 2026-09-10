@@ -1,129 +1,214 @@
-# Letterboxd AI Recommender
+# Movienotes
 
-A username-first film recommender with persistent accounts. A user registers
-with a public Letterboxd username and password, proves ownership with a temporary
-bio code, then gets a stored profile, Fav 4, favorite director and rating-aware
-taste analysis. The watchlist is ranked with a **TF-IDF + LLM hybrid** recommender.
+Letterboxd hesabına bağlanan bir **sinefil akışı** ve **yapay zekâ destekli film
+önerici**. Kullanıcı herkese açık Letterboxd kullanıcı adıyla kaydolur, geçici
+bir bio koduyla hesabın kendisine ait olduğunu kanıtlar; ardından izleme
+geçmişi, Fav 4'ü ve puan farkındalı zevk analizi kalıcı olarak saklanır.
+
+Uygulamanın ana ekranı akıştır: üyeler film notu paylaşır, birbirini takip eder,
+Letterboxd güncesindeki yorumlu kayıtlar otomatik olarak akışa düşer. İzleme
+listesi ise **TF-IDF + LLM melez** öneri hattıyla sıralanır:
 
 ```
-username → direct scrape → enrich (TMDb) → similarity rank → LLM rerank → recommendations
+kullanıcı adı → doğrudan scrape → TMDb ile zenginleştirme → benzerlik sıralaması
+            → LLM yeniden sıralama → öneriler
 ```
 
-TMDb and OpenAI are optional. Without TMDb, enrichment is skipped; without an
-OpenAI key, the final step falls back to local similarity ordering.
+TMDb ve OpenAI isteğe bağlıdır. TMDb yoksa zenginleştirme atlanır; OpenAI
+anahtarı yoksa son adım yerel benzerlik sıralamasına düşer.
 
-## The four layers
+## Ürün
 
-| Layer | File | What it does |
-|-------|------|--------------|
-| 1. Scraper | `app/scraper.py` | Fetches public watched/watchlist HTML and diary RSS |
-| 2. Enrichment | `app/enrich.py` | Adds TMDb metadata: overview, genres, director, keywords |
-| 3. Recommender | `app/recommender.py` | Builds a rating-aware taste vector and ranks the watchlist |
-| 4. LLM ranking | `app/llm.py` | Curates the candidate pool and writes the reasons |
+| Alan | Ne yapar |
+|------|----------|
+| **Akış** | Film notları, cevaplar, beğeni, spoiler etiketi, film bazlı filtre. Ana ekran. |
+| **Günce aktarımı** | Üyelerin Letterboxd RSS'inden **yalnızca yorumlu** izleme kayıtları akışa düşer; izlendiği günün tarihiyle. |
+| **Film sayfası** | Poster, kaç üyenin izlediği, topluluk ortalaması, o filme dair bütün notlar, "bu hafta perdede mi". |
+| **Ne izlesem?** | İzleme listesinden zevke göre sıralı öneri, gerekçesiyle. Sınırsız rastgele mod ayrı havuzdan çalışır. |
+| **Sinefil Sineması** | Zevk örtüşmesine göre sıralanmış üye kartları; Fav 4 ve eşleşme notu. |
+| **Blend** | İki üyenin karşılıklı onayıyla hesaplanan 0–100 uyum skoru ve ortak izleme listesi. |
+| **Mektuplar** | Üyeler arası uzun biçimli yazışma; günde bir gönderim. |
+| **Sinema bülteni** | Haftalık vizyon ajandası: izleme listesindekiler, 4+ verdiği dönenler, zevkine uyan yeni çıkanlar. |
+| **Bildirimler** | Takip, takip isteği, not cevabı, beğeni, mektup, Blend ve "bu hafta perdede" olayları. Web push desteklidir. |
 
-`app/main.py` wires them together behind a FastAPI endpoint.
+## Depo düzeni
 
-## Setup
+```
+movie-box/
+├── backend/
+│   ├── app/
+│   │   ├── main.py          FastAPI uygulaması, bütün uç noktalar
+│   │   ├── config.py        ayarlar / .env okuma
+│   │   ├── auth.py          hesaplar, akış, mektup, Blend, bildirim veri katmanı
+│   │   ├── database.py      Supabase service-role istemcisi
+│   │   ├── cache.py         katmanlı SQLite/Supabase anahtar-değer önbelleği
+│   │   ├── rate_limit.py    IP başına bütçeler (auth / ağır uçlar / silme)
+│   │   ├── scraper.py       katman 1 — profil, izleme listesi, günce RSS
+│   │   ├── enrich.py        katman 2 — TMDb zenginleştirme
+│   │   ├── recommender.py   katman 3 — puan farkındalı benzerlik sıralaması
+│   │   ├── taste_profile.py kalıcı zevk özeti ve güven skoru
+│   │   ├── profile_sync.py  kontrol noktalı tam/artımlı geçmiş taraması
+│   │   ├── semantic.py      gömme tabanlı benzerlik
+│   │   ├── screenings.py    mekân programı ayrıştırma ve bülten
+│   │   └── llm.py           katman 4 — LLM yeniden sıralama ve zevk metni
+│   ├── scripts/             tek komutluk bakım ve göç araçları
+│   ├── supabase/schema.sql  tablolar, RPC'ler, RLS ve grant'lar
+│   ├── tests/               pytest takımı
+│   ├── requirements.txt
+│   └── runtime.txt
+├── frontend/                → `/static` altında servis edilir
+│   ├── index.html           anlamsal kabuk
+│   ├── css/source.css       Tailwind kaynağı
+│   ├── app.css              üretilmiş Tailwind çıktısı (commit'lenir)
+│   ├── js/                  auth / api / profile / recommendations / blend / app
+│   ├── push-sw.js           web push service worker'ı
+│   ├── site.webmanifest     PWA manifesti
+│   └── *.png, og-image-v6.jpg
+├── brand/                   kaynak görseller (ikon master'ı, kapak, OG kaynağı)
+├── data/cache.sqlite3       yerel önbellek (git'e girmez)
+├── package.json             Tailwind derlemesi ve JS sözdizimi kontrolü
+├── tailwind.config.cjs
+├── pytest.ini
+├── Procfile · render.yaml   dağıtım
+└── .env.example
+```
 
-Requires Python 3.12 (see `runtime.txt`).
+Python paketleri `backend/` kökünden içe aktarılıyor, bu yüzden depo kökünden
+çalıştıran her komut `PYTHONPATH=backend` istiyor. `frontend/` dizini `/static`
+URL öneki altında servis edilir — **önek değiştirilemez**: sürümlenmiş her
+varlığın adresini bozar ve bir yıllık `immutable` önbelleği ıskartaya çıkarır.
+
+## Kurulum
+
+Python 3.12 gerekiyor (`backend/runtime.txt`).
 
 ```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env          # then optionally add your API keys
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
+cp .env.example .env            # anahtarları buraya
 ```
 
-### Run the server
+### Sunucuyu çalıştır
 
 ```bash
-uvicorn app.main:app --reload
+PYTHONPATH=backend uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000
+http://localhost:8000
 
-## API
+### Yerel geliştirme
 
-**Service**
+Kayıt, herkese açık bir Letterboxd bio'suna kod yazmayı gerektiriyor: üretimde
+doğru kapı, test edilen şey onboarding olduğunda saf sürtünme. Tek komut hesabı
+hazırlar, sunucuyu başlatır ve tarayıcıyı giriş yapılmış hâlde açar:
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/health` | Shows which integrations are configured |
-| `GET /api/readiness` | Returns 200 only when auth config and required Supabase tables are usable |
-| `GET /api/public/stats` | Returns the cached total of active registered users for the public hero |
-| `GET /api/share/image` | Proxies an allow-listed remote image for share-card rendering |
+```bash
+PYTHONPATH=backend python -m scripts.dev_start              # enesaysu olarak gir, veriyi koru
+PYTHONPATH=backend python -m scripts.dev_start --fresh      # onboarding'i sıfırdan oynat
+PYTHONPATH=backend python -m scripts.dev_start --user someone --port 8010
+```
 
-**Auth**
+`.env.local` içinde `SUPABASE_ANON_KEY` ve `AUTH_IDENTITY_SECRET` gerekiyor;
+kimlik sırrı **Render'daki ile aynı olmak zorunda** — sentetik giriş e-postası
+ondan türetiliyor, farklı bir değer var olan hesabı bulamaz.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /api/auth/register/start` | Creates a pending account and bio challenge |
-| `POST /api/auth/register/verify` | Verifies Letterboxd ownership |
-| `POST /api/auth/login` | Opens an HttpOnly cookie session |
-| `GET /api/auth/me` | Returns the signed-in account |
-| `POST /api/auth/refresh` | Rotates the session cookie pair |
-| `POST /api/auth/logout` | Clears the session |
-| `POST /api/auth/password-reset/start` | Issues a bio challenge for recovery |
-| `POST /api/auth/password-reset/finish` | Sets a new password after verification |
-| `DELETE /api/data` | Deletes the signed-in account and username-scoped caches |
+İki sonucu bilmeye değer: betik hesabın parolasını `DEV_LOGIN_PASSWORD` yapar,
+yani eski parola uygulamadan sıfırlanana kadar çalışmaz. Ve ayrı bir yerel
+veritabanı yok — `--fresh` o kullanıcının gerçek profil satırlarını siler,
+bu yüzden önce sorar.
 
-**Profile**
+Kullandığı rota (`GET /api/dev/login`) yalnızca `DEV_LOGIN_ENABLED` verildiğinde
+var olur ve loopback dışındaki her çağırıcıyı reddeder. `render.yaml` içinde
+değildir ve asla olmamalıdır.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/profile/me` | Returns the stored profile and taste snapshot |
-| `GET /api/profile/sync-status` | Lightweight progress poll during a crawl |
-| `POST /api/profile/sync` | Refreshes profile, Fav 4 and taste data |
-| `POST /api/profile/watchlist/check` | One-page freshness check; full crawl only on change |
-| `POST /api/profile/onboarding-complete` | Persists onboarding completion |
-| `POST /api/profile/discovery-settings` | Opts the signed-in user into/out of Sinefil Sineması |
-| `GET /api/profile/directors/{rank}/films` | Lazy-loads one ranked director's watched films |
-| `GET /api/profile/watched` | Searches the stored watched history |
-| `GET /api/profile/recent` | Lists recently logged films |
-| `GET /api/profile/stats` | Returns aggregate profile counters |
-| `GET /api/profile/film-overview` | Lazy-loads one film's overview text |
-| `GET/PUT /api/profile/top-films` | Reads/saves the user-curated top ten |
+### Frontend ve testler
 
-**Recommendations**
+```bash
+npm install && npm run build:css   # frontend/app.css'i yeniden üret
+npm run check:js                   # sözdizimi kontrolü
+pytest                             # pytest.ini PYTHONPATH'i kendisi ayarlıyor
+```
 
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /api/recommend` | Taste analysis and personalized watchlist ranking |
-| `POST /api/random` | Three unlimited random picks from films other members watched and this user has not |
-| `GET /api/bulletin?city=` | This week's cinema agenda for the signed-in member |
+Tailwind çıktısı commit'lenir; Render çalışma anında Node'a ihtiyaç duymaz.
+`frontend/js/app.js` veya `app.css` değişirse `index.html` içindeki `?v=`
+sürümünü de artırın — `test_shell_asset_content_changes_force_a_version_bump`
+bunu unutmayı başarısız bir test hâline getiriyor, çünkü sürümlenmiş varlıklar
+bir yıl boyunca `immutable` servis ediliyor ve eski `?v=` ile yapılan bir
+değişiklik geri dönen hiçbir ziyaretçiye ulaşmaz.
 
-**Sinefil Sineması & letters**
+## Değiştirilmesi hesapları bozan üç şey
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/sinefil-alani` | Lists opted-in, safe profile cards ranked by taste overlap |
-| `GET /api/sinefil-alani/{username}/personality` | Lazy-loads an opted-in profile's Fav 4 reading |
-| `POST /api/letters/receiving` | Opens or closes voluntary letter receiving |
-| `GET/POST /api/letters` | Lists the caller's letters or sends one per 24h |
-| `GET /api/letters/unread-count` | Badge count for the inbox |
-| `GET /api/letters/send-status` | Remaining 24h send allowance |
-| `POST /api/letters/{id}/read` | Marks one letter read |
-| `GET /api/letters/recipients/{username}` | Confirms a recipient is eligible and returns their card |
+1. **`AUTH_IDENTITY_SECRET`** — sentetik Supabase e-posta eşlemesi bundan
+   türetiliyor. Kimlik göçü yapmadan asla döndürülmez.
+2. **`identity_email` içindeki alan adı** (`@users.movieboxd.invalid`) —
+   marka MOVIENOTES olarak değişti ama bu dize sabit kalmak zorunda. E-posta
+   her girişte kullanıcı adından yeniden üretiliyor; alan adını değiştirmek var
+   olan bütün hesapların Auth kaydını bulunamaz hâle getirir.
+3. **`/static` URL öneki** — yukarıda anlatıldığı gibi.
 
-**Blend & safety**
+`SUPABASE_KEY` (service-role) tarayıcıya asla verilmez; yalnızca backend kullanır.
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/users/search?q=` | Finds active registered Movieboxd users |
-| `POST/DELETE /api/users/{username}/block` | Blocks/unblocks a user and cancels pending requests |
-| `POST /api/users/{username}/report` | Stores a rate-limited safety report |
-| `POST /api/blends/requests` | Sends a consent-based Blend request |
-| `GET /api/blends` | Lists inbox, sent requests and history |
-| `GET /api/blends/pending-count` | Inbox badge count |
-| `DELETE /api/blends/requests/{id}` | Requester cancels a pending request |
-| `POST /api/blends/requests/{id}/decision` | Recipient accepts or rejects |
-| `POST /api/blends/requests/{id}/result` | Retries an accepted result safely |
-| `GET /api/blends/requests/{id}/result` | Lazy-loads a stored Blend result |
-| `POST /api/blends/{id}/refresh` | Recomputes an accepted Blend |
-| `DELETE /api/blends/{id}` | Removes a Blend from both histories |
-| `POST /api/blend` | Legacy anonymous Blend; disabled in account mode |
+## Günce aktarımı
 
-### Sinefil Mektupları
+Üyelerin Letterboxd RSS akışı (`/username/rss/`) dated izleme kayıtlarının ucuz
+kaynağı. Akışı açan üye sıradaki taramayı tetikliyor, yani zamanla bütün üyeler
+taranıyor. Toplu doldurmak için:
+
+```bash
+PYTHONPATH=backend python -m scripts.import_diary                  # ne olacağını göster
+PYTHONPATH=backend python -m scripts.import_diary --apply
+PYTHONPATH=backend python -m scripts.import_diary --apply --limit 5 --pause 5
+```
+
+Dört kural içe aktarmanın kendisinde:
+
+- **Bir kez düşer.** Kaydın kimliği RSS guid'i; `posts.source_key` üzerindeki
+  tekil indeks aynı kaydı ikinci kez eklemiyor.
+- **Silinen geri gelmez.** Silme yumuşak olduğu için satır ve anahtarı duruyor;
+  tekrar çalıştırmak onu diriltmiyor.
+- **Sıra izlenme günü.** Kayıt, akışta izlendiği günün tarihiyle yer alıyor.
+- **Yalnız yorumlu kayıt.** Cümlesi olmayan izleme kaydı akışa girmiyor; puan
+  tek başına okunacak bir şey taşımıyor.
+
+Takip grafiği de aynı şekilde bir kez tohumlanır:
+`PYTHONPATH=backend python -m scripts.seed_follows --apply`.
+
+## Sinema gündemi
+
+`GET /api/bulletin` üç bölümlü haftalık bir kart döndürür: üyenin izleme
+listesinde olup perdede olan filmler, 4+ verdiği ve perdeye dönenler, zevkine
+uyan yeni çıkanlar. Filmsiz bölüm kapanır.
+
+Program satırları `screenings` tablosunda, iki katman yazıyor. Vizyon katmanı
+`BULLETIN_REGION` için TMDb `now_playing` (sözleşmeli, bozulamaz). Repertuvar
+katmanı mekân programlarını `venues.config` içinde saklanan seçicilerle
+ayrıştırıyor — yani sitesini yenileyen bir mekân satır düzenlemesi, dağıtım
+değil. Başarısız olan mekân `last_error` yazar, bülten kalanla birlikte gider.
+Bağlantılar yayına girmeden önce doğrulanıyor: 404 veya yumuşak-404 dönen satır
+mekânın program sayfasına düşürülür ve arayüzde "Sinema programı" olarak
+etiketlenir.
+
+Servis ayakta olduğu sürece saatlik hafif bir zamanlayıcı program alımını
+dürtüyor. Mekân başına veritabanı kirası (`claim_venue_ingest`) dış kaynakların
+`BULLETIN_INGEST_INTERVAL_HOURS` başına en fazla bir kez okunmasını garanti
+ediyor. Kişiselleştirilmiş özetler `BULLETIN_DIGEST_TTL_HOURS` sonra (varsayılan
+altı saat) düşüyor; iki tazelemeyi kaçırmış satırlar "hâlâ vizyonda" diye
+gösterilmek yerine saklanıyor.
+
+Türkçe dağıtım başlıkları `tmdb_id` üzerinden eşleşiyor; önce `tr-TR`, sonra
+İngilizce aranıyor. Güvenle çözülemeyen hiçbir şey tahmin edilmiyor,
+`unresolved` veya `ambiguous` kalıyor:
+
+```bash
+PYTHONPATH=backend python -m scripts.resolve_screenings            # eşleşmeyenler kuyruğu
+PYTHONPATH=backend python -m scripts.resolve_screenings --venues   # mekân sağlığı
+PYTHONPATH=backend python -m scripts.resolve_screenings --map "Sonbahar Sonatı=4174"
+```
+
+Özellik kapalı gelir: `BULLETIN_ENABLED=true` açar, `venues.active` tek bir
+mekânı kapatır.
+
+## Mektuplar
 
 Mektuplar hesaba bağlıdır: kullanıcı giriş yaptığı her cihazda aynı mektupları
 görür. Önceki tasarımda anahtar yalnızca tarayıcının IndexedDB deposunda
@@ -137,233 +222,135 @@ gövdeyi hiç seçmez. Servis mektupları teknik olarak okuyabilir — bu, ürü
 verdiği sözün sınırıdır. Eski şifreli satırlar veritabanında kalır ama artık
 kimse tarafından açılamaz; arayüz bunu açıkça söyler.
 
-Mektup kutusu, Sinefil Sineması gibi varsayılan olarak açıktır; izole kalmak
-isteyen profilinden kapatır. Var olan hesaplar bir kereliğine
-`python -m scripts.open_letterboxes --apply` ile açıldı; toplu güncelleme
-şemada değil, çünkü şema tekrar tekrar uygulanıyor ve kapatanların tercihini
-sessizce geri alırdı.
+Mektup kutusu varsayılan olarak açıktır; izole kalmak isteyen profilinden
+kapatır. Var olan hesaplar bir kereliğine `scripts.open_letterboxes --apply` ile
+açıldı; toplu güncelleme şemada değil, çünkü şema tekrar tekrar uygulanıyor ve
+kapatanların tercihini sessizce geri alırdı.
 
-Mektup yollamak için kullanıcının kendi mektup kutusunun da açık olması gerekir
+Mektup yollamak için kullanıcının kendi kutusunun da açık olması gerekiyor
 (`letter_sender_closed`); kapalıysa arayüz kutuyu açmayı öneren bir modal
 gösterir. Gerekçesi: kapalı bir hesaptan gönderilen mektup, alıcının cevap
-veremediği tek yönlü bir kanal olur.
+veremediği tek yönlü bir kanal olur. Bu kural gelmeden önce yollamış ve kutusu
+kapalı kalmış hesapları `scripts.fix_letter_senders` listeler, `--apply` açar.
 
-Bu kural gelmeden önce mektup yollamış ve kutusu kapalı kalmış hesaplar tam da o
-tek yönlü durumda kalır. `python -m scripts.fix_letter_senders` bunları listeler,
-`--apply` ile kutularını açar; her değişiklik `user_activity_events` içine
-`reason: sent_before_rule` olarak yazılır ve kullanıcı profilinden yine
-kapatabilir.
+## Gizlilik
 
-## Sinema gündemi
+Tek bir anahtar var: **kilitli hesap**. Kapalıyken profil herkese açıktır ve
+üye Sinefil Sineması'nda görünür; açıkken profil yalnızca onaylanan takipçilere
+görünür ve üye keşif yüzeylerinden çıkar. Görünürlük ile kilit ayrı ayrı
+yönetilen iki kavram değildir; ikisi aynı anahtara bağlıdır, böylece kullanıcı
+uygulamayı sosyal alandan tamamen izole de kullanabilir.
 
-`GET /api/bulletin` returns a weekly card with three sections: films on the
-member's watchlist that are playing, films they rated 4+ that are back on
-screen, and new releases matching their taste. Sections with no films collapse.
+`DELETE /api/data` giriş yapılmış Supabase Auth kimliğini, profil/zevk/Fav 4
+satırlarını ve kullanıcı adına bağlı önbellekleri siler. Paylaşılan TMDb
+metadata'sı kişisel değildir ve kalır.
 
-Programme rows live in `screenings`, written by two layers. The release layer is
-TMDb `now_playing` for `BULLETIN_REGION` (contractual, cannot break). The
-repertory layer parses venue programmes using selectors stored in
-`venues.config`, so a site redesign is a row edit rather than a deploy; a venue
-that fails records `last_error` and the bulletin still ships with the rest.
+## Yerel yönetim raporu
 
-While the web service is awake, a lightweight hourly scheduler nudges the
-programme ingest. The per-venue DB lease (`claim_venue_ingest`) ensures external
-sources are actually read at most once per `BULLETIN_INGEST_INTERVAL_HOURS`.
-UptimeRobot keeps the free Render service awake; its health checks therefore also
-keep this daily refresh loop alive. Personalised digests expire after
-`BULLETIN_DIGEST_TTL_HOURS` (six hours by default), and rows older than two
-missed refreshes are hidden instead of being advertised as still in cinemas.
-
-Turkish distribution titles are matched to films through `tmdb_id`, searching
-`tr-TR` first and falling back to English; anything that cannot be resolved
-confidently stays `unresolved` or `ambiguous` rather than being guessed:
+Depo, toplam hesap kullanımı için yalnızca yerelde çalışan, service-role bir
+rapor içerir. Kasten bir HTTP admin uç noktası değildir; parola, token, ham
+olay metadata'sı veya film satırı asla yazdırmaz:
 
 ```bash
-python -m scripts.resolve_screenings            # the unmatched queue
-python -m scripts.resolve_screenings --venues   # per-venue health
-python -m scripts.resolve_screenings --map "Sonbahar Sonatı=4174"
+PYTHONPATH=backend python -m scripts.admin_users
+PYTHONPATH=backend python -m scripts.admin_users --username enesaysu --json
+PYTHONPATH=backend python -m scripts.admin_users --include-non-active
 ```
 
-The feature ships dark: set `BULLETIN_ENABLED=true` to turn it on, and
-`venues.active` disables a single venue.
+Satırlar en son etkinliğe göre sıralı. Her hesap için: Sinefil Sineması
+görünürlüğü, mektup kutusu tercihi, gönderilen/alınan/okunmamış mektup sayısı,
+son gönderim tarihi, tarama ilerlemesi, izlenen ve izleme listesi sayıları,
+Blend gönderilen/alınan/tamamlanan, öneri başarı oranı, rastgele seçimler,
+senkron istekleri, girişler ve son etkinlik. Mektuplar yalnızca sayılır: rapor
+ne gövde ne film hediyesi ne alıcı seçer.
 
-## Local development
+Komutu kullanmadan önce güncel `backend/supabase/schema.sql` Supabase SQL
+Editor'da çalıştırılmalı; eski bir rapor fonksiyonu mektup ve görünürlük
+kolonlarını `-` olarak yazdırır.
 
-Registration needs a password and a bio code in a public Letterboxd profile,
-which is the right gate in production and pure friction when the thing being
-tested is onboarding. One command prepares the account, starts the server and
-opens the browser already signed in:
+## API
 
-```bash
-python -m scripts.dev_start                # sign in as enesaysu, keep data
-python -m scripts.dev_start --fresh        # replay onboarding from scratch
-python -m scripts.dev_start --user someone --port 8010
-```
+| Grup | Uç noktalar |
+|------|-------------|
+| Servis | `GET /api/health`, `/api/readiness`, `/api/public/stats`, `/api/share/image` |
+| Auth | `POST /api/auth/register/start`, `register/verify`, `login`, `refresh`, `logout`, `password-reset/start`, `password-reset/finish`; `GET /api/auth/me`; `DELETE /api/data` |
+| Push | `GET /api/push/public-key`, `POST /api/push/subscriptions` |
+| Profil | `GET /api/profile/me`, `social-stats`, `sync-status`, `stats`, `watched`, `recent`, `film-overview`, `directors/{rank}/films`, `top-films`; `PUT /api/profile/top-films`; `POST /api/profile/sync`, `watchlist/check`, `onboarding-complete`, `discovery-settings`, `privacy-settings` |
+| Akış | `GET /api/feed`, `/api/feed/films`, `/api/feed/trending`, `/api/films/{slug}`, `/api/posts/{id}`; `POST /api/posts`, `/api/posts/{id}/replies`, `/like`, `/report`; `DELETE /api/posts/{id}`, `/like` |
+| Sosyal | `GET /api/users/search`, `/api/users/{username}`, `/followers`, `/following`, `/api/notifications`, `/api/notifications/unread-count`; `POST /api/users/{username}/follow`, `follow-request`, `block`, `report`; `DELETE .../follow`, `.../block` |
+| Öneri | `POST /api/recommend`, `POST /api/random`, `GET /api/bulletin?city=` |
+| Sinefil Sineması | `GET /api/sinefil-alani`, `/api/sinefil-alani/{username}/personality` |
+| Mektuplar | `GET /api/letters`, `settings`, `followers`, `unread-count`, `send-status`, `recipients/{username}`; `POST /api/letters`, `receiving`, `{id}/read`; `DELETE /api/letters/{id}`, `legacy` |
+| Blend | `POST /api/blends/requests`, `{id}/decision`, `{id}/result`, `{id}/refresh`; `GET /api/blends`, `pending-count`, `requests/{id}/result`; `DELETE /api/blends/requests/{id}`, `/api/blends/{id}` |
 
-It needs `SUPABASE_ANON_KEY` and `AUTH_IDENTITY_SECRET` in `.env.local`, and the
-identity secret **must match Render's**: the synthetic login email is derived
-from it, so a different value cannot find the existing account.
+Auth yapılandırılmışken Taste ve Random giriş yapılmış kullanıcı adı ve
+double-submit CSRF token'ı istiyor. Auth ve ağır rotaların ayrı IP bütçeleri var.
 
-Two consequences worth knowing. The script sets the account's password to
-`DEV_LOGIN_PASSWORD`, so the previous password stops working until it is reset
-through the app. And there is no separate local database — `--fresh` deletes
-that username's real profile rows, which is why it asks first.
+## API anahtarları
 
-The route it uses (`GET /api/dev/login`) exists only when `DEV_LOGIN_ENABLED`
-is set and refuses any caller that is not on the loopback interface. It is not
-in `render.yaml` and must never be.
+- **TMDb** — <https://www.themoviedb.org/settings/api> (ücretsiz).
+  Zenginleştirme katmanını açar; öneriler belirgin biçimde iyileşir.
+- **OpenAI** — <https://platform.openai.com/api-keys>. LLM yeniden sıralama ve
+  zevk metinleri. Model `OPENAI_MODEL` ile ayarlanır.
+- **Supabase** — hesaplar için zorunlu; profilleri ve önbellekleri dağıtımlar
+  arasında kalıcı kılar.
 
-## Local admin activity report
+## Notlar ve sınırlar
 
-The repository includes a local-only, service-role report for aggregate account
-usage. It is deliberately not an HTTP admin endpoint and never prints
-passwords, tokens, raw event metadata or film rows:
+- **Letterboxd'un resmî API erişimi kısıtlı ve öneri projelerine kapalı.** Bu
+  yüzden scraper herkese açık HTML'i ayrıştırıyor; `backend/app/scraper.py`
+  içindeki seçiciler Letterboxd işaretlemesini değiştirirse kırılabilir.
+  İstekler arasında nazik bir gecikme (`SCRAPE_DELAY`) var, proxy veya ücretli
+  scraping servisi kullanılmıyor. Ölçek büyütmeden önce Letterboxd'un kullanım
+  şartlarını kontrol edin. Günlük bir canary (`scripts.check_scraper`, GitHub
+  Actions) ayrıştırıcının sağlığını izliyor.
+- Profiller stale-while-revalidate önbellekle çalışıyor. İlk sayfa parmak izi
+  değişmediyse tam tarama atlanıyor; tam tarama en az haftalık yine koşuyor.
+- Aynı anda gelen özdeş scrape'ler birleştiriliyor, TMDb paylaşılan sınırlı bir
+  havuz kullanıyor.
+- TMDb metadata'sı yerel SQLite L1 ve toplu Supabase L2 kullanıyor. Çözülmüş
+  posterler ve yönetmen portreleri paylaşılan varlık tablolarına yükseltiliyor;
+  bilinen bir slug/TMDb id film aramasını atlıyor.
+- Bütün Letterboxd HTML istekleri tek bir uyarlanır süreç bütçesini paylaşıyor.
+  403/429 trafiği seri hâle getirip soğuma devresi açıyor; sürekli başarı
+  eşzamanlılığı kademeli olarak geri veriyor. Tam profil taramaları ek olarak
+  Supabase kirası kullanıyor, böylece iki Render süreci aynı işe sahip olamaz.
+- Öneri sıralaması en son 100 izlenen filmi, puan farkındalı negatif sinyalleri
+  ve MMR çeşitliliğini kullanıyor. En sevilen üç yönetmen sınırlı bir ikincil
+  destek alıyor. LLM bağlamı 3.5+ puanları skorlarıyla içeriyor; puansız geçmiş
+  yalnızca hiç puan verisi yoksa kullanılıyor.
+- Rastgele mod izleme listesinden bağımsız ve sınırsız. Havuzu, diğer üyelerin
+  izleyip bu hesabın izlemediği filmler (`community_random_films`); üyelikte
+  kullanılabilir geçmiş yoksa TMDb Discover'a düşüyor. Letterboxd'u hiç
+  taramadığı için paylaşılan analiz bütçesi yerine kendi kovasını kullanıyor.
+- Blend, 0–100 kalibre edilmiş benzerlik skoruyla birlikte bağımsız bir veri
+  kapsamı göstergesi (düşük/orta/yüksek) döndürüyor.
+- Supabase olmadan önbellekler `data/cache.sqlite3` içinde yaşıyor ve kalıcı
+  diski olmayan sunucularda uçucudur.
 
-```bash
-python -m scripts.admin_users
-python -m scripts.admin_users --username enesaysu --json
-python -m scripts.admin_users --include-non-active
-```
+## Hesap yayına alma
 
-Rows are numbered and ordered by most recent activity (last recorded event,
-falling back to last sync, then registration). Each row carries, per account:
-Sinefil Sineması visibility
-(`online`/`offline`), the letter inbox preference, letter volume as
-sent/received/unread, the last send date, scan progress, watched and watchlist
-counts, Blend sent/received/completed, recommendation success rate, random
-picks, sync requests, logins and last activity. A summary line closes the table
-with how many accounts are visible and who has sent letters. Letters are
-counted only: the report never selects a body, a film gift or a recipient.
+1. `backend/supabase/schema.sql` dosyasını Supabase SQL Editor'da çalıştır.
+2. Render'da `SUPABASE_URL`, service-role `SUPABASE_KEY`, `SUPABASE_ANON_KEY`
+   ve sabit bir `AUTH_IDENTITY_SECRET` (`openssl rand -hex 32`) ayarla.
+3. Dağıt. `/api/health` `auth_enabled: true` bildirmeli.
+4. `/api/readiness` `status: ready` dönmeli; 503 ya şemanın uygulanmadığını ya
+   da Supabase'in erişilemez olduğunu söylüyor.
+5. Test kullanıcısı kaydet, kodu herkese açık Letterboxd bio'suna koy, doğrula,
+   giriş yap ve ilk profil senkronunu bekle.
 
-Run the current `supabase/schema.sql` in Supabase SQL Editor before using the
-command; an outdated report function makes the letter and visibility columns
-print as `-` with a hint. The `user_activity_events` table records bounded
-product events such as profile sync lifecycle, recommendation success/failure,
-random picks, onboarding completion and Blend lifecycle actions. Event writes
-are best-effort and never block the user-facing flow.
+## Açık işler
 
-The browser client handles the HttpOnly session and CSRF header. If account
-environment variables are absent, the legacy username-only endpoints remain
-available as a temporary rollout fallback.
-
-## API keys (optional)
-
-- **TMDb** — free at <https://www.themoviedb.org/settings/api>. Enables the
-  enrichment layer (much better recommendations).
-- **OpenAI** — <https://platform.openai.com/api-keys>. Enables LLM reranking
-  with taste-aware explanations.
-- **Supabase** — required for accounts and persists profiles/caches across deploys.
-  Run `supabase/schema.sql` once in the project SQL Editor before enabling auth.
-
-Put them in `.env`. The ranking model is configured with `OPENAI_MODEL`.
-
-## Notes & caveats
-
-- **Letterboxd's official API access is restricted and currently unavailable for
-  recommendation projects.** The scraper therefore parses public HTML, and the
-  selectors in `app/scraper.py` can break if Letterboxd changes its markup.
-  It also respects a polite delay between requests (`SCRAPE_DELAY`) and uses
-  no proxy or paid scraping service. Check Letterboxd's terms of service before
-  using this at any scale.
-- User profiles use stale-while-revalidate caching. An unchanged first-page
-  fingerprint skips the full crawl; a full crawl still runs at least weekly.
-- Identical concurrent scrapes are coalesced and TMDb uses a shared bounded pool.
-- TMDb metadata uses a local SQLite L1 and a batched Supabase L2, so deploys can
-  reuse enrichment results without turning every film into a separate DB request.
-- Resolved posters and director portraits are promoted to shared Supabase asset
-  tables. A known film slug/TMDb id skips movie search, and only unresolved assets
-  call TMDb. Successful director filmographies are also cached across users.
-- All Letterboxd HTML requests share one adaptive process-wide budget. A 403/429
-  serializes traffic and opens a cooldown circuit; sustained success recovers
-  concurrency gradually. Full profile crawls additionally use a Supabase lease so
-  two Render processes cannot own the same user's job.
-- When auth is configured, Taste and Random require the signed-in username plus
-  a double-submit CSRF token. Blend searches only registered accounts, creates a
-  pending inbox request, and computes/persists compatibility only after recipient
-  approval. Auth and heavy routes have separate IP budgets.
-- “Verimi Sil” removes the signed-in Supabase Auth identity, profile/taste/Fav 4
-  rows and username-scoped caches. Shared TMDb metadata is non-personal and remains.
-- Blend returns a calibrated 0–100 similarity score plus an independent low,
-  medium or high data-coverage indicator. The score is shown before the two
-  watchlists finish loading; common watchlist titles arrive lazily.
-- Recommendation ranking uses the latest 100 watched films, rating-aware negative
-  signals and MMR diversity. The top three favorite directors receive a bounded
-  secondary boost; cached TMDb filmographies identify matching watchlist titles
-  before shortlist pruning.
-  LLM context includes explicit 3.5+ ratings (with their scores); unrated history
-  is used only when the profile has no rating data. Taste mode returns up to
-  `NUM_RECOMMENDATIONS` (default 5) films; the last card offers the random mode
-  as a way out instead of a dead end.
-- Random mode is watchlist-independent and unlimited. Its pool is what other
-  members have watched and this account has not (`community_random_films`,
-  low-rated titles excluded), falling back to TMDb Discover when the membership
-  has no usable history yet. It never scrapes Letterboxd, so it has its own
-  generous rate-limit bucket instead of the shared analysis budget.
-- Without Supabase, caches live in `data/cache.sqlite3` and are ephemeral on hosts
-  without persistent disks.
-
-## Project layout
-
-```
-movie-box/
-├── app/
-│   ├── config.py        settings / .env loading
-│   ├── auth.py          username-first Supabase Auth and ownership challenges
-│   ├── database.py      Supabase service client
-│   ├── cache.py         layered SQLite/Supabase key-value cache
-│   ├── rate_limit.py    per-IP budgets for auth, heavy and delete routes
-│   ├── scraper.py       layer 1 — profile/watchlist/diary scraping
-│   ├── enrich.py        layer 2 — TMDb enrichment
-│   ├── recommender.py   layer 3 — rating-aware similarity ranking
-│   ├── taste_profile.py persisted taste summary and confidence
-│   ├── profile_sync.py  checkpointed full/incremental history crawl
-│   ├── llm.py           layer 4 — LLM reranking and taste prose
-│   └── main.py          FastAPI app
-├── scripts/
-│   ├── check_scraper.py direct scraper canary (also runs in CI daily)
-│   ├── check_profiles.py isolated real-profile pipeline check
-│   ├── warm_cache.py    profile cache warmer
-│   ├── reset_profile.py clears one profile's stored snapshot
-│   ├── admin_users.py   local-only aggregate activity report
-│   └── generate_og.py   regenerates static/og-image-v3.png
-├── static/
-│   ├── index.html       semantic frontend shell
-│   ├── css/source.css   Tailwind source
-│   ├── app.css          generated production Tailwind CSS
-│   └── js/              auth/api/profile/recommendation/blend/letters modules
-├── frontend/lumina_cinematic/DESIGN.md   design token reference
-├── supabase/schema.sql  tables, RPCs, RLS and grants
-├── tests/               pytest suite
-├── package.json         frontend CSS build and JS syntax checks
-├── requirements.txt
-└── .env.example
-```
-
-## Product documentation
-
-| Document | Contents |
-|----------|----------|
-| [IMPROVEMENT_CHECKLIST.md](IMPROVEMENT_CHECKLIST.md) | Running engineering checklist (Turkish) |
-| [REKABET_ANALIZI.md](REKABET_ANALIZI.md) | Competitive research and feature inventory (Turkish) |
-| [OZELLIK_TASARIMI.md](OZELLIK_TASARIMI.md) | Design of the approved next features (Turkish) |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Screening bulletin plan and the Letterboxd API application |
-| [SINEFIL_AKIS_PLANI.md](SINEFIL_AKIS_PLANI.md) | Plan for turning the app into a cinephile timeline (Turkish) |
-
-## Account rollout
-
-1. Run `supabase/schema.sql` in Supabase SQL Editor.
-2. Set `SUPABASE_URL`, service-role `SUPABASE_KEY`, `SUPABASE_ANON_KEY` and a
-   stable `AUTH_IDENTITY_SECRET` (`openssl rand -hex 32`) in Render.
-3. Deploy. `/api/health` must report `auth_enabled: true`.
-4. Verify `/api/readiness` reports `status: ready`; a 503 means the current
-   `supabase/schema.sql` still needs to be applied or Supabase is unavailable.
-5. Register a test username, copy the challenge into its public Letterboxd bio,
-   verify, log in, and wait for the first profile sync.
-
-Never rotate `AUTH_IDENTITY_SECRET` without an identity migration: synthetic
-Supabase email mappings are derived from it. Never expose `SUPABASE_KEY` to the
-browser; only the backend uses it.
-
-When frontend classes or custom styles change, regenerate the committed CSS with
-`npm install && npm run build:css`. Render serves the generated file and does not
-need Node at runtime.
+- `watched_rank` öneri hattı ve Blend tarafında *tazelik* gibi kullanılıyor;
+  aslında Letterboxd'un liste sırası. Gerçek izleme tarihi günce kayıtlarında
+  var, sıralama oraya bağlanmalı.
+- Supabase RLS politikaları yalnızca gereken role/operasyona indirilmeli.
+- Google fontları self-host/subset edilip kritik olanlar preload edilmeli.
+- `criterion-closet-bg.jpg` için AVIF/WebP varyantı üretilmeli
+  (`frontend/movienotes-mark.png` de favicon olarak 232 KB — küçültülebilir).
+- RSS + HTML liste parmak iziyle artımlı günce güncellemesi.
+- İki üyeli gerçek Supabase üzerinde RLS/state-machine entegrasyon testi ve
+  login → senkron → inbox → Blend kabulü için browser E2E testi.
+- Öneri için golden dataset ve offline eval; eval'lerin CI'a eklenmesi.
+- Letterboxd hesabı olmayan kullanıcı için 10 filmlik swipe onboarding.
+</content>

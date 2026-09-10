@@ -1,4 +1,4 @@
-// Colours resolve through CSS custom properties (see static/css/source.css):
+// Colours resolve through CSS custom properties (see frontend/css/source.css):
 // :root holds the dark palette (unchanged values), and `.theme-light` — applied
 // to #view-profile — overrides the tokens for the opt-in light profile view.
 const c = (name) => `rgb(var(--color-${name}) / <alpha-value>)`;
@@ -19,7 +19,7 @@ const TOKENS = [
 
 module.exports = {
   darkMode: 'class',
-  content: ['./static/index.html', './static/js/**/*.js'],
+  content: ['./frontend/index.html', './frontend/js/**/*.js'],
   theme: {
     extend: {
       colors: Object.fromEntries(TOKENS.map((name) => [name, c(name)])),

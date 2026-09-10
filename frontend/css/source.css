@@ -1,0 +1,786 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+  /* ── Colour tokens ────────────────────────────────────────────────────
+     :root = the dark palette (values unchanged from before). Tailwind
+     colours resolve through these, so `.theme-light` on the app body can
+     switch every view together instead of leaving a dark shell around one
+     bright screen. */
+  :root {
+    --color-outline: 133 149 130;
+    --color-inverse-surface: 224 226 230;
+    --color-primary: 67 254 109;
+    --color-on-secondary-fixed-variant: 114 54 0;
+    --color-secondary-fixed: 255 220 199;
+    --color-on-secondary-container: 94 43 0;
+    --color-secondary-container: 255 128 0;
+    --color-surface-container-high: 39 42 45;
+    --color-surface-tint: 21 229 88;
+    --color-inverse-primary: 0 110 37;
+    --color-on-primary-container: 0 93 30;
+    --color-tertiary-container: 108 205 255;
+    --color-on-surface-variant: 186 203 182;
+    --color-primary-fixed-dim: 21 229 88;
+    --color-on-tertiary-container: 0 86 117;
+    --color-on-primary: 0 57 15;
+    --color-tertiary-fixed: 195 232 255;
+    --color-surface: 16 20 23;
+    --color-surface-dim: 16 20 23;
+    --color-on-surface: 224 226 230;
+    --color-error-container: 147 0 10;
+    --color-secondary-fixed-dim: 255 183 135;
+    --color-surface-container: 29 32 35;
+    --color-secondary: 255 183 135;
+    --color-primary-container: 0 224 84;
+    --color-on-primary-fixed-variant: 0 83 26;
+    --color-inverse-on-surface: 45 49 52;
+    --color-tertiary-fixed-dim: 122 208 255;
+    --color-on-tertiary-fixed-variant: 0 76 105;
+    --color-outline-variant: 60 75 58;
+    --color-surface-bright: 54 58 61;
+    --color-surface-container-low: 25 28 31;
+    --color-on-secondary-fixed: 49 19 0;
+    --color-on-primary-fixed: 0 33 6;
+    --color-on-secondary: 80 36 0;
+    --color-on-error: 105 0 5;
+    --color-on-tertiary-fixed: 0 30 44;
+    --color-error: 255 180 171;
+    --color-on-error-container: 255 218 214;
+    --color-surface-container-lowest: 11 15 17;
+    --color-on-tertiary: 0 53 73;
+    --color-surface-variant: 50 53 56;
+    --color-tertiary: 185 228 255;
+    --color-background: 16 20 23;
+    --color-on-background: 224 226 230;
+    --color-primary-fixed: 108 255 128;
+    --color-surface-container-highest: 50 53 56;
+  }
+
+  /* Opt-in light look for the complete application shell. */
+  body.theme-light {
+    --color-surface: 249 250 248;
+    --color-surface-dim: 233 235 230;
+    --color-surface-bright: 255 255 255;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-low: 244 246 242;
+    --color-surface-container: 238 240 235;
+    --color-surface-container-high: 232 234 228;
+    --color-surface-container-highest: 226 229 221;
+    --color-surface-variant: 224 229 220;
+    --color-background: 249 250 248;
+    --color-on-surface: 26 28 25;
+    --color-on-background: 26 28 25;
+    --color-on-surface-variant: 66 74 63;
+    --color-outline: 114 122 110;
+    --color-outline-variant: 196 203 191;
+    --color-inverse-surface: 46 49 46;
+    --color-inverse-on-surface: 240 242 236;
+    --color-primary: 0 122 45;
+    --color-primary-container: 8 132 55;
+    --color-on-primary: 255 255 255;
+    --color-on-primary-container: 236 255 238;
+    --color-secondary-container: 176 78 0;
+    --color-on-secondary-container: 255 236 224;
+    --color-secondary: 140 70 20;
+    --color-tertiary-container: 0 116 179;
+    --color-on-tertiary-container: 232 246 255;
+    --color-tertiary: 0 92 143;
+    --color-error: 186 26 26;
+    --color-error-container: 255 218 214;
+    --color-on-error: 255 255 255;
+    --color-on-error-container: 65 0 2;
+
+    background-color: rgb(var(--color-surface-container-lowest));
+    color-scheme: light;
+  }
+  /* Profile ambient decoration adapts to the light look. */
+  body.theme-light .profile-ambient-glow { opacity: 0.5; }
+  body.theme-light .profile-ambient-grid {
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.045) 1px, transparent 1px) !important;
+  }
+
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  body {
+    font-family: 'Space Grotesk', 'Geist', sans-serif;
+    min-height: max(884px, 100dvh);
+    background-color: rgb(var(--color-surface-container-lowest));
+  }
+
+  /* Dynamic film data must never widen the page on narrow phones. */
+  img,
+  svg,
+  video {
+    max-width: 100%;
+  }
+
+  .overflow-safe {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .inbox-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+  }
+  .inbox-card-actions > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Shared responsive grids for recommendations and Blend results. */
+  .mobile-film-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+    min-width: 0;
+  }
+  .mobile-film-grid > * { min-width: 0; }
+
+  /* The Blend score hero previously exceeded a 320 px viewport. */
+  #br-user1,
+  #br-user2 { min-width: 3.5rem; }
+  #br-svg { width: 7.5rem; }
+
+  @media (min-width: 360px) {
+    #br-user1,
+    #br-user2 { min-width: 4.375rem; }
+    #br-svg { width: 8.75rem; }
+  }
+
+  @media (max-width: 339px) {
+    .mobile-film-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (min-width: 640px) {
+    .mobile-film-grid { gap: 1.5rem; }
+    .mobile-film-grid.film-grid-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .inbox-card-actions {
+      display: flex;
+      align-items: center;
+      width: auto;
+      flex: none;
+    }
+    .inbox-card-actions > * { white-space: nowrap; }
+  }
+
+  @media (min-width: 768px) {
+    .mobile-film-grid.film-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .mobile-film-grid.film-grid-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    #br-user1,
+    #br-user2 { min-width: 6.875rem; }
+    #br-svg { width: 13.125rem; }
+  }
+
+  .safe-footer {
+    position: relative;
+    z-index: 10;
+    padding-bottom: max(2rem, calc(1rem + env(safe-area-inset-bottom)));
+  }
+
+  @media (max-width: 430px) {
+    .safe-footer__links {
+      width: 100%;
+      flex-wrap: wrap;
+      justify-content: center;
+      column-gap: 1rem;
+      row-gap: 0.75rem;
+    }
+  }
+
+  @media (hover: none) {
+    article.tilt-card:hover {
+      transform: none;
+      box-shadow: none;
+    }
+  }
+
+  /* Film grain dokusu — ince, eğlenceli */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 180px 180px;
+  }
+
+  .glass-panel {
+    background-color: rgba(15, 19, 28, 0.72);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .glass-panel:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  #view-auth::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-image: url('/static/criterion-closet-bg.jpg?v=20260902.15');
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+  #view-auth::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background: rgba(0, 0, 0, 0.50);
+  }
+  .auth-info-dialog {
+    width: min(92vw, 520px);
+    margin: auto;
+    padding: 0;
+    color: #e0e2e6;
+    background: transparent;
+    border: 0;
+  }
+  .sinefil-profile-dialog {
+    width: min(94vw, 760px);
+  }
+  .auth-info-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(5px);
+  }
+  .png-share-dialog {
+    width: min(94vw, 520px);
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 0;
+    color: #e0e2e6;
+    background: transparent;
+    border: 0;
+    overflow-y: auto;
+  }
+  .png-share-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.82);
+    backdrop-filter: blur(7px);
+  }
+  .png-share-preview-wrap {
+    max-height: 62dvh;
+  }
+  .png-share-preview-wrap img {
+    max-height: 62dvh;
+    object-fit: contain;
+  }
+
+  .bulletin-venue-menu > summary::-webkit-details-marker { display: none; }
+  .bulletin-venue-menu > summary::marker { content: ""; }
+
+  /* Sinema gündemi — yalnızca yatay kaydırma; dikey taşma yok. */
+  .bulletin-strip {
+    display: flex;
+    gap: 0.875rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* overflow-y: hidden clips at the padding box, so a card flush against the
+       top edge loses its ring. This padding is what keeps the highlight ring
+       and the rounded corners fully drawn. */
+    padding: 0.25rem 0.125rem 0.4rem;
+  }
+  .bulletin-strip::-webkit-scrollbar { display: none; }
+  .bulletin-strip > * { scroll-snap-align: start; }
+
+  /* Gradient text utility */
+  .text-gradient-green {
+    background: linear-gradient(135deg, #43fe6d 0%, #00e054 60%, #40bcf4 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-orange {
+    background: linear-gradient(135deg, #ffb787 0%, #ff8000 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #6ccdff 0%, #40bcf4 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Film kartları hafif tilt hover */
+  article.tilt-card {
+    transition: transform 0.25s cubic-bezier(.22,1,.36,1), box-shadow 0.25s ease;
+  }
+  article.tilt-card:hover { transform: translateY(-4px) rotate(-0.5deg); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Loading */
+  .glow-pulse {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 150vw; height: 150vw;
+    background: radial-gradient(circle, rgba(0,224,84,0.05) 0%, rgba(16,20,23,0) 50%);
+    pointer-events: none; z-index: 0;
+    animation: pulseGlow 4s infinite alternate ease-in-out;
+  }
+  @keyframes pulseGlow {
+    0%   { opacity: 0.5; transform: translate(-50%, -50%) scale(0.9); }
+    100% { opacity: 1;   transform: translate(-50%, -50%) scale(1.1); }
+  }
+  .spinner {
+    width: 64px; height: 64px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: #00E054; border-right-color: #40BCF4;
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .step-item { opacity: 0.3; transform: translateY(10px); transition: all 0.5s ease; }
+  .step-item.active { opacity: 1; transform: translateY(0); color: #e0e2e6; }
+  .step-item.done { opacity: 0.7; transform: translateY(0); }
+
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    background-size: 200% 100%;
+    animation: shimmerAnim 2s infinite linear;
+  }
+  @keyframes shimmerAnim {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+  }
+
+  #profile-sweep-bar.is-indeterminate {
+    width: 38% !important;
+    animation: sweep-indeterminate 1.35s ease-in-out infinite;
+  }
+  @keyframes sweep-indeterminate {
+    0% { transform: translateX(-115%); }
+    100% { transform: translateX(300%); }
+  }
+
+  /* Results cards */
+  @keyframes reco-in {
+    from { opacity: 0; transform: translateY(28px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);    }
+  }
+  .reco-card {
+    opacity: 0;
+    animation: reco-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  /* Cinema fact card */
+  #cinema-fact { transition: opacity 0.5s ease; }
+  #cinema-fact.fading { opacity: 0; }
+
+  /* Status dot glow */
+  .dot-green { background: #00e054; box-shadow: 0 0 8px rgba(0,224,84,0.6); }
+  .dot-orange { background: #ff8000; box-shadow: 0 0 8px rgba(255,128,0,0.6); }
+  .dot-blue   { background: #6ccdff; box-shadow: 0 0 8px rgba(108,205,255,0.6); }
+  .dot-off    { background: #3c4b3a; }
+
+  /* ── Blend animations ─────────────────────────────────────── */
+  @keyframes blend-pulse-l {
+    0%, 100% { transform: translateX(0) scale(1); box-shadow: 0 0 0 0 rgba(0,224,84,0.3); }
+    50%       { transform: translateX(14px) scale(1.06); box-shadow: 0 0 28px 6px rgba(0,224,84,0.12); }
+  }
+  @keyframes blend-pulse-r {
+    0%, 100% { transform: translateX(0) scale(1); box-shadow: 0 0 0 0 rgba(108,205,255,0.3); }
+    50%       { transform: translateX(-14px) scale(1.06); box-shadow: 0 0 28px 6px rgba(108,205,255,0.12); }
+  }
+  .blend-pl { animation: blend-pulse-l 2.2s ease-in-out infinite; }
+  .blend-pr { animation: blend-pulse-r 2.2s ease-in-out infinite; }
+
+  @keyframes blend-dots {
+    0%, 100% { opacity: 0.2; }
+    50%       { opacity: 1; }
+  }
+  .blend-dot { animation: blend-dots 1.4s ease-in-out infinite; }
+  .blend-dot:nth-child(2) { animation-delay: .2s; }
+  .blend-dot:nth-child(3) { animation-delay: .4s; }
+
+  /* Result reveal */
+  @keyframes bubble-from-left {
+    from { opacity: 0; transform: translateX(-90px) scale(.75); }
+    to   { opacity: 1; transform: translateX(0)     scale(1);   }
+  }
+  @keyframes bubble-from-right {
+    from { opacity: 0; transform: translateX(90px) scale(.75); }
+    to   { opacity: 1; transform: translateX(0)    scale(1);   }
+  }
+  @keyframes score-number-in {
+    from { opacity: 0; transform: scale(.6); }
+    to   { opacity: 1; transform: scale(1);  }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0);    }
+  }
+  @keyframes blend-card-in {
+    from { opacity: 0; transform: translateY(22px) scale(.94); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);   }
+  }
+  @keyframes ring-glow-pulse {
+    0%, 100% { filter: drop-shadow(0 0 4px var(--ring-color,#43fe6d)); }
+    50%       { filter: drop-shadow(0 0 16px var(--ring-color,#43fe6d)); }
+  }
+  .blend-bubble-l  { animation: bubble-from-left  .7s cubic-bezier(.22,1,.36,1) forwards; }
+  .blend-bubble-r  { animation: bubble-from-right .7s cubic-bezier(.22,1,.36,1) forwards; }
+  .blend-score-in  { animation: score-number-in   .5s cubic-bezier(.22,1,.36,1) .9s both; }
+  .blend-fade-up   { animation: fade-up .5s ease forwards; }
+  .ring-glow       { animation: ring-glow-pulse 2.5s ease-in-out infinite 1.6s; }
+
+  /* Profile reveal */
+  @keyframes profile-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .profile-rise { opacity: 0; animation: profile-rise .6s cubic-bezier(.22,1,.36,1) forwards; }
+
+  /* Profile carousels — the next card enters from the direction of travel. */
+  @keyframes carousel-from-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes carousel-from-left {
+    from { opacity: 0; transform: translateX(-24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .carousel-from-right { animation: carousel-from-right .42s cubic-bezier(.22,1,.36,1) both; }
+  .carousel-from-left  { animation: carousel-from-left  .42s cubic-bezier(.22,1,.36,1) both; }
+
+  @keyframes inbox-badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,128,0,.15), 0 0 12px rgba(255,128,0,.45); }
+    50% { box-shadow: 0 0 0 5px rgba(255,128,0,0), 0 0 20px rgba(255,128,0,.75); }
+  }
+  .inbox-badge-pulse { animation: inbox-badge-pulse 1.8s ease-in-out infinite; }
+
+  .profile-carousel {
+    touch-action: pan-y;
+    overscroll-behavior-x: contain;
+    min-height: 0;
+  }
+  .profile-carousel img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+
+  .profile-dashboard-card {
+    height: 42rem;
+    min-height: 42rem;
+    overflow: hidden;
+  }
+  /* Katlanmış kart sabit yüksekliğini bırakmalı, yoksa kapanmış bölüm de
+     ekranın yarısı kadar yer kaplamaya devam ediyor. */
+  .profile-dashboard-card.is-folded {
+    height: auto;
+    min-height: 0;
+  }
+  .profile-carousel-frame {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .profile-carousel-body {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .profile-carousel-controls {
+    position: relative;
+    z-index: 2;
+    flex: none;
+    padding-top: 1rem;
+  }
+  .director-card-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    scrollbar-width: none;
+  }
+  .director-card-scroll::-webkit-scrollbar { display: none; }
+  .director-card-scroll [data-director-loading] { display: none; }
+  .film-overview-scroll {
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(186,203,182,.28) transparent;
+  }
+  .film-overview-scroll:focus-visible {
+    outline: 1px solid rgba(0,224,84,.38);
+    outline-offset: 3px;
+    border-radius: .5rem;
+  }
+  .film-overview-scroll::-webkit-scrollbar { width: 5px; }
+  .film-overview-scroll::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(186,203,182,.24);
+  }
+
+  /* Accordion — animates to the real content height */
+  .collapse-y { display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows .34s cubic-bezier(.22,1,.36,1), opacity .28s ease, margin .34s ease; }
+  .collapse-y:not(.open) { margin-top: 0 !important; margin-bottom: 0 !important; }
+  .collapse-y.open { grid-template-rows: 1fr; opacity: 1; }
+  .collapse-y > .collapse-inner { overflow: hidden; min-height: 0; }
+
+  /* Staggered fade-up for lists (analysis lines, result cards) */
+  @keyframes line-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .line-rise { opacity: 0; animation: line-rise .45s cubic-bezier(.22,1,.36,1) forwards; }
+
+  /* Streaming text — words fade in softly, no crawling caret */
+  .stream-word { opacity: 0; transition: opacity .7s ease; }
+  .stream-word.on { opacity: 1; }
+
+  /* Onboarding slide reveal — slow, flowing */
+  @keyframes ob-in { from { opacity: 0; transform: translateY(16px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .ob-in { animation: ob-in .9s cubic-bezier(.22,1,.36,1) both; }
+  #ob-dots > i { width: 6px; height: 6px; border-radius: 9999px; background: rgba(255,255,255,.18); transition: all .4s ease; display: block; }
+  #ob-dots > i.on { width: 22px; background: #00e054; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .profile-rise { opacity: 1; animation: none; }
+    .collapse-y { transition: none; }
+    .line-rise { opacity: 1; animation: none; }
+    .carousel-from-right, .carousel-from-left { animation: none; }
+    .inbox-badge-pulse { animation: none; }
+    #profile-sweep-bar.is-indeterminate { animation: none; transform: none; }
+    .stream-word { opacity: 1; transition: none; }
+    .ob-in { animation: none; }
+  }
+
+  /* ── Twitter-şeklinde kabuk: sol gezinme, alt sekme çubuğu ────────────
+     Gezinme her ekranda aynı yerde durur; hangi ekranın açık olduğu
+     `.is-active` ile işaretlenir. */
+  .nav-item {
+    display: flex; align-items: center; gap: .75rem;
+    border-radius: 9999px; padding: .7rem .85rem;
+    font-size: 1rem; color: rgb(var(--color-on-surface));
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .nav-item:hover { background: rgb(var(--color-surface-container) / .8); }
+  .nav-item.is-active { font-weight: 700; color: rgb(var(--color-primary-container)); }
+  .nav-item.is-active .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+
+  .tab-item {
+    display: flex; flex: 1 1 0%; align-items: center; justify-content: center;
+    padding: .85rem 0 calc(.85rem + env(safe-area-inset-bottom));
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease;
+  }
+  .tab-item.is-active { color: rgb(var(--color-primary-container)); }
+  .tab-item.is-active .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
+
+  /* Kabuk açıkken içerik gezinmenin altına girmesin. */
+  body.has-shell { padding-bottom: 4.5rem; }
+
+  /* Kabuk açıkken üstteki sabit başlık gizleniyor; onun için ayrılmış boşluk
+     da kalkmalı, yoksa her sayfa bir başlık yüksekliği kadar aşağıdan
+     başlıyor. */
+  body.has-shell #view-profile,
+  body.has-shell #view-tools,
+  body.has-shell #view-inbox,
+  body.has-shell #view-blends,
+  body.has-shell #view-sinefil,
+  body.has-shell #view-results,
+  body.has-shell #view-random-result,
+  body.has-shell #view-blend-result { padding-top: .75rem; }
+
+  /* Sütun yüksekliği tam ekran + alt çubuk olunca sayfa içerik kısa olsa bile
+     kaydırılabiliyordu; çubuğun payını düşüyoruz. */
+  .shell-column { min-height: calc(100dvh - 4.5rem); }
+  @media (min-width: 1024px) {
+    .shell-column { min-height: 100dvh; }
+  }
+  @media (min-width: 1024px) {
+    body.has-shell { padding-left: 248px; padding-bottom: 0; }
+    body.has-shell #app-sidebar { display: flex; }
+    body.has-shell #app-tabbar, body.has-shell #btn-compose-fab { display: none !important; }
+    body.has-shell #app-header { display: none !important; }
+  }
+  @media (max-width: 1023px) {
+    body.has-shell #app-tabbar { display: flex; }
+  }
+  /* Sağ raf yalnız akış ailesinde: pano kendi iki sütununu taşıyor,
+     üstüne bir sütun daha koyunca sıkışıyor. */
+  @media (min-width: 1280px) {
+    body.has-rail { padding-right: 320px; }
+    body.has-rail #app-rail { display: block; }
+  }
+
+  /* Akış sekmeleri — Twitter'ın alt çizgili ikilisi. */
+  .feed-tab {
+    position: relative; flex: 1 1 0%;
+    padding: .95rem .5rem; font-size: .95rem;
+    color: rgb(var(--color-on-surface-variant));
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .feed-tab:hover { background: rgb(var(--color-surface-container) / .5); }
+  .feed-tab.is-active { color: rgb(var(--color-on-surface)); font-weight: 700; }
+  .feed-tab.is-active::after {
+    content: ''; position: absolute; left: 50%; bottom: 0;
+    transform: translateX(-50%);
+    width: 60%; max-width: 8rem; height: 4px; border-radius: 9999px;
+    background: rgb(var(--color-primary-container));
+  }
+
+  /* ── Katlanır bölümler ────────────────────────────────────────────────
+     Profil panosu telefonda on bir kartın alt alta dizildiği bir sütuna
+     dönüşüyordu. Ağır bölümler dar ekranda kapalı açılır; başlığa dokunmak
+     açar. Masaüstünde hepsi açık kalır. */
+  .fold-head {
+    display: flex; width: 100%; align-items: center; justify-content: space-between;
+    gap: .75rem; text-align: left;
+  }
+  .fold-chevron { transition: transform .2s ease; }
+  [data-fold].is-folded .fold-body { display: none; }
+  [data-fold].is-folded .fold-chevron { transform: rotate(-90deg); }
+  [data-fold].is-folded .fold-head,
+  [data-fold].is-folded > .flex { margin-bottom: 0 !important; }
+
+  /* Açılış: oturum çözülene kadar üst başlık ve altbilgi çizilmez. Eskiden
+     Movienotes başlıklı boş bir sayfa bir an görünüp kayboluyordu. */
+  body.is-booting #app-header,
+  body.is-booting #main-footer,
+  body.is-booting #app-tabbar,
+  body.is-booting #app-sidebar { visibility: hidden; }
+
+  /* ── Telefonda kart katmanlarını düşür ────────────────────────────────
+     Panoda kartın içinde kart, onun içinde kart vardı: her katman kenarlık,
+     dolgu ve gölge ekleyip okunacak alanı daraltıyordu. Dar ekranda dıştaki
+     kapsayıcı çerçevesini bırakır, içindeki asıl kart kalır. */
+  @media (max-width: 767px) {
+    .mobile-flat {
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+      border-radius: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    .mobile-flat.mobile-flat--tight {
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
+  }
+
+  /* ── Sayfa üst çubuğu ─────────────────────────────────────────────────
+     Her ekranın tepesinde aynı yüksekliğe oturan tek bir satır: solda geri
+     bağlantısı, sağda profil fotoğrafı ve varsa sayfa eylemleri. Eskiden her
+     ekran kendi yüksekliğini ve hizasını kuruyordu. */
+  .page-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: .75rem; min-height: 3.5rem;
+  }
+  .page-topbar__actions { display: flex; align-items: center; gap: .5rem; }
+  .page-back {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-size: .9375rem; line-height: 1;
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease;
+  }
+  .page-back:hover { color: rgb(var(--color-on-surface)); }
+  .page-back .material-symbols-outlined { font-size: 20px; }
+  /* Üst çubuktaki yuvarlak düğmeler tek boy. */
+  .page-topbar__actions .avatar-button,
+  .page-topbar__actions > button { height: 2.25rem; width: 2.25rem; }
+  .page-topbar__actions > button.page-action--wide { width: auto; padding: 0 .85rem; }
+
+  /* ── Öneri kartını kaydırma ───────────────────────────────────────────
+     Telefonda kart parmakla sağa sola çekilebiliyor; sürüklerken hafifçe
+     eğilir, bırakınca ya yerine döner ya da o yöne savrulup yerini bir
+     sonrakine bırakır. */
+  .reco-swipe { touch-action: pan-y; will-change: transform; }
+  .reco-swipe--settling { transition: transform .28s cubic-bezier(.22,1,.36,1), opacity .28s ease; }
+  .reco-swipe--gone { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .reco-swipe--settling { transition: none; }
+  }
+
+  /* Blend sayfasına gömülü araç: sayfa başlığıyla arasında boşluk kalmasın. */
+  .quick-tools--embedded { margin-top: 0 !important; padding-top: 0 !important; }
+
+  /* Spoiler kutucuğu yuvarlak: satırdaki diğer öğeler gibi hap biçiminde. */
+  .spoiler-check {
+    appearance: none; -webkit-appearance: none;
+    height: 1.15rem; width: 1.15rem; border-radius: 9999px;
+    border: 2px solid rgb(var(--color-secondary-container) / .55);
+    background: transparent; display: inline-grid; place-content: center;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .spoiler-check::before {
+    content: ''; height: .5rem; width: .5rem; border-radius: 9999px;
+    background: rgb(var(--color-on-secondary-container)); transform: scale(0);
+    transition: transform .15s ease;
+  }
+  .spoiler-check:checked {
+    background: rgb(var(--color-secondary-container));
+    border-color: rgb(var(--color-secondary-container));
+  }
+  .spoiler-check:checked::before { transform: scale(1); }
+
+  /* ── Deste okları ──────────────────────────────────────────────────────
+     Telefonda oklar posterin iki yanında, poster hizasında; geniş ekranda
+     kartın altındaki satırda kalır. */
+  .deck-arrow { display: none; }
+  .deck-poster-row > .deck-arrow {
+    height: 2.5rem; width: 2.5rem; flex: none;
+    align-items: center; justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid rgb(var(--color-outline-variant) / .3);
+    color: rgb(var(--color-on-surface-variant));
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .deck-poster-row > .deck-arrow:hover {
+    color: rgb(var(--color-on-surface));
+    border-color: rgb(var(--color-outline-variant) / .6);
+  }
+  @media (max-width: 767px) {
+    .deck-poster-row > .deck-arrow { display: flex; }
+    .deck-row-arrow { visibility: hidden; }
+  }
+
+  /* Geniş ekranda pano bölümleri hep açık: katlama telefona ait. */
+  @media (min-width: 1024px) {
+    [data-fold].is-folded .fold-body { display: revert; }
+    .fold-toggle, [data-fold] .fold-chevron { display: none !important; }
+    .fold-head { cursor: default; }
+    .profile-dashboard-card.is-folded { height: 42rem; min-height: 42rem; }
+  }
+
+  /* Telefonda sayfa zemini uygulamanın kendi koyu tonu: rgb(23 30 39).
+     Açık görünüm seçilmişse ona karışmıyor. */
+  @media (max-width: 767px) {
+    body:not(.theme-light) { --color-surface-container-lowest: 23 30 39; }
+    html:has(body:not(.theme-light)), body:not(.theme-light) {
+      background-color: rgb(23 30 39);
+    }
+  }
+
+  /* Beğeni ve cevap satırı kartın sol altına sabit: yüksekliği içeriğe göre
+     değişmiyor, uzun yorum açılsa bile aynı yerde ve aynı boyda duruyor. */
+  .feed-actions { height: 2.25rem; min-height: 2.25rem; margin-top: auto; }
+  .feed-actions > button { align-self: center; }

@@ -25,4 +25,4 @@ jobs:
       - name: Install scraper dependencies
         run: pip install curl-cffi beautifulsoup4 lxml brotli
       - name: Check one public watchlist page
-        run: python -m scripts.check_scraper enesaysu
+        run: PYTHONPATH=backend python -m scripts.check_scraper enesaysu
