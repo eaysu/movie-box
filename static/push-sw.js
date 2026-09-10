@@ -3,9 +3,14 @@ self.addEventListener('push', event => {
   try { payload = event.data ? event.data.json() : {}; } catch (_) {}
   event.waitUntil(self.registration.showNotification(payload.title || 'Movieboxd', {
     body: payload.body || 'Yeni bir bildirimin var.',
-    icon: '/static/movieboxd-icon-192.png',
-    badge: '/static/movieboxd-icon-192.png',
-    data: { url: '/#notifications' },
+    // Bildirim yüzeyi hem açık hem koyu olabiliyor; şeffaf zeminli marka ikisinde
+    // de doğru duruyor. `badge` alfa kanalından tek renkli maskeye çevrildiği
+    // için ayrı ve küçük bir boy veriliyor.
+    icon: '/static/movieboxd-notify-192.png',
+    badge: '/static/movieboxd-badge-96.png',
+    // Adres, uygulamanın kendi yönlendirmesiyle aynı olmalı; `#notifications`
+    // tanınmadığı için bildirime dokunmak akışa düşürüyordu.
+    data: { url: '/#/bildirimler' },
   }));
 });
 

@@ -772,7 +772,7 @@ async function refreshFeedBadge() {
       && Notification.permission === 'granted') {
       new Notification('Movieboxd', {
         body: `${count - _lastUnreadNotificationCount} yeni bildirimin var.`,
-        icon: '/static/movieboxd-icon-192.png?v=20260910.5',
+        icon: '/static/movieboxd-notify-192.png?v=20260910.6',
       });
     }
     _lastUnreadNotificationCount = count;

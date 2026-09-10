@@ -391,6 +391,34 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     assert '"512x512"' in manifest
 
 
+def test_a_notification_carries_the_brand_mark():
+    """Asked for: the Chrome notification should show our own logo.
+
+    The launcher icon is the dark-ground artwork; a notification lands on the
+    system's own surface, light or dark, so it uses the transparent-ground mark
+    instead. The badge is masked to a silhouette from that alpha channel, which
+    is why it is a separate, smaller file.
+    """
+    import struct
+
+    sw = (ROOT / "static" / "push-sw.js").read_text()
+    app_js = (ROOT / "static" / "js" / "app.js").read_text()
+
+    assert "icon: '/static/movieboxd-notify-192.png'" in sw
+    assert "badge: '/static/movieboxd-badge-96.png'" in sw
+    assert "/static/movieboxd-notify-192.png" in app_js
+    # Tapping the notification has to land on the route the app knows.
+    assert "data: { url: '/#/bildirimler' }" in sw
+
+    for name, size in (("movieboxd-notify-192.png", 192), ("movieboxd-badge-96.png", 96)):
+        raw = (ROOT / "static" / name).read_bytes()
+        width, height, _, colour = struct.unpack(">IIBB", raw[16:26])
+        assert (width, height) == (size, size), name
+        # Colour type 6 is RGBA: the ground must stay transparent or the badge
+        # mask turns into a solid block.
+        assert colour == 6, name
+
+
 def test_the_installed_app_opens_on_the_chosen_icon():
     """The launcher, splash and favicon are all cut from movieboxd-icon.png."""
     import hashlib
@@ -792,7 +820,7 @@ def test_shell_asset_content_changes_force_a_version_bump():
     expectation above), then paste the new digest.
     """
     expected = {
-            "static/js/app.js": "e539ac00729b480319afbccfd1169b0309918044f3b433c7ec174314967f52c9",
+            "static/js/app.js": "ace41d35747acb9e514a2687d040e0cca7eca3d987a632b2c3b39a7b2f563a64",
             "static/app.css": "c5cda4b0e3b72254ec3d76d820deb38b2d5d484dadbb1627805dd960969000ff",
         "static/js/share-cards.js": "5db5867065a7a3a0e5db6fa750155396ceb4d5f6b0f937525e3d1b0f9d782f0e",
     }
@@ -827,7 +855,7 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     dependency_version = "v=20260902.15"
     css_version = "v=20260910.81"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.97" in html
+    assert "/static/js/app.js?v=20260910.98" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
