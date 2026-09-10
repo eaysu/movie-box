@@ -3,19 +3,19 @@
   "short_name": "Movienotes",
   "icons": [
     {
-      "src": "/static/movienotes-icon-192.png?v=20260910.5",
+      "src": "/static/movienotes-icon-192.png?v=20260910.6",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/movienotes-icon-512.png?v=20260910.5",
+      "src": "/static/movienotes-icon-512.png?v=20260910.6",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/movienotes-icon-maskable.png?v=20260910.5",
+      "src": "/static/movienotes-icon-maskable.png?v=20260910.6",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

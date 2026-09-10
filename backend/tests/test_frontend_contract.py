@@ -382,8 +382,8 @@ def test_chrome_install_prompt_uses_a_real_pwa_event_and_registered_worker():
     manifest = (FRONTEND / "site.webmanifest").read_text()
 
     assert 'id="dialog-install-app"' in html
-    assert 'href="/static/site.webmanifest?v=20260910.5"' in html
-    assert 'href="/static/movienotes-mark.png?v=20260910.5"' in html
+    assert 'href="/static/site.webmanifest?v=20260910.6"' in html
+    assert 'href="/static/movienotes-mark.png?v=20260910.6"' in html
     assert 'src="/static/movienotes-mark.png"' in html
     assert "beforeinstallprompt" in app_js
     assert "requestMovienotesInstall" in app_js
@@ -814,16 +814,27 @@ def test_cinema_bulletin_scrolls_horizontally_only():
 def test_shell_asset_content_changes_force_a_version_bump():
     """Guard against shipping edits that browsers never fetch.
 
-    Versioned assets are served ``immutable`` for a year, so a change to app.js
-    or app.css that keeps the old ``?v=`` is invisible to every returning
-    visitor. Pinning the digests here makes that a failing test instead of a
-    silent no-op: when this fails, bump the version in index.html (and the
-    expectation above), then paste the new digest.
+    Versioned assets are served ``immutable`` for a year, so a change that keeps
+    the old ``?v=`` is invisible to every returning visitor. Pinning the digests
+    here makes that a failing test instead of a silent no-op: when this fails,
+    bump the version in index.html (and the expectation above), then paste the
+    new digest.
+
+    The manifest and the icons are in this list because leaving them out cost a
+    release: the rename changed the app's name and icon paths but kept
+    ``?v=20260910.5``, so every browser that had already installed the app kept
+    serving itself a year-old manifest calling it Movieboxd and pointing at icon
+    files that no longer existed.
     """
     expected = {
         "js/app.js": "98ad5b876b73e69f827c56ceb2fc44f69f2c78ab6e15bf60bb3db11a1679174a",
         "app.css": "b6c935fce2a68447a11ef47cb64bc7462e119baa2ee65ee57cb77065ff8b2a9a",
         "js/share-cards.js": "4c5da95de0e9a8b6a5c1915ba5aecd2cbd9b5449a5179f31671bcc9ca6ac1cb3",
+        "site.webmanifest": "7a7de349179ed9f226d38632dfde5a8478edd10305972ea52641b0dc6aa7f405",
+        "movienotes-mark.png": "850aa9117aa52768952843f8e2c410c0c17868877d81b2058274290373b4ee1e",
+        "movienotes-icon-192.png": "3b04c52ffd23799ce424f1acefd0a1d7c386b8c968b09be9bd5c87b623c6ac12",
+        "movienotes-icon-512.png": "850aa9117aa52768952843f8e2c410c0c17868877d81b2058274290373b4ee1e",
+        "movienotes-icon-maskable.png": "64c553f91ab5aec3cff9a5921213a658b42a1229bcc9495ebda75cb784280615",
     }
     for path, digest in expected.items():
         actual = hashlib.sha256((FRONTEND / path).read_bytes()).hexdigest()
