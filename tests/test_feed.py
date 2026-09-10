@@ -293,6 +293,23 @@ class DiaryImportTests(unittest.TestCase):
         block = self.scraper.split("def _review_text", 1)[1].split("\nasync def ", 1)[0]
         self.assertIn("_REVIEW_BOILERPLATE.match(piece)", block)
 
+    def test_the_bulk_import_takes_the_newest_reviewed_entries(self):
+        """Üye başına en yeni birkaç yorumlu kayıt; filtreleme kesmeden önce.
+
+        Ters sırada olsa en yeni üç kayıt yorumsuz çıktığında hiçbir şey
+        aktarılmazdı.
+        """
+        script = (ROOT / "scripts" / "import_diary.py").read_text()
+
+        block = script.split("def _rows_from", 1)[1].split("\nasync def ", 1)[0]
+        self.assertIn('(entry.review or "").strip()', block)
+        self.assertIn("reverse=True", block)
+        self.assertIn("reviewed[:max(1, limit)]", block)
+        self.assertLess(block.index("reviewed ="), block.index("reviewed[:max"))
+        # Yorumlu kaydı olmayan üye zorlanmıyor.
+        self.assertIn("yorumlu kayıt yok, atlandı", script)
+        self.assertIn('"--limit", type=int, default=3', script)
+
     def test_the_bulk_import_obeys_the_same_three_rules(self):
         script = (ROOT / "scripts" / "import_diary.py").read_text()
 

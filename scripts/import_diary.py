@@ -19,6 +19,7 @@ başlarken akışı bir kerede doldurmak için.
     python -m scripts.import_diary --apply
     python -m scripts.import_diary --user enesaysu --apply
     python -m scripts.import_diary --apply --pause 5
+    python -m scripts.import_diary --apply --limit 5
 """
 
 from __future__ import annotations
@@ -50,7 +51,15 @@ def _members(service, usernames: list[str]) -> list[dict]:
     return sorted(rows, key=lambda row: row["username"])
 
 
-def _rows_from(entries) -> list[dict]:
+def _rows_from(entries, limit: int) -> list[dict]:
+    """Yorumlu kayıtları en yenisinden alır ve `limit` taneye indirir.
+
+    Sıralama ve kesme burada yapılıyor, filtrelemeden *sonra*: en yeni üç kayıt
+    yorumsuz çıkarsa hiçbir şey aktarılmaz gibi bir sonuç doğmasın.
+    """
+    reviewed = [entry for entry in entries if entry.slug and (entry.review or "").strip()]
+    reviewed.sort(key=lambda entry: entry.watched_on, reverse=True)
+    entries = reviewed[:max(1, limit)]
     return [
         {
             "source_key": entry.key,
@@ -67,11 +76,10 @@ def _rows_from(entries) -> list[dict]:
             "created_at": f"{entry.watched_on}T12:00:00+00:00",
         }
         for entry in entries
-        if entry.slug
     ]
 
 
-async def run(service, members: list[dict], *, apply: bool, pause: float) -> int:
+async def run(service, members: list[dict], *, apply: bool, pause: float, limit: int) -> int:
     total = failed = 0
     for index, member in enumerate(members, start=1):
         username = member["username"]
@@ -83,7 +91,15 @@ async def run(service, members: list[dict], *, apply: bool, pause: float) -> int
             print(f"{prefix}: günce okunamadı, sonraki koşuya bırakıldı", flush=True)
             await asyncio.sleep(max(pause, 1.0) * 3)
             continue
-        rows = _rows_from(entries)
+        rows = _rows_from(entries, limit)
+        if not rows:
+            # Yorumlu kaydı olmayan üyeyi zorlamıyoruz.
+            print(f"{prefix}: yorumlu kayıt yok, atlandı", flush=True)
+            if apply:
+                await asyncio.to_thread(service.mark_diary_synced, int(member["id"]))
+            if index < len(members):
+                await asyncio.sleep(pause)
+            continue
         if apply:
             written = await asyncio.to_thread(
                 service.import_diary_entries, int(member["id"]), rows
@@ -117,6 +133,10 @@ def main() -> int:
         "--pause", type=float, default=3.0,
         help="Üyeler arası bekleme (saniye, varsayılan 3)",
     )
+    parser.add_argument(
+        "--limit", type=int, default=3,
+        help="Üye başına en yeni kaç yorumlu kayıt (varsayılan 3)",
+    )
     args = parser.parse_args()
 
     try:
@@ -131,7 +151,9 @@ def main() -> int:
         print("Eşleşen üye yok.", file=sys.stderr)
         return 1
     print(f"{len(members)} üyenin güncesi okunuyor…", flush=True)
-    return asyncio.run(run(service, members, apply=args.apply, pause=args.pause))
+    return asyncio.run(run(
+        service, members, apply=args.apply, pause=args.pause, limit=args.limit,
+    ))
 
 
 if __name__ == "__main__":
