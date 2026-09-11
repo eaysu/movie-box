@@ -827,8 +827,8 @@ def test_shell_asset_content_changes_force_a_version_bump():
     files that no longer existed.
     """
     expected = {
-        "js/app.js": "a9e195eee9c6515c9dd4fe520ed9e6e274f3454737850825f290706fb4ece71e",
-        "app.css": "b6c935fce2a68447a11ef47cb64bc7462e119baa2ee65ee57cb77065ff8b2a9a",
+        "js/app.js": "e8a3205dc2b65d4587b3579a4b813b6a19a6863d91c4013f92d5f0aa7255980d",
+        "app.css": "098314bfe07625fe57386a3173bfc470aa8be208840efe90bf74e31ff1950695",
         "js/share-cards.js": "4c5da95de0e9a8b6a5c1915ba5aecd2cbd9b5449a5179f31671bcc9ca6ac1cb3",
         "site.webmanifest": "7a7de349179ed9f226d38632dfde5a8478edd10305972ea52641b0dc6aa7f405",
         "movienotes-mark.png": "850aa9117aa52768952843f8e2c410c0c17868877d81b2058274290373b4ee1e",
@@ -865,9 +865,9 @@ def test_every_app_shell_asset_has_an_explicit_immutable_version():
     source_css = (FRONTEND / "css" / "source.css").read_text()
 
     dependency_version = "v=20260902.15"
-    css_version = "v=20260910.82"
+    css_version = "v=20260910.83"
     assert f"/static/app.css?{css_version}" in html
-    assert "/static/js/app.js?v=20260910.102" in html
+    assert "/static/js/app.js?v=20260910.103" in html
     assert app_js.count(f"?{dependency_version}") == 4
     assert "./recommendations.js?v=20260910.1" in app_js
     assert "./share-cards.js?v=20260907.40" in app_js
@@ -982,3 +982,35 @@ def test_a_new_member_is_invited_to_install_the_app_too():
     # Zaten kurulu bir uygulamada veya Chrome çağrıyı göndermediyse açılmıyor.
     assert "isInstalledApp()" in guard
     assert "!_deferredInstallPrompt" in guard
+
+
+def test_iphone_gets_instructions_because_ios_cannot_install_by_itself():
+    """iOS'ta `beforeinstallprompt` hiçbir tarayıcıda gönderilmiyor.
+
+    Safari, Chrome, Edge — hepsi WebKit üzerinde çalışıyor, dolayısıyla çağrıyı
+    tarayıcıya soramıyoruz ve kurulumu programatik başlatamıyoruz. Tek yol
+    paylaş menüsü, o yüzden düğme yerine adımlar gösteriliyor.
+    """
+    app_js = (FRONTEND / "js" / "app.js").read_text()
+    html = (FRONTEND / "index.html").read_text()
+
+    # Tarayıcıya değil platforma bakılıyor; iPadOS 13+ kendini Mac sanıyor.
+    detect = app_js.split("function isIOS()", 1)[1].split("\n}", 1)[0]
+    assert "/iPhone|iPad|iPod/i.test(ua)" in detect
+    assert "navigator.maxTouchPoints" in detect
+
+    show = app_js.split("function showInstallAppDialog()", 1)[1].split("\n}", 1)[0]
+    assert "if (!ios && !_deferredInstallPrompt) return;" in show
+    assert "$('install-ios-steps').classList.toggle('hidden', !ios)" in show
+    assert "$('btn-install-app').classList.toggle('hidden', ios)" in show
+
+    # Ana ekrana ekleme adımları, sırasıyla.
+    steps = html.split('id="install-ios-steps"', 1)[1].split("</ol>", 1)[0]
+    assert "Paylaş" in steps and "Ana Ekrana Ekle" in steps and "Ekle</strong>’ye bas" in steps
+    # Her adımın metni tek bir <span>: flex gap'i cümlenin ortasına girmesin.
+    assert steps.count("<span>") == 3
+
+    # iOS'ta "kuruldu" sinyali yok; kapatma hatırlanmazsa çağrı her girişte çıkar.
+    assert "IOS_INSTALL_HINT_DAYS = 30" in app_js
+    assert "localStorage.setItem(IOS_INSTALL_HINT_KEY" in app_js
+    assert "if (ios && iosHintSilenced()) return;" in show

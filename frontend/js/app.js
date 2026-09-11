@@ -37,14 +37,58 @@ function isInstalledApp() {
   return window.matchMedia?.('(display-mode: standalone)').matches || Boolean(window.navigator.standalone);
 }
 
+// iPhone/iPad. Safari, Chrome, Edge — hepsi iOS'ta WebKit üzerinde çalışıyor,
+// dolayısıyla hiçbiri `beforeinstallprompt` göndermiyor ve hiçbiri kurulumu
+// kendisi başlatamıyor. Tarayıcıya değil platforma bakmak bu yüzden doğru.
+// iPadOS 13+ kendini "Macintosh" diye tanıtıyor; dokunma noktası sayısı ayırıyor.
+function isIOS() {
+  const ua = navigator.userAgent || '';
+  return /iPhone|iPad|iPod/i.test(ua)
+    || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+}
+
+// Kurulum çağrısının ne zaman kapatıldığı. iOS'ta "kuruldu" sinyali yok:
+// kullanıcı ana ekrana eklese bile Safari'de açtığında `standalone` false,
+// yani hatırlamazsak çağrı her girişte yeniden çıkardı.
+const IOS_INSTALL_HINT_KEY = 'mb_ios_install_hint';
+const IOS_INSTALL_HINT_DAYS = 30;
+
+function iosHintSilenced() {
+  try {
+    const at = Number(localStorage.getItem(IOS_INSTALL_HINT_KEY) || 0);
+    return at > 0 && Date.now() - at < IOS_INSTALL_HINT_DAYS * 86400000;
+  } catch (_) {
+    return false;
+  }
+}
+
 function showInstallAppDialog() {
   const dialog = $('dialog-install-app');
-  if (!_account || !_deferredInstallPrompt || isInstalledApp() || dialog.open) return;
+  if (!_account || isInstalledApp() || dialog.open) return;
   // Onboarding kilitli bir tam ekran akış: Chrome `beforeinstallprompt`'u geç
   // gönderirse bu modal onun üstüne açılıyordu. Kurulum çağrısı bekleyebilir.
   if (_shownView === 'onboarding') return;
+  const ios = isIOS();
+  if (!ios && !_deferredInstallPrompt) return;
+  if (ios && iosHintSilenced()) return;
+  // iOS'ta kurulumu tarayıcı başlatamıyor: düğme yerine paylaş menüsü adımları.
+  $('install-ios-steps').classList.toggle('hidden', !ios);
+  $('btn-install-app').classList.toggle('hidden', ios);
+  $('btn-install-dismiss').textContent = ios ? 'Anladım' : 'Şimdi değil';
+  $('btn-install-dismiss').classList.toggle('flex-1', ios);
   dialog.showModal();
 }
+
+// Kapatıldığı an damgalanıyor: iOS'ta kurulumun gerçekleştiğini anlamanın bir
+// yolu yok, o yüzden "gördüm" bilgisini kullanıcının kapatması veriyor.
+$('dialog-install-app').addEventListener('close', () => {
+  if (!isIOS()) return;
+  try {
+    localStorage.setItem(IOS_INSTALL_HINT_KEY, String(Date.now()));
+  } catch (_) {
+    /* özel sekmede depolama kapalı olabilir; çağrı yine çıkar, sorun değil */
+  }
+});
 
 async function registerMovienotesServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;

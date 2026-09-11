@@ -29,7 +29,7 @@
 <link rel="manifest" href="/static/site.webmanifest?v=20260910.6"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/app.css?v=20260910.82"/>
+<link rel="stylesheet" href="/static/app.css?v=20260910.83"/>
 </head>
 <body class="is-booting bg-surface-container-lowest text-on-surface min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary-container">
 
@@ -305,7 +305,14 @@
       <div class="min-w-0 flex-1"><span class="font-label-sm text-label-sm uppercase tracking-wider text-primary-container">Movienotes uygulaması</span><h2 class="mt-2 font-headline-md text-headline-md text-on-surface">Movienotes’u yükle</h2><p class="mt-2 text-sm leading-relaxed text-on-surface-variant">Ana ekranından tek dokunuşla aç; daha uygulama gibi, daha hızlı kullan.</p></div>
       <button type="button" data-close-dialog="dialog-install-app" class="-mt-1 shrink-0 text-on-surface-variant hover:text-primary" aria-label="Şimdi değil"><span class="material-symbols-outlined">close</span></button>
     </div>
-    <div class="mt-6 flex gap-3"><button id="btn-install-app" type="button" class="flex-1 rounded-xl bg-primary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-primary-container">Uygulamayı yükle</button><button type="button" data-close-dialog="dialog-install-app" class="rounded-xl border border-outline-variant/30 px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdi değil</button></div>
+    <!-- iPhone/iPad'de kurulumu tarayıcı değil kullanıcı başlatıyor: WebKit
+         programatik kuruluma izin vermiyor, o yüzden düğme yerine adımlar. -->
+    <ol id="install-ios-steps" class="hidden mt-6 space-y-3 text-sm text-on-surface-variant">
+      <li class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-primary-container"><span class="material-symbols-outlined text-[20px]">ios_share</span></span><span>Alttaki <strong class="text-on-surface">Paylaş</strong> düğmesine dokun</span></li>
+      <li class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-primary-container"><span class="material-symbols-outlined text-[20px]">add_box</span></span><span><strong class="text-on-surface">Ana Ekrana Ekle</strong>’yi seç</span></li>
+      <li class="flex items-center gap-3"><span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-primary-container"><span class="material-symbols-outlined text-[20px]">check</span></span><span>Sağ üstten <strong class="text-on-surface">Ekle</strong>’ye bas</span></li>
+    </ol>
+    <div class="mt-6 flex gap-3"><button id="btn-install-app" type="button" class="flex-1 rounded-xl bg-primary-container px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-primary-container">Uygulamayı yükle</button><button id="btn-install-dismiss" type="button" data-close-dialog="dialog-install-app" class="rounded-xl border border-outline-variant/30 px-4 py-3 font-label-md text-label-md uppercase tracking-wide text-on-surface-variant">Şimdi değil</button></div>
   </div>
 </dialog>
 
@@ -1354,6 +1361,6 @@
   </div>
 </footer>
 
-<script type="module" src="/static/js/app.js?v=20260910.102"></script>
+<script type="module" src="/static/js/app.js?v=20260910.103"></script>
 </body>
 </html>
